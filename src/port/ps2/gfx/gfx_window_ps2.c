@@ -429,7 +429,9 @@ static void GfxPs2Window_SetFullscreen(bool fullscreen) {
 }
 
 static void GfxPs2Window_MainLoop(void (*runOneGameIter)(void)) {
-    runOneGameIter();
+    for (;;) {
+        runOneGameIter();
+    }
 }
 
 static void GfxPs2Window_GetDimensions(uint32_t* width, uint32_t* height) {

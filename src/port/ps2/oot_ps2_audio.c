@@ -11,6 +11,13 @@
 #include <stdio.h>
 #include <string.h>
 
+#define OOT_PS2_AUDIO_EXTERNAL_POOL_SIZE (2U * 1024U * 1024U)
+
+static s32 sOotPortAudioInitialized;
+static u8 sAudioExternalPool[OOT_PS2_AUDIO_EXTERNAL_POOL_SIZE] __attribute__((aligned(64)));
+
+void AudioThread_InitExternalPool(void* ramAddr, u32 size);
+
 s32 OotPortAudioBackend_Init(void) {
     return 0;
 }
@@ -48,6 +55,20 @@ void OotPortAudioBackend_ExecuteCommands(const Acmd* cmdList, s32 cmdCount) {
 }
 
 void OotPortAudio_Init(void) {
+    if (sOotPortAudioInitialized) {
+        return;
+    }
+
+    if (OotPortAudioBackend_Init() < 0) {
+        return;
+    }
+
+    AudioLoad_SetDmaHandler(DmaMgr_AudioDmaHandler);
+    AudioThread_InitExternalPool(sAudioExternalPool, sizeof(sAudioExternalPool));
+    Audio_Init();
+    Audio_InitSound();
+
+    sOotPortAudioInitialized = true;
 }
 
 void OotPortAudio_Update(void) {

@@ -25,6 +25,8 @@
 #include "save.h"
 #if PLATFORM_PSP
 #include "oot_psp_asset_loader.h"
+#elif defined(TARGET_PS2)
+#include "oot_port_asset_loader.h"
 #endif
 
 #include "assets/textures/parameter_static/parameter_static.h"
@@ -154,7 +156,7 @@ s16 sMessageHasSetSfx = false;
 
 u16 sOcarinaSongBitFlags = 0; // ocarina bit flags
 
-#if !PLATFORM_PSP
+#if !PLATFORM_PSP && !defined(TARGET_PS2)
 
 #if OOT_NTSC
 
@@ -516,11 +518,46 @@ static void Message_SwapWideMessageBufferPsp(u16* buffer, s32 count) {
 }
 #endif
 
+#if defined(TARGET_PS2)
+static void Message_FindMessagePs2(Font* font, const OotPortMessageEntry* entries, size_t count,
+                                   uintptr_t segmentRomStart, u16 textId) {
+    const OotPortMessageEntry* entry = OotPort_FindMessageEntry(entries, count, textId);
+
+    if (entry == NULL) {
+        if (count == 0) {
+            font->msgOffset = 0;
+            font->msgLength = 0;
+            return;
+        }
+
+        PRINTF("oot-ps2 message missing textId=%04x\n", textId);
+        entry = &entries[0];
+    }
+
+    font->charTexBuf[0] = entry->typePos;
+    font->msgOffset = entry->vromStart - OotPort_NormalizeVrom(segmentRomStart);
+    font->msgLength = entry->vromEnd - entry->vromStart;
+}
+
+static void Message_SwapWideMessageBufferPs2(u16* buffer, s32 count) {
+    s32 i;
+
+    for (i = 0; i < count; i++) {
+        u16 value = buffer[i];
+
+        buffer[i] = (value << 8) | (value >> 8);
+    }
+}
+#endif
+
 #if OOT_NTSC
 
 void Message_FindMessageJPN(PlayState* play, u16 textId) {
 #if PLATFORM_PSP
     Message_FindMessagePsp(&play->msgCtx.font, gOotPspJpnMessageEntries, gOotPspJpnMessageEntriesCount,
+                           (uintptr_t)_jpn_message_data_staticSegmentRomStart, textId);
+#elif defined(TARGET_PS2)
+    Message_FindMessagePs2(&play->msgCtx.font, gOotPortJpnMessageEntries, gOotPortJpnMessageEntriesCount,
                            (uintptr_t)_jpn_message_data_staticSegmentRomStart, textId);
 #else
     const char* foundSeg;
@@ -563,6 +600,9 @@ void Message_FindMessageJPN(PlayState* play, u16 textId) {
 void Message_FindMessageNES(PlayState* play, u16 textId) {
 #if PLATFORM_PSP
     Message_FindMessagePsp(&play->msgCtx.font, gOotPspNesMessageEntries, gOotPspNesMessageEntriesCount,
+                           (uintptr_t)_nes_message_data_staticSegmentRomStart, textId);
+#elif defined(TARGET_PS2)
+    Message_FindMessagePs2(&play->msgCtx.font, gOotPortNesMessageEntries, gOotPortNesMessageEntriesCount,
                            (uintptr_t)_nes_message_data_staticSegmentRomStart, textId);
 #else
     const char* foundSeg;
@@ -690,6 +730,9 @@ void Message_FindMessagePAL(PlayState* play, u16 textId) {
 void Message_FindCreditsMessage(PlayState* play, u16 textId) {
 #if PLATFORM_PSP
     Message_FindMessagePsp(&play->msgCtx.font, gOotPspStaffMessageEntries, gOotPspStaffMessageEntriesCount,
+                           (uintptr_t)_staff_message_data_staticSegmentRomStart, textId);
+#elif defined(TARGET_PS2)
+    Message_FindMessagePs2(&play->msgCtx.font, gOotPortStaffMessageEntries, gOotPortStaffMessageEntriesCount,
                            (uintptr_t)_staff_message_data_staticSegmentRomStart, textId);
 #else
     const char* foundSeg;
@@ -2710,6 +2753,8 @@ void Message_OpenText(PlayState* play, u16 textId) {
 #endif
 #if PLATFORM_PSP
             Message_SwapWideMessageBufferPsp(MSG_BUF_WIDE, font->msgLength / 2);
+#elif defined(TARGET_PS2)
+            Message_SwapWideMessageBufferPs2(MSG_BUF_WIDE, font->msgLength / 2);
 #endif
         } else {
             Message_FindMessageNES(play, textId);
@@ -4517,7 +4562,7 @@ void Message_Update(PlayState* play) {
 }
 
 void Message_SetTables(void) {
-#if !PLATFORM_PSP
+#if !PLATFORM_PSP && !defined(TARGET_PS2)
 #if OOT_NTSC
     sJpnMessageEntryTablePtr = sJpnMessageEntryTable;
     sNesMessageEntryTablePtr = sNesMessageEntryTable;

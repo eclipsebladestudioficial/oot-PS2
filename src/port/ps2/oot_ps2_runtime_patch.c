@@ -222,6 +222,7 @@ s32 OotPs2RuntimePatch_Apply(void) {
     }
 
     FlushCache(WRITEBACK_DCACHE);
+    FlushCache(INVALIDATE_ICACHE);
     ok = true;
 
 done:

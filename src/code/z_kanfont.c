@@ -9,10 +9,12 @@
 #include "message.h"
 #if PLATFORM_PSP
 #include "oot_psp_asset_loader.h"
+#elif defined(TARGET_PS2)
+#include "oot_port_asset_loader.h"
 #endif
 
-#if PLATFORM_PSP
-static void Font_SwapWideMessageBufferPsp(u16* buffer, s32 count) {
+#if PLATFORM_PSP || defined(TARGET_PS2)
+static void Font_SwapWideMessageBufferPort(u16* buffer, s32 count) {
     s32 i;
 
     for (i = 0; i < count; i++) {
@@ -81,6 +83,8 @@ void Font_LoadOrderedFont(Font* font) {
     u16* msgBufWide;
 #if PLATFORM_PSP
     const OotPspMessageEntry* pspMessageEntry;
+#elif defined(TARGET_PS2)
+    const OotPortMessageEntry* ps2MessageEntry;
 #endif
 
 #if OOT_NTSC && !PLATFORM_IQUE
@@ -94,6 +98,17 @@ void Font_LoadOrderedFont(Font* font) {
     font->msgOffset = pspMessageEntry->vromStart -
                       OotPsp_NormalizeVrom((uintptr_t)_jpn_message_data_staticSegmentRomStart);
     size = font->msgLength = pspMessageEntry->vromEnd - pspMessageEntry->vromStart;
+#elif defined(TARGET_PS2)
+    ps2MessageEntry =
+        OotPort_FindMessageEntry(gOotPortJpnMessageEntries, gOotPortJpnMessageEntriesCount, 0xFFFC);
+    if (ps2MessageEntry == NULL) {
+        PRINTF("oot-ps2 font message 0xFFFC missing\n");
+        return;
+    }
+
+    font->msgOffset = ps2MessageEntry->vromStart -
+                      OotPort_NormalizeVrom((uintptr_t)_jpn_message_data_staticSegmentRomStart);
+    size = font->msgLength = ps2MessageEntry->vromEnd - ps2MessageEntry->vromStart;
 #else
     messageDataStart = (const char*)_jpn_message_data_staticSegmentStart;
     font->msgOffset = _message_0xFFFC_jpn - messageDataStart;
@@ -102,8 +117,8 @@ void Font_LoadOrderedFont(Font* font) {
     len = (u32)size / 2;
     DMA_REQUEST_SYNC(font->msgBufWide, (uintptr_t)_jpn_message_data_staticSegmentRomStart + font->msgOffset, size,
                      "../z_kanfont.c", UNK_LINE);
-#if PLATFORM_PSP
-    Font_SwapWideMessageBufferPsp(font->msgBufWide, len);
+#if PLATFORM_PSP || defined(TARGET_PS2)
+    Font_SwapWideMessageBufferPort(font->msgBufWide, len);
 #endif
 
     PRINTF("msg_data=%x,  msg_data0=%x   jj=%x\n", font->msgOffset, font->msgLength, len);
@@ -179,8 +194,8 @@ void Font_LoadOrderedFont(Font* font) {
     len = (u32)size / 2;
     DMA_REQUEST_SYNC(font->msgBufWide, (uintptr_t)_jpn_message_data_staticSegmentRomStart + font->msgOffset, size,
                      "../z_kanfont.c", UNK_LINE);
-#if PLATFORM_PSP
-    Font_SwapWideMessageBufferPsp(font->msgBufWide, len);
+#if PLATFORM_PSP || defined(TARGET_PS2)
+    Font_SwapWideMessageBufferPort(font->msgBufWide, len);
 #endif
 
     PRINTF("msg_data=%x,  msg_data0=%x   jj=%x\n", font->msgOffset, font->msgLength, len);

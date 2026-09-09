@@ -8,7 +8,7 @@
 #include "translation.h"
 #include "play_state.h"
 
-#if PLATFORM_PSP
+#if PLATFORM_PSP || defined(TARGET_PS2)
 #define KALEIDO_OVERLAY(name, nameString) \
     { NULL, ROM_FILE_UNSET, NULL, NULL, 0, nameString, }
 #else
@@ -25,7 +25,7 @@ void* sKaleidoAreaPtr = NULL;
 KaleidoMgrOverlay* gKaleidoMgrCurOvl = NULL;
 u8 gBossMarkState = 0;
 
-#if PLATFORM_PSP
+#if PLATFORM_PSP || defined(TARGET_PS2)
 
 void KaleidoManager_LoadOvl(KaleidoMgrOverlay* ovl) {
     if (ovl != NULL) {

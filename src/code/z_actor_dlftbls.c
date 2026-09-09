@@ -26,7 +26,7 @@
 #undef DEFINE_ACTOR_UNSET
 
 // Actor Overlay Table definition
-#if PLATFORM_PSP
+#if PLATFORM_PSP || defined(TARGET_PS2)
 
 // PSP links actor code directly into the executable, so the original table can
 // point at every real profile without using runtime overlay loading.

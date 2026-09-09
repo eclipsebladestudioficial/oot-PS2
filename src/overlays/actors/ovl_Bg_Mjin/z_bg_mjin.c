@@ -44,7 +44,7 @@ ActorProfile Bg_Mjin_Profile = {
     /**/ NULL,
 };
 
-#if PLATFORM_PSP
+#if PLATFORM_PSP || defined(TARGET_PS2)
 #define BG_MJIN_OBJECT_SEGMENT_START ((void*)0x06000000)
 #else
 extern UNK_TYPE D_06000000;

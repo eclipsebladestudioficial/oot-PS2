@@ -32,6 +32,8 @@
 #if defined(TARGET_PSP)
 #include "oot_psp_audio_backend.h"
 #include "oot_psp_performance.h"
+#elif defined(TARGET_PS2)
+#include "oot_port_audio_backend.h"
 #endif
 
 #define GFXPOOL_HEAD_MAGIC 0x1234
@@ -503,6 +505,8 @@ void Graph_Update(GraphicsContext* gfxCtx, GameState* gameState) {
     Audio_Update();
 #if defined(TARGET_PSP)
     OotPspAudio_Update();
+#elif defined(TARGET_PS2)
+    OotPortAudio_Update();
 #endif
 #if defined(TARGET_PSP) && defined(OOTDEBUG)
     audioEndUsec = OotPspPerformance_Now();

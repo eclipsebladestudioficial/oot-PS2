@@ -2,9 +2,6 @@
 #include "attributes.h"
 #include "audio.h"
 #include "oot_port_audio_commands.h"
-#include <me-core-mapper/me-core-mapper.h>
-#include <me-core-mapper/me-lib.h>
-#include <pspkernel.h>
 #include <string.h>
 #include <stddef.h>
 

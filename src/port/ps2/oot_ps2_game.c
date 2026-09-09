@@ -845,4 +845,5 @@ void OotPortGame_Init(void) {
     gPadMgr.nControllers = 1;
 
     Sched_Init(&gScheduler, NULL, THREAD_PRI_SCHED, 0, 0, &gIrqMgr);
+    OotPortAudio_Init();
 }

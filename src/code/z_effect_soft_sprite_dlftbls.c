@@ -1,7 +1,7 @@
 #include "segment_symbols.h"
 #include "effect.h"
 
-#if TARGET_PSP
+#if TARGET_PSP || defined(TARGET_PS2)
 
 // PSP links EffectSs code directly into the executable, so keep the original
 // table shape but point every entry at its real profile.
