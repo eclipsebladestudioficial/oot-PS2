@@ -144,6 +144,55 @@ static s32 OotPs2AssetSetup_FileHasSize(const char* path, size_t expectedSize) {
     return (size >= 0) && ((size_t)size == expectedSize);
 }
 
+static s32 OotPs2AssetSetup_CopyFile(const char* sourcePath, const char* destinationPath) {
+    OotPs2Handle sourceFd = -1;
+    OotPs2Handle destinationFd = -1;
+    OotPs2Offset sourceSize;
+    OotPs2Offset destinationSize;
+    u8 buffer[OOT_PS2_IO_CHUNK_SIZE];
+    u32 offset = 0;
+    s32 ok = false;
+
+    sourceFd = OotPs2File_Open(sourcePath, OOT_PS2_FILE_RDONLY, 0);
+    if (sourceFd < 0) {
+        goto cleanup;
+    }
+
+    sourceSize = OotPs2File_Seek(sourceFd, 0, OOT_PS2_SEEK_END);
+    if ((sourceSize < 0) || ((u64)sourceSize > 0xFFFFFFFFULL)) {
+        goto cleanup;
+    }
+
+    destinationFd = OotPs2File_Open(destinationPath,
+                                    OOT_PS2_FILE_WRONLY | OOT_PS2_FILE_CREAT | OOT_PS2_FILE_TRUNC, 0777);
+    if (destinationFd < 0) {
+        goto cleanup;
+    }
+
+    while (offset < (u32)sourceSize) {
+        u32 remaining = (u32)sourceSize - offset;
+        u32 chunk = remaining > sizeof(buffer) ? sizeof(buffer) : remaining;
+
+        if (!OotPs2AssetSetup_ReadAt(sourceFd, offset, buffer, chunk) ||
+            !OotPs2AssetSetup_WriteAt(destinationFd, offset, buffer, chunk)) {
+            goto cleanup;
+        }
+        offset += chunk;
+    }
+
+    destinationSize = OotPs2File_Seek(destinationFd, 0, OOT_PS2_SEEK_END);
+    ok = destinationSize == sourceSize;
+
+cleanup:
+    if (destinationFd >= 0) {
+        OotPs2File_Close(destinationFd);
+    }
+    if (sourceFd >= 0) {
+        OotPs2File_Close(sourceFd);
+    }
+    return ok;
+}
+
 static OotPs2Handle OotPs2AssetSetup_OpenRom(char* pathBuffer, size_t pathBufferSize) {
     const char* path = OotPort_ResolveRootPath(OOT_PS2_INPUT_ROM_PATH, pathBuffer, pathBufferSize);
 
@@ -553,7 +602,6 @@ static s32 OotPs2AssetSetup_Build(OotPs2Handle romFd, const char* outputPath, co
         goto cleanup;
     }
 
-    OotPs2File_Remove(tempPath);
     outputFd = OotPs2File_Open(tempPath, OOT_PS2_FILE_WRONLY | OOT_PS2_FILE_CREAT | OOT_PS2_FILE_TRUNC, 0777);
     if (outputFd < 0) {
         OotPs2AssetSetup_ShowError("Could not create the asset file");
@@ -570,7 +618,7 @@ static s32 OotPs2AssetSetup_Build(OotPs2Handle romFd, const char* outputPath, co
         if ((assetIndex & 7) == 0) {
             snprintf(status, sizeof(status), "Converting assets: %lu / %lu", (unsigned long)assetIndex,
                      (unsigned long)gOotPortExternalAssetCount);
-            OotPs2AssetSetup_ShowProgress(100 + (u32)((assetIndex * 900) / gOotPortExternalAssetCount), status);
+            OotPs2AssetSetup_ShowProgress(100 + (u32)((assetIndex * 890) / gOotPortExternalAssetCount), status);
         }
 
         if (dma == NULL) {
@@ -625,7 +673,7 @@ static s32 OotPs2AssetSetup_Build(OotPs2Handle romFd, const char* outputPath, co
         if ((assetIndex + 1) == gOotPortExternalAssetCount) {
             snprintf(status, sizeof(status), "Converting assets: %lu / %lu", (unsigned long)(assetIndex + 1),
                      (unsigned long)gOotPortExternalAssetCount);
-            OotPs2AssetSetup_ShowProgress(1000, status);
+            OotPs2AssetSetup_ShowProgress(990, status);
         }
     }
 
@@ -636,11 +684,17 @@ static s32 OotPs2AssetSetup_Build(OotPs2Handle romFd, const char* outputPath, co
 
     OotPs2File_Close(outputFd);
     outputFd = -1;
-    OotPs2File_Remove(outputPath);
 
-    if (OotPs2File_Rename(tempPath, outputPath) < 0) {
+    OotPs2AssetSetup_ShowProgress(995, "Finishing asset file");
+    if (!OotPs2AssetSetup_CopyFile(tempPath, outputPath)) {
         OotPs2AssetSetup_ShowError("Could not finish the asset file");
         goto cleanup;
+    }
+
+    outputFd = OotPs2File_Open(tempPath, OOT_PS2_FILE_WRONLY | OOT_PS2_FILE_TRUNC, 0);
+    if (outputFd >= 0) {
+        OotPs2File_Close(outputFd);
+        outputFd = -1;
     }
 
     ok = true;
@@ -648,9 +702,6 @@ static s32 OotPs2AssetSetup_Build(OotPs2Handle romFd, const char* outputPath, co
 cleanup:
     if (outputFd >= 0) {
         OotPs2File_Close(outputFd);
-    }
-    if (!ok) {
-        OotPs2File_Remove(tempPath);
     }
     free(dmaEntries);
     return ok;
