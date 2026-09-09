@@ -15,7 +15,7 @@ s32 OotPortControls_Load(void);
 s32 OotPortControls_Save(void);
 void OotPortControls_ResetDefaults(void);
 
-u16 OotPortControls_MapButtons(u32 pspButtons);
+u16 OotPortControls_MapButtons(u32 buttons);
 s8 OotPortControls_MapStick(u8 raw);
 
 int OotPortControls_GetBindingCount(void);
@@ -25,5 +25,7 @@ void OotPortControls_CycleBinding(int index, int direction);
 int OotPortControls_GetDeadzone(void);
 void OotPortControls_SetDeadzone(int deadzone);
 void OotPortControls_AdjustDeadzone(int delta);
+int OotPortControls_IsN64StickScalingEnabled(void);
+void OotPortControls_SetN64StickScalingEnabled(int enabled);
 
 #endif

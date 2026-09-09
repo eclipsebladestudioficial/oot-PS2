@@ -6,6 +6,9 @@
 #include "audio.h"
 #if defined(TARGET_PSP)
 #include "oot_psp_audio_backend.h"
+#define OotPortAudioBackend_Queue OotPspAudioBackend_Queue
+#elif defined(TARGET_PS2)
+#include "oot_port_audio_backend.h"
 #endif
 
 void Audio_InvalDCache(void* buf, s32 size) {
@@ -34,8 +37,8 @@ void Audio_WritebackDCache(void* buf, s32 size) {
  * @return 0 if the DMA was enqueued successfully, -1 if the DMA could not yet be queued.
  */
 s32 osAiSetNextBuffer(void* buf, u32 size) {
-#if defined(TARGET_PSP)
-    return OotPspAudioBackend_Queue(buf, size);
+#if defined(TARGET_PSP) || defined(TARGET_PS2)
+    return OotPortAudioBackend_Queue(buf, size);
 #else
     static u8 hdwrBugFlag = false;
     u32 bufAdjusted = (u32)buf;

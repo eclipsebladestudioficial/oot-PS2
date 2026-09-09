@@ -7,6 +7,10 @@
 #include "audio.h"
 #if defined(TARGET_PSP)
 #include "oot_psp_audio_commands.h"
+#define OotPortAudioSynth_InvalidateMeCaches OotPspAudioSynth_InvalidateMeCaches
+#define OotPortAudioSynth_PublishMeAssetRange OotPspAudioSynth_PublishMeAssetRange
+#elif defined(TARGET_PS2)
+#include "oot_port_audio_commands.h"
 #endif
 
 #if defined(TARGET_PSP) && !defined(OOT_PSP_AUDIO_SOURCE_FREQUENCY)
@@ -969,7 +973,9 @@ void AudioHeap_Init(void) {
     s32 temporarySize;
     s32 cachePoolSize;
     s32 miscPoolSize;
+#if !defined(TARGET_PS2)
     OSIntMask intMask;
+#endif
     s32 i;
     s32 j;
     s32 pad2;
@@ -986,12 +992,19 @@ void AudioHeap_Init(void) {
     }
     persistentSampleBankCacheSize = 0;
     temporarySampleBankCacheSize = 0;
+#elif defined(TARGET_PS2)
+    persistentSampleBankCacheSize = 0;
+    temporarySampleBankCacheSize = 0;
 #endif
 
     // audio buffer parameters
     gAudioCtx.audioBufferParameters.samplingFrequency = samplingFrequency;
+#if defined(TARGET_PS2)
+    gAudioCtx.audioBufferParameters.aiSamplingFrequency = gAudioCtx.audioBufferParameters.samplingFrequency;
+#else
     gAudioCtx.audioBufferParameters.aiSamplingFrequency =
         osAiSetFrequency(gAudioCtx.audioBufferParameters.samplingFrequency);
+#endif
     gAudioCtx.audioBufferParameters.samplesPerFrameTarget =
         ALIGN16(gAudioCtx.audioBufferParameters.samplingFrequency / gAudioCtx.refreshRate);
     gAudioCtx.audioBufferParameters.minAiBufferLength = gAudioCtx.audioBufferParameters.samplesPerFrameTarget - 0x10;
@@ -1011,7 +1024,7 @@ void AudioHeap_Init(void) {
     // SampleDma buffer size
     gAudioCtx.sampleDmaBufSize1 = spec->sampleDmaBufSize1;
     gAudioCtx.sampleDmaBufSize2 = spec->sampleDmaBufSize2;
-#if defined(TARGET_PSP)
+#if defined(TARGET_PSP) || defined(TARGET_PS2)
     if (gAudioCtx.sampleDmaBufSize1 < 0x1000) {
         gAudioCtx.sampleDmaBufSize1 = 0x1000;
     }
@@ -1201,12 +1214,13 @@ void AudioHeap_Init(void) {
     AudioLoad_InitAsyncLoads();
     gAudioCtx.unk_4 = 0x1000;
     AudioLoad_LoadPermanentSamples();
-
+#if !defined(TARGET_PS2)
     intMask = osSetIntMask(OS_IM_NONE);
     osWritebackDCacheAll();
     osSetIntMask(intMask);
 #if defined(TARGET_PSP)
-    OotPspAudioSynth_InvalidateMeCaches();
+    OotPortAudioSynth_InvalidateMeCaches();
+#endif
 #endif
 }
 
@@ -1453,7 +1467,7 @@ void AudioHeap_UnapplySampleCache(SampleCacheEntry* entry, Sample* sample) {
             sample->sampleAddr = entry->sampleAddr;
             sample->medium = entry->origMedium;
 #if defined(TARGET_PSP)
-            OotPspAudioSynth_PublishMeAssetRange(sample, sizeof(*sample));
+            OotPortAudioSynth_PublishMeAssetRange(sample, sizeof(*sample));
 #endif
         }
     }
@@ -1543,7 +1557,7 @@ void AudioHeap_ChangeStorage(StorageChange* change, Sample* sample) {
             sample->sampleAddr += -startAddr + change->newAddr;
             sample->medium = change->newMedium;
 #if defined(TARGET_PSP)
-            OotPspAudioSynth_PublishMeAssetRange(sample, sizeof(*sample));
+            OotPortAudioSynth_PublishMeAssetRange(sample, sizeof(*sample));
 #endif
         }
     }

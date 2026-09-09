@@ -1,4 +1,3 @@
-#include <stdio.h>
 #include <string.h>
 
 #include <iopcontrol.h>
@@ -15,6 +14,7 @@
 #include "libc64/malloc.h"
 #include "map_select_state.h"
 #include "oot_port_asset_loader.h"
+#include "oot_port_controls.h"
 #include "oot_ps2_platform.h"
 #include "oot_ps2_renderer.h"
 #include "oot_ps2_runtime_patch.h"
@@ -93,39 +93,22 @@ int main(int argc, char** argv) {
     OotPs2Platform_SetDiscBoot(OotPs2BootIsDisc(executablePath));
     OotPs2Drivers_Init(executablePath);
 
-    printf("oot-ps2 boot os init begin\n");
     osInitialize();
-    printf("oot-ps2 boot os init ok\n");
-
-    printf("oot-ps2 boot renderer begin\n");
     OotPs2Renderer_Init();
-    printf("oot-ps2 boot renderer ok\n");
 
-    printf("oot-ps2 boot assets begin\n");
     if (!OotPort_AssetInit(executablePath)) {
-        printf("oot-ps2 boot assets FAILED\n");
         return 1;
     }
-    printf("oot-ps2 boot assets ok\n");
 
-    printf("oot-ps2 boot runtime patches begin\n");
     if (!OotPs2RuntimePatch_Apply()) {
-        printf("oot-ps2 boot runtime patches FAILED\n");
         return 1;
     }
-    printf("oot-ps2 boot runtime patches ok\n");
 
-    printf("oot-ps2 boot game init begin\n");
+    OotPortControls_Load();
     OotPortGame_Init();
-    printf("oot-ps2 boot game init ok\n");
-
-    printf("oot-ps2 boot graph init begin\n");
     Graph_Init(&gfxCtx);
-    printf("oot-ps2 boot graph init ok\n");
 
     while (nextInit != NULL) {
-        printf("oot-ps2 boot gamestate begin init=%p size=%lu\n",
-               (void*)nextInit, (unsigned long)nextSize);
         gameState = SYSTEM_ARENA_MALLOC(nextSize, __FILE__, __LINE__);
         if (gameState == NULL) {
             Fault_AddHungupAndCrash(__FILE__, __LINE__);
@@ -133,24 +116,9 @@ int main(int argc, char** argv) {
 
         memset(gameState, 0, nextSize);
         GameState_Init(gameState, nextInit, &gfxCtx);
-        printf("oot-ps2 boot gamestate init ok\n");
 
-        {
-            u32 debugFrame = 0;
-
-            while (GameState_IsRunning(gameState)) {
-                if (debugFrame < 4) {
-                    printf("oot-ps2 boot Graph_Update frame=%u begin\n", debugFrame);
-                }
-
-                Graph_Update(&gfxCtx, gameState);
-
-                if (debugFrame < 4) {
-                    printf("oot-ps2 boot Graph_Update frame=%u ok\n", debugFrame);
-                }
-
-                debugFrame++;
-            }
+        while (GameState_IsRunning(gameState)) {
+            Graph_Update(&gfxCtx, gameState);
         }
 
         nextInit = GameState_GetInit(gameState);

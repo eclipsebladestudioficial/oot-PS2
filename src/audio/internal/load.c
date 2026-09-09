@@ -12,6 +12,10 @@
 #include "audio.h"
 #if defined(TARGET_PSP)
 #include "oot_psp_asset_loader.h"
+#define OotPort_GetCachedAssetPointer OotPsp_GetCachedAssetPointer
+#define OotPortAudioSynth_PublishMeAssetRange OotPspAudioSynth_PublishMeAssetRange
+#elif defined(TARGET_PS2)
+#include "oot_port_asset_loader.h"
 #endif
 
 #define MK_ASYNC_MSG(retData, tableType, id, loadStatus) \
@@ -19,7 +23,7 @@
 #define ASYNC_TBLTYPE(v) ((u8)(v >> 16))
 #define ASYNC_ID(v) ((u8)(v >> 8))
 #define ASYNC_LOAD_STATUS(v) ((u8)(v >> 0))
-#if defined(TARGET_PSP)
+#if defined(TARGET_PSP) || defined(TARGET_PS2)
 #define AUDIOLOAD_SYNC_DMA_CHUNK_SIZE 0x4000
 #else
 #define AUDIOLOAD_SYNC_DMA_CHUNK_SIZE 0x400
@@ -90,27 +94,32 @@ void* sUnusedHandler = NULL;
 
 s32 gAudioContextInitialized = false;
 
-#if defined(TARGET_PSP)
-#define OOT_PSP_AUDIO_NATIVE_PTR_START 0x08000000U
-#define OOT_PSP_AUDIO_NATIVE_PTR_END   0x0C000000U
-#define OOT_PSP_AUDIO_SWAP_CACHE_SIZE 4096
+#if defined(TARGET_PSP) || defined(TARGET_PS2)
+#if defined(TARGET_PS2)
+#define OOT_PORT_AUDIO_NATIVE_PTR_START 0x00010000U
+#define OOT_PORT_AUDIO_NATIVE_PTR_END   0x02000000U
+#else
+#define OOT_PORT_AUDIO_NATIVE_PTR_START 0x08000000U
+#define OOT_PORT_AUDIO_NATIVE_PTR_END   0x0C000000U
+#endif
+#define OOT_PORT_AUDIO_SWAP_CACHE_SIZE 4096
 
-static void* sOotPspAudioSwapCache[OOT_PSP_AUDIO_SWAP_CACHE_SIZE];
-static u32 sOotPspAudioSwapCacheCount;
-static u8 sOotPspAudioBadSampleLookupLogged;
+static void* sOotPortAudioSwapCache[OOT_PORT_AUDIO_SWAP_CACHE_SIZE];
+static u32 sOotPortAudioSwapCacheCount;
+static u8 sOotPortAudioBadSampleLookupLogged;
 
-static s32 OotPspAudio_IsAlignedNativePtr(const void* ptr) {
+static s32 OotPortAudio_IsAlignedNativePtr(const void* ptr) {
     u32 addr = (u32)ptr;
 
-    return (addr >= OOT_PSP_AUDIO_NATIVE_PTR_START) && (addr < OOT_PSP_AUDIO_NATIVE_PTR_END) && ((addr & 3) == 0);
+    return (addr >= OOT_PORT_AUDIO_NATIVE_PTR_START) && (addr < OOT_PORT_AUDIO_NATIVE_PTR_END) && ((addr & 3) == 0);
 }
 
-static void* OotPspAudio_GetResidentSampleBank(u32 sampleBankId) {
+static void* OotPortAudio_GetResidentSampleBank(u32 sampleBankId) {
     AudioTable* sampleBankTable = gAudioCtx.sampleBankTable;
     AudioTableEntry* entry;
     const void* ramAddr;
 
-    if (!OotPspAudio_IsAlignedNativePtr(sampleBankTable) ||
+    if (!OotPortAudio_IsAlignedNativePtr(sampleBankTable) ||
         (sampleBankId >= (u32)sampleBankTable->header.numEntries)) {
         return NULL;
     }
@@ -120,30 +129,30 @@ static void* OotPspAudio_GetResidentSampleBank(u32 sampleBankId) {
         return NULL;
     }
 
-    ramAddr = OotPsp_GetCachedAssetPointer(entry->romAddr, entry->size);
+    ramAddr = OotPort_GetCachedAssetPointer(entry->romAddr, entry->size);
     return (void*)ramAddr;
 }
 
-static void OotPspAudio_LogBadSampleLookup(s32 fontId, s32 instId) {
-    if (!sOotPspAudioBadSampleLookupLogged) {
-        sOotPspAudioBadSampleLookupLogged = true;
-        osSyncPrintf("oot-psp audio skipped bad sample lookup font=%d inst=%d\n", fontId, instId);
+static void OotPortAudio_LogBadSampleLookup(s32 fontId, s32 instId) {
+    if (!sOotPortAudioBadSampleLookupLogged) {
+        sOotPortAudioBadSampleLookupLogged = true;
+        osSyncPrintf("oot-port audio skipped bad sample lookup font=%d inst=%d\n", fontId, instId);
     }
 }
 
-static void OotPspAudio_LogBadSamplePtr(s32 fontId, s32 instId, const Sample* sample) {
-    if (!sOotPspAudioBadSampleLookupLogged) {
-        sOotPspAudioBadSampleLookupLogged = true;
-        osSyncPrintf("oot-psp audio skipped bad sample ptr font=%d inst=%d sample=%p\n", fontId, instId, sample);
+static void OotPortAudio_LogBadSamplePtr(s32 fontId, s32 instId, const Sample* sample) {
+    if (!sOotPortAudioBadSampleLookupLogged) {
+        sOotPortAudioBadSampleLookupLogged = true;
+        osSyncPrintf("oot-port audio skipped bad sample ptr font=%d inst=%d sample=%p\n", fontId, instId, sample);
     }
 }
 
-static s32 OotPspAudio_IsSafeSamplePtr(const Sample* sample) {
-    return OotPspAudio_IsAlignedNativePtr(sample);
+static s32 OotPortAudio_IsSafeSamplePtr(const Sample* sample) {
+    return OotPortAudio_IsAlignedNativePtr(sample);
 }
 
-static s32 OotPspAudio_IsSafeSlowLoadSample(const Sample* sample) {
-    if (!OotPspAudio_IsSafeSamplePtr(sample)) {
+static s32 OotPortAudio_IsSafeSlowLoadSample(const Sample* sample) {
+    if (!OotPortAudio_IsSafeSamplePtr(sample)) {
         return false;
     }
 
@@ -158,69 +167,69 @@ static s32 OotPspAudio_IsSafeSlowLoadSample(const Sample* sample) {
     return true;
 }
 
-static u16 OotPspAudio_Bswap16(u16 value) {
+static u16 OotPortAudio_Bswap16(u16 value) {
     return (value << 8) | (value >> 8);
 }
 
-static u32 OotPspAudio_Bswap32(u32 value) {
+static u32 OotPortAudio_Bswap32(u32 value) {
     return ((value & 0x000000FF) << 24) | ((value & 0x0000FF00) << 8) | ((value & 0x00FF0000) >> 8) |
            ((value & 0xFF000000) >> 24);
 }
 
-static s16 OotPspAudio_BswapS16(s16 value) {
-    return (s16)OotPspAudio_Bswap16((u16)value);
+static s16 OotPortAudio_BswapS16(s16 value) {
+    return (s16)OotPortAudio_Bswap16((u16)value);
 }
 
-static u32 OotPspAudio_ReadBE32(const void* ptr) {
-    return OotPspAudio_Bswap32(*(u32*)ptr);
+static u32 OotPortAudio_ReadBE32(const void* ptr) {
+    return OotPortAudio_Bswap32(*(u32*)ptr);
 }
 
-static f32 OotPspAudio_BswapF32(f32 value) {
+static f32 OotPortAudio_BswapF32(f32 value) {
     union {
         u32 u;
         f32 f;
     } bits;
 
     bits.f = value;
-    bits.u = OotPspAudio_Bswap32(bits.u);
+    bits.u = OotPortAudio_Bswap32(bits.u);
     return bits.f;
 }
 
-static void OotPspAudio_ResetSwapCache(void) {
-    sOotPspAudioSwapCacheCount = 0;
+static void OotPortAudio_ResetSwapCache(void) {
+    sOotPortAudioSwapCacheCount = 0;
 }
 
-static s32 OotPspAudio_MarkConverted(void* ptr) {
+static s32 OotPortAudio_MarkConverted(void* ptr) {
     u32 i;
 
     if (ptr == NULL) {
         return false;
     }
 
-    for (i = 0; i < sOotPspAudioSwapCacheCount; i++) {
-        if (sOotPspAudioSwapCache[i] == ptr) {
+    for (i = 0; i < sOotPortAudioSwapCacheCount; i++) {
+        if (sOotPortAudioSwapCache[i] == ptr) {
             return false;
         }
     }
 
-    if (sOotPspAudioSwapCacheCount < OOT_PSP_AUDIO_SWAP_CACHE_SIZE) {
-        sOotPspAudioSwapCache[sOotPspAudioSwapCacheCount++] = ptr;
+    if (sOotPortAudioSwapCacheCount < OOT_PORT_AUDIO_SWAP_CACHE_SIZE) {
+        sOotPortAudioSwapCache[sOotPortAudioSwapCacheCount++] = ptr;
     }
     return true;
 }
 
-static void OotPspAudio_SwapEnvelope(EnvelopePoint* envelope) {
+static void OotPortAudio_SwapEnvelope(EnvelopePoint* envelope) {
     s32 i;
 
-    if (!OotPspAudio_MarkConverted(envelope)) {
+    if (!OotPortAudio_MarkConverted(envelope)) {
         return;
     }
 
     for (i = 0; i < 256; i++) {
-        s16 delay = OotPspAudio_BswapS16(envelope[i].delay);
+        s16 delay = OotPortAudio_BswapS16(envelope[i].delay);
 
         envelope[i].delay = delay;
-        envelope[i].arg = OotPspAudio_BswapS16(envelope[i].arg);
+        envelope[i].arg = OotPortAudio_BswapS16(envelope[i].arg);
 
         if ((delay == ADSR_DISABLE) || (delay == ADSR_HANG)) {
             break;
@@ -228,78 +237,78 @@ static void OotPspAudio_SwapEnvelope(EnvelopePoint* envelope) {
     }
 }
 
-static void OotPspAudio_SwapLoop(AdpcmLoop* loop) {
+static void OotPortAudio_SwapLoop(AdpcmLoop* loop) {
     s32 i;
 
-    if (!OotPspAudio_MarkConverted(loop)) {
+    if (!OotPortAudio_MarkConverted(loop)) {
         return;
     }
 
-    loop->header.start = OotPspAudio_Bswap32(loop->header.start);
-    loop->header.end = OotPspAudio_Bswap32(loop->header.end);
-    loop->header.count = OotPspAudio_Bswap32(loop->header.count);
+    loop->header.start = OotPortAudio_Bswap32(loop->header.start);
+    loop->header.end = OotPortAudio_Bswap32(loop->header.end);
+    loop->header.count = OotPortAudio_Bswap32(loop->header.count);
 
     if (loop->header.count != 0) {
         for (i = 0; i < ARRAY_COUNT(loop->predictorState); i++) {
-            loop->predictorState[i] = OotPspAudio_BswapS16(loop->predictorState[i]);
+            loop->predictorState[i] = OotPortAudio_BswapS16(loop->predictorState[i]);
         }
     }
 }
 
-static void OotPspAudio_SwapBook(AdpcmBook* book) {
+static void OotPortAudio_SwapBook(AdpcmBook* book) {
     s32 i;
     s32 count;
 
-    if (!OotPspAudio_MarkConverted(book)) {
+    if (!OotPortAudio_MarkConverted(book)) {
         return;
     }
 
-    book->header.order = OotPspAudio_Bswap32(book->header.order);
-    book->header.numPredictors = OotPspAudio_Bswap32(book->header.numPredictors);
+    book->header.order = OotPortAudio_Bswap32(book->header.order);
+    book->header.numPredictors = OotPortAudio_Bswap32(book->header.numPredictors);
     count = 8 * book->header.order * book->header.numPredictors;
 
     for (i = 0; i < count; i++) {
-        book->book[i] = OotPspAudio_BswapS16(book->book[i]);
+        book->book[i] = OotPortAudio_BswapS16(book->book[i]);
     }
 }
 
-static void OotPspAudio_SwapSample(Sample* sample) {
+static void OotPortAudio_SwapSample(Sample* sample) {
     u32 packed;
 
-    if ((sample == NULL) || !OotPspAudio_MarkConverted(sample)) {
+    if ((sample == NULL) || !OotPortAudio_MarkConverted(sample)) {
         return;
     }
 
-    packed = OotPspAudio_ReadBE32(sample);
+    packed = OotPortAudio_ReadBE32(sample);
     sample->codec = (packed >> 28) & 0xF;
     sample->medium = (packed >> 26) & 3;
     sample->unk_bit26 = (packed >> 25) & 1;
     sample->isRelocated = (packed >> 24) & 1;
     sample->size = packed & 0xFFFFFF;
-    sample->sampleAddr = (u8*)OotPspAudio_ReadBE32(&sample->sampleAddr);
-    sample->loop = (AdpcmLoop*)OotPspAudio_ReadBE32(&sample->loop);
-    sample->book = (AdpcmBook*)OotPspAudio_ReadBE32(&sample->book);
+    sample->sampleAddr = (u8*)OotPortAudio_ReadBE32(&sample->sampleAddr);
+    sample->loop = (AdpcmLoop*)OotPortAudio_ReadBE32(&sample->loop);
+    sample->book = (AdpcmBook*)OotPortAudio_ReadBE32(&sample->book);
 }
 
-static void OotPspAudio_SwapTunedSample(TunedSample* tunedSample) {
-    tunedSample->sample = (Sample*)OotPspAudio_ReadBE32(&tunedSample->sample);
-    tunedSample->tuning = OotPspAudio_BswapF32(tunedSample->tuning);
+static void OotPortAudio_SwapTunedSample(TunedSample* tunedSample) {
+    tunedSample->sample = (Sample*)OotPortAudio_ReadBE32(&tunedSample->sample);
+    tunedSample->tuning = OotPortAudio_BswapF32(tunedSample->tuning);
 }
 
-static void OotPspAudio_SwapDrum(Drum* drum) {
-    OotPspAudio_SwapTunedSample(&drum->tunedSample);
-    drum->envelope = (EnvelopePoint*)OotPspAudio_ReadBE32(&drum->envelope);
+static void OotPortAudio_SwapDrum(Drum* drum) {
+    OotPortAudio_SwapTunedSample(&drum->tunedSample);
+    drum->envelope = (EnvelopePoint*)OotPortAudio_ReadBE32(&drum->envelope);
 }
 
-static void OotPspAudio_SwapSoundEffect(SoundEffect* soundEffect) {
-    OotPspAudio_SwapTunedSample(&soundEffect->tunedSample);
+static void OotPortAudio_SwapSoundEffect(SoundEffect* soundEffect) {
+    OotPortAudio_SwapTunedSample(&soundEffect->tunedSample);
 }
 
-static void OotPspAudio_SwapInstrument(Instrument* inst) {
-    inst->envelope = (EnvelopePoint*)OotPspAudio_ReadBE32(&inst->envelope);
-    OotPspAudio_SwapTunedSample(&inst->lowPitchTunedSample);
-    OotPspAudio_SwapTunedSample(&inst->normalPitchTunedSample);
-    OotPspAudio_SwapTunedSample(&inst->highPitchTunedSample);
+static void OotPortAudio_SwapInstrument(Instrument* inst) {
+    inst->envelope = (EnvelopePoint*)OotPortAudio_ReadBE32(&inst->envelope);
+    OotPortAudio_SwapTunedSample(&inst->lowPitchTunedSample);
+    OotPortAudio_SwapTunedSample(&inst->normalPitchTunedSample);
+    OotPortAudio_SwapTunedSample(&inst->highPitchTunedSample);
 }
 #endif
 
@@ -513,8 +522,8 @@ void AudioLoad_InitSampleDmaBuffers(s32 numNotes) {
 s32 AudioLoad_IsFontLoadComplete(s32 fontId) {
     if (fontId == 0xFF) {
         return true;
-#if defined(TARGET_PSP)
-    } else if ((fontId < 0) || (fontId >= 0x30) || !OotPspAudio_IsAlignedNativePtr(gAudioCtx.soundFontTable) ||
+#if defined(TARGET_PSP) || defined(TARGET_PS2)
+    } else if ((fontId < 0) || (fontId >= 0x30) || !OotPortAudio_IsAlignedNativePtr(gAudioCtx.soundFontTable) ||
                ((u32)fontId >= (u32)gAudioCtx.soundFontTable->header.numEntries)) {
         return false;
 #endif
@@ -533,8 +542,8 @@ s32 AudioLoad_IsFontLoadComplete(s32 fontId) {
 s32 AudioLoad_IsSeqLoadComplete(s32 seqId) {
     if (seqId == 0xFF) {
         return true;
-#if defined(TARGET_PSP)
-    } else if ((seqId < 0) || (seqId >= 0x80) || !OotPspAudio_IsAlignedNativePtr(gAudioCtx.sequenceTable) ||
+#if defined(TARGET_PSP) || defined(TARGET_PS2)
+    } else if ((seqId < 0) || (seqId >= 0x80) || !OotPortAudio_IsAlignedNativePtr(gAudioCtx.sequenceTable) ||
                ((u32)seqId >= (u32)gAudioCtx.sequenceTable->header.numEntries)) {
         return false;
 #endif
@@ -553,9 +562,9 @@ s32 AudioLoad_IsSeqLoadComplete(s32 seqId) {
 s32 AudioLoad_IsSampleLoadComplete(s32 sampleBankId) {
     if (sampleBankId == 0xFF) {
         return true;
-#if defined(TARGET_PSP)
+#if defined(TARGET_PSP) || defined(TARGET_PS2)
     } else if ((sampleBankId < 0) || (sampleBankId >= 0x30) ||
-               !OotPspAudio_IsAlignedNativePtr(gAudioCtx.sampleBankTable) ||
+               !OotPortAudio_IsAlignedNativePtr(gAudioCtx.sampleBankTable) ||
                ((u32)sampleBankId >= (u32)gAudioCtx.sampleBankTable->header.numEntries)) {
         return false;
 #endif
@@ -573,7 +582,7 @@ s32 AudioLoad_IsSampleLoadComplete(s32 sampleBankId) {
  * original name: Nas_WriteIDbank
  */
 void AudioLoad_SetFontLoadStatus(s32 fontId, s32 loadStatus) {
-#if defined(TARGET_PSP)
+#if defined(TARGET_PSP) || defined(TARGET_PS2)
     if ((fontId < 0) || (fontId >= 0x30)) {
         return;
     }
@@ -587,7 +596,7 @@ void AudioLoad_SetFontLoadStatus(s32 fontId, s32 loadStatus) {
  * original name: Nas_WriteIDseq
  */
 void AudioLoad_SetSeqLoadStatus(s32 seqId, s32 loadStatus) {
-#if defined(TARGET_PSP)
+#if defined(TARGET_PSP) || defined(TARGET_PS2)
     if ((seqId < 0) || (seqId >= 0x80)) {
         return;
     }
@@ -601,7 +610,7 @@ void AudioLoad_SetSeqLoadStatus(s32 seqId, s32 loadStatus) {
  * original name: Nas_WriteIDwave
  */
 void AudioLoad_SetSampleFontLoadStatusAndApplyCaches(s32 sampleBankId, s32 loadStatus) {
-#if defined(TARGET_PSP)
+#if defined(TARGET_PSP) || defined(TARGET_PS2)
     if ((sampleBankId < 0) || (sampleBankId >= 0x30)) {
         return;
     }
@@ -622,7 +631,7 @@ void AudioLoad_SetSampleFontLoadStatusAndApplyCaches(s32 sampleBankId, s32 loadS
  * original name: Nas_WriteIDwaveOnly
  */
 void AudioLoad_SetSampleFontLoadStatus(s32 sampleBankId, s32 loadStatus) {
-#if defined(TARGET_PSP)
+#if defined(TARGET_PSP) || defined(TARGET_PS2)
     if ((sampleBankId < 0) || (sampleBankId >= 0x30)) {
         return;
     }
@@ -721,7 +730,7 @@ s32 AudioLoad_SyncLoadSample(Sample* sample, s32 fontId) {
             sample->medium = MEDIUM_RAM;
             sample->sampleAddr = sampleAddr;
 #if defined(TARGET_PSP)
-            OotPspAudioSynth_PublishMeAssetRange(sample, sizeof(*sample));
+            OotPortAudioSynth_PublishMeAssetRange(sample, sizeof(*sample));
 #endif
         }
     }
@@ -947,8 +956,8 @@ u32 AudioLoad_TrySyncLoadSampleBank(u32 sampleBankId, u32* outMedium, s32 noLoad
     s8 cachePolicy;
 
     sampleBankTable = AudioLoad_GetLoadTable(SAMPLE_TABLE);
-#if defined(TARGET_PSP)
-    ramAddr = OotPspAudio_GetResidentSampleBank(realTableId);
+#if defined(TARGET_PSP) || defined(TARGET_PS2)
+    ramAddr = OotPortAudio_GetResidentSampleBank(realTableId);
     if (ramAddr != NULL) {
         AudioLoad_SetSampleFontLoadStatus(realTableId, LOAD_STATUS_COMPLETE);
         *outMedium = MEDIUM_RAM;
@@ -1115,8 +1124,8 @@ void* AudioLoad_SyncLoad(u32 tableType, u32 id, s32* didAllocate) {
 u32 AudioLoad_GetRealTableIndex(s32 tableType, u32 id) {
     AudioTable* table = AudioLoad_GetLoadTable(tableType);
 
-#if defined(TARGET_PSP)
-    if (!OotPspAudio_IsAlignedNativePtr(table) || (id >= (u32)table->header.numEntries)) {
+#if defined(TARGET_PSP) || defined(TARGET_PS2)
+    if (!OotPortAudio_IsAlignedNativePtr(table) || (id >= (u32)table->header.numEntries)) {
         return id;
     }
 #endif
@@ -1196,8 +1205,8 @@ void AudioLoad_RelocateFont(s32 fontId, SoundFontData* fontDataStartAddr, Sample
     s32 numSfx = gAudioCtx.soundFontList[fontId].numSfx;
     u32* fontData = (u32*)fontDataStartAddr;
 
-#if defined(TARGET_PSP)
-    OotPspAudio_ResetSwapCache();
+#if defined(TARGET_PSP) || defined(TARGET_PS2)
+    OotPortAudio_ResetSwapCache();
 #endif
 
     // Relocate an offset (relative to the start of the font data) to a pointer (a ram address)
@@ -1207,8 +1216,8 @@ void AudioLoad_RelocateFont(s32 fontId, SoundFontData* fontDataStartAddr, Sample
 
     // The first u32 in fontData is an offset to a list of offsets to the drums
     soundListOffset =
-#if defined(TARGET_PSP)
-        OotPspAudio_Bswap32(fontData[0]);
+#if defined(TARGET_PSP) || defined(TARGET_PS2)
+        OotPortAudio_Bswap32(fontData[0]);
 #else
         fontData[0];
 #endif
@@ -1222,8 +1231,8 @@ void AudioLoad_RelocateFont(s32 fontId, SoundFontData* fontDataStartAddr, Sample
         for (i = 0; i < numDrums; i++) {
             // Get the i'th drum offset
             soundOffset =
-#if defined(TARGET_PSP)
-                OotPspAudio_ReadBE32(&((u32*)fontData[0])[i]);
+#if defined(TARGET_PSP) || defined(TARGET_PS2)
+                OotPortAudio_ReadBE32(&((u32*)fontData[0])[i]);
 #else
                 (u32)((Drum**)fontData[0])[i];
 #endif
@@ -1241,15 +1250,15 @@ void AudioLoad_RelocateFont(s32 fontId, SoundFontData* fontDataStartAddr, Sample
                 continue;
             }
 
-#if defined(TARGET_PSP)
-            OotPspAudio_SwapDrum(drum);
+#if defined(TARGET_PSP) || defined(TARGET_PS2)
+            OotPortAudio_SwapDrum(drum);
 #endif
             AudioLoad_RelocateSample(&drum->tunedSample, fontDataStartAddr, sampleBankReloc);
 
             soundOffset = (u32)drum->envelope;
             drum->envelope = (EnvelopePoint*)RELOC_TO_RAM(soundOffset);
-#if defined(TARGET_PSP)
-            OotPspAudio_SwapEnvelope(drum->envelope);
+#if defined(TARGET_PSP) || defined(TARGET_PS2)
+            OotPortAudio_SwapEnvelope(drum->envelope);
 #endif
 
             drum->isRelocated = true;
@@ -1260,8 +1269,8 @@ void AudioLoad_RelocateFont(s32 fontId, SoundFontData* fontDataStartAddr, Sample
 
     // The second u32 in fontData is an offset to the first sound effect entry
     soundListOffset =
-#if defined(TARGET_PSP)
-        OotPspAudio_Bswap32(fontData[1]);
+#if defined(TARGET_PSP) || defined(TARGET_PS2)
+        OotPortAudio_Bswap32(fontData[1]);
 #else
         fontData[1];
 #endif
@@ -1276,8 +1285,8 @@ void AudioLoad_RelocateFont(s32 fontId, SoundFontData* fontDataStartAddr, Sample
             // Get a pointer to the i'th sound effect
             soundOffset = (u32)(((SoundEffect*)fontData[1]) + i);
             soundEffect = (SoundEffect*)soundOffset;
-#if defined(TARGET_PSP)
-            OotPspAudio_SwapSoundEffect(soundEffect);
+#if defined(TARGET_PSP) || defined(TARGET_PS2)
+            OotPortAudio_SwapSoundEffect(soundEffect);
 #endif
 
             // Check for NULL (note: the pointer is guaranteed to be in fontData and can never be NULL)
@@ -1302,8 +1311,8 @@ void AudioLoad_RelocateFont(s32 fontId, SoundFontData* fontDataStartAddr, Sample
     for (i = 2; i <= 2 + numInstruments - 1; i++) {
         // Some instrument data entries are empty, represented by an offset of 0 in the list of instrument offsets
         soundOffset =
-#if defined(TARGET_PSP)
-            OotPspAudio_Bswap32(fontData[i]);
+#if defined(TARGET_PSP) || defined(TARGET_PS2)
+            OotPortAudio_Bswap32(fontData[i]);
 #else
             fontData[i];
 #endif
@@ -1313,8 +1322,8 @@ void AudioLoad_RelocateFont(s32 fontId, SoundFontData* fontDataStartAddr, Sample
 
             // The instrument may be in the list multiple times and already relocated
             if (!inst->isRelocated) {
-#if defined(TARGET_PSP)
-                OotPspAudio_SwapInstrument(inst);
+#if defined(TARGET_PSP) || defined(TARGET_PS2)
+                OotPortAudio_SwapInstrument(inst);
 #endif
                 // Some instruments have a different sample for low pitches
                 if (inst->normalRangeLo != 0) {
@@ -1331,8 +1340,8 @@ void AudioLoad_RelocateFont(s32 fontId, SoundFontData* fontDataStartAddr, Sample
 
                 soundOffset = (u32)inst->envelope;
                 inst->envelope = (EnvelopePoint*)RELOC_TO_RAM(soundOffset);
-#if defined(TARGET_PSP)
-                OotPspAudio_SwapEnvelope(inst->envelope);
+#if defined(TARGET_PSP) || defined(TARGET_PS2)
+                OotPortAudio_SwapEnvelope(inst->envelope);
 #endif
 
                 inst->isRelocated = true;
@@ -1471,9 +1480,9 @@ void* AudioLoad_AsyncLoadInner(s32 tableType, s32 id, s32 nChunks, s32 retData, 
             break;
     }
 
-#if defined(TARGET_PSP)
+#if defined(TARGET_PSP) || defined(TARGET_PS2)
     if (tableType == SAMPLE_TABLE) {
-        ramAddr = OotPspAudio_GetResidentSampleBank(realId);
+        ramAddr = OotPortAudio_GetResidentSampleBank(realId);
         if (ramAddr != NULL) {
             loadStatus = LOAD_STATUS_COMPLETE;
             AudioLoad_SetSampleFontLoadStatus(realId, loadStatus);
@@ -1626,6 +1635,7 @@ void AudioLoad_Init(void* heap, u32 heapSize) {
 #endif
     }
 
+
     // 1000 is a conversion from seconds to milliseconds
 #if !OOT_PAL_N64
     switch (osTvType) {
@@ -1709,7 +1719,6 @@ void AudioLoad_Init(void* heap, u32 heapSize) {
 
     gAudioCtx.specId = 0;
     gAudioCtx.resetStatus = 1; // Set reset to immediately initialize the audio heap
-
     AudioHeap_ResetStep();
 
     // Initialize audio tables
@@ -1748,9 +1757,9 @@ s32 AudioLoad_SlowLoadSample(s32 fontId, s32 instId, s8* status) {
     Sample* sample;
     AudioSlowLoad* slowLoad;
 
-#if defined(TARGET_PSP)
+#if defined(TARGET_PSP) || defined(TARGET_PS2)
     if (instId < 0) {
-        OotPspAudio_LogBadSampleLookup(fontId, instId);
+        OotPortAudio_LogBadSampleLookup(fontId, instId);
         *status = 0;
         return -1;
     }
@@ -1761,9 +1770,9 @@ s32 AudioLoad_SlowLoadSample(s32 fontId, s32 instId, s8* status) {
         *status = 0;
         return -1;
     }
-#if defined(TARGET_PSP)
-    if (!OotPspAudio_IsSafeSlowLoadSample(sample)) {
-        OotPspAudio_LogBadSamplePtr(fontId, instId, sample);
+#if defined(TARGET_PSP) || defined(TARGET_PS2)
+    if (!OotPortAudio_IsSafeSlowLoadSample(sample)) {
+        OotPortAudio_LogBadSamplePtr(fontId, instId, sample);
         *status = 0;
         return -1;
     }
@@ -1815,9 +1824,9 @@ s32 AudioLoad_SlowLoadSample(s32 fontId, s32 instId, s8* status) {
 Sample* AudioLoad_GetFontSample(s32 fontId, s32 instId) {
     Sample* sample;
 
-#if defined(TARGET_PSP)
+#if defined(TARGET_PSP) || defined(TARGET_PS2)
     if (instId < 0) {
-        OotPspAudio_LogBadSampleLookup(fontId, instId);
+        OotPortAudio_LogBadSampleLookup(fontId, instId);
         return NULL;
     }
 #endif
@@ -1844,9 +1853,9 @@ Sample* AudioLoad_GetFontSample(s32 fontId, s32 instId) {
         }
         sample = soundEffect->tunedSample.sample;
     }
-#if defined(TARGET_PSP)
-    if ((sample != NULL) && !OotPspAudio_IsSafeSamplePtr(sample)) {
-        OotPspAudio_LogBadSamplePtr(fontId, instId, sample);
+#if defined(TARGET_PSP) || defined(TARGET_PS2)
+    if ((sample != NULL) && !OotPortAudio_IsSafeSamplePtr(sample)) {
+        OotPortAudio_LogBadSamplePtr(fontId, instId, sample);
         return NULL;
     }
 #endif
@@ -1870,9 +1879,9 @@ void AudioLoad_FinishSlowLoad(AudioSlowLoad* slowLoad) {
     if (sample == NULL) {
         return;
     }
-#if defined(TARGET_PSP)
-    if (!OotPspAudio_IsSafeSlowLoadSample(sample)) {
-        OotPspAudio_LogBadSamplePtr(slowLoad->seqOrFontId, slowLoad->instId, sample);
+#if defined(TARGET_PSP) || defined(TARGET_PS2)
+    if (!OotPortAudio_IsSafeSlowLoadSample(sample)) {
+        OotPortAudio_LogBadSamplePtr(slowLoad->seqOrFontId, slowLoad->instId, sample);
         return;
     }
 #endif
@@ -1881,7 +1890,7 @@ void AudioLoad_FinishSlowLoad(AudioSlowLoad* slowLoad) {
     sample->sampleAddr = slowLoad->ramAddr;
     sample->medium = MEDIUM_RAM;
 #if defined(TARGET_PSP)
-    OotPspAudioSynth_PublishMeAssetRange(sample, sizeof(*sample));
+    OotPortAudioSynth_PublishMeAssetRange(sample, sizeof(*sample));
 #endif
 }
 
@@ -2248,8 +2257,8 @@ void AudioLoad_RelocateSample(TunedSample* tunedSample, SoundFontData* fontData,
     if ((u32)tunedSample->sample <= AUDIO_RELOCATED_ADDRESS_START) {
 
         sample = tunedSample->sample = AUDIO_RELOC(tunedSample->sample, fontData);
-#if defined(TARGET_PSP)
-        OotPspAudio_SwapSample(sample);
+#if defined(TARGET_PSP) || defined(TARGET_PS2)
+        OotPortAudio_SwapSample(sample);
 #endif
 
         // If the sample exists and has not already been relocated
@@ -2257,9 +2266,9 @@ void AudioLoad_RelocateSample(TunedSample* tunedSample, SoundFontData* fontData,
         if ((sample->size != 0) && (sample->isRelocated != true)) {
             sample->loop = AUDIO_RELOC(sample->loop, fontData);
             sample->book = AUDIO_RELOC(sample->book, fontData);
-#if defined(TARGET_PSP)
-            OotPspAudio_SwapLoop(sample->loop);
-            OotPspAudio_SwapBook(sample->book);
+#if defined(TARGET_PSP) || defined(TARGET_PS2)
+            OotPortAudio_SwapLoop(sample->loop);
+            OotPortAudio_SwapBook(sample->book);
 #endif
 
             // Resolve the sample medium 2-bit bitfield into a real value based on sampleBankReloc.
@@ -2410,7 +2419,7 @@ void AudioLoad_RelocateFontAndPreloadSamples(s32 fontId, SoundFontData* fontData
 
         /* Relocation and endian conversion happen after the asset read. Make
          * that final pointer graph visible and evict any stale ME copy once. */
-        OotPspAudioSynth_PublishMeAssetRange(fontData, ALIGN16(fontTable->entries[realFontId].size));
+        OotPortAudioSynth_PublishMeAssetRange(fontData, ALIGN16(fontTable->entries[realFontId].size));
     }
 #endif
 }
@@ -2449,7 +2458,7 @@ s32 AudioLoad_ProcessSamplePreloads(s32 resetStatus) {
                 sample->sampleAddr = preload->ramAddr;
                 sample->medium = MEDIUM_RAM;
 #if defined(TARGET_PSP)
-                OotPspAudioSynth_PublishMeAssetRange(sample, sizeof(*sample));
+                OotPortAudioSynth_PublishMeAssetRange(sample, sizeof(*sample));
 #endif
             }
             preload->isFree = true;
@@ -2675,7 +2684,7 @@ void AudioLoad_PreloadSamplesForFont(s32 fontId, s32 async, SampleBankRelocInfo*
                     sample->medium = MEDIUM_RAM;
                 }
 #if defined(TARGET_PSP)
-                OotPspAudioSynth_PublishMeAssetRange(sample, sizeof(*sample));
+                OotPortAudioSynth_PublishMeAssetRange(sample, sizeof(*sample));
 #endif
                 break;
 

@@ -1473,6 +1473,11 @@ Acmd* AudioSynth_ProcessNote(s32 noteIndex, NoteSubEu* noteSubEu, NoteSynthesisS
 
                 nFirstFrameSamplesToIgnore = synthState->samplePosInt & 0xF;
                 nSamplesUntilLoopEnd = loopEndPos - synthState->samplePosInt;
+#if defined(TARGET_PS2)
+                if (nSamplesUntilLoopEnd < 0) {
+                    nSamplesUntilLoopEnd = 0;
+                }
+#endif
                 nSamplesToProcess = samplesLenAdjusted - nSamplesProcessed;
 
                 if (nFirstFrameSamplesToIgnore == 0 && !synthState->restart) {
