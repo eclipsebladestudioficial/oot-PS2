@@ -116,6 +116,7 @@ int main(int argc, char** argv) {
 
         memset(gameState, 0, nextSize);
         GameState_Init(gameState, nextInit, &gfxCtx);
+        OotPs2Input_SetPlayState(nextInit == Play_Init ? gameState : NULL);
 
         while (GameState_IsRunning(gameState)) {
             Graph_Update(&gfxCtx, gameState);
@@ -123,6 +124,7 @@ int main(int argc, char** argv) {
 
         nextInit = GameState_GetInit(gameState);
         nextSize = gameState->size != 0 ? gameState->size : OotPs2StateSize(nextInit);
+        OotPs2Input_SetPlayState(NULL);
         GameState_Destroy(gameState);
         SYSTEM_ARENA_FREE(gameState, __FILE__, __LINE__);
     }

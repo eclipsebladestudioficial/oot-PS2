@@ -150,6 +150,7 @@ static PreNmiBuff sPs2PreNmiBuffer;
 u8 gOotPortSystemHeap[OOT_PORT_SYSTEM_HEAP_SIZE] __attribute__((aligned(64)));
 static u8 sPs2Sram[SRAM_SIZE] __attribute__((aligned(64)));
 static u16 sPs2Framebuffers[2][SCREEN_HEIGHT][SCREEN_WIDTH] __attribute__((aligned(64)));
+static PlayState* sPs2InputPlayState;
 u16 D_0E000000[SCREEN_HEIGHT * SCREEN_WIDTH] __attribute__((aligned(64)));
 u16 D_0F000000[SCREEN_HEIGHT * SCREEN_WIDTH] __attribute__((aligned(64)));
 static uintptr_t sSysCfbFbPtr[2];
@@ -615,6 +616,26 @@ s32 DmaMgr_AudioDmaHandler(UNUSED OSPiHandle* pihandle, OSIoMesg* mb, UNUSED s32
         osSendMesg(mb->hdr.retQueue, mb, OS_MESG_NOBLOCK);
     }
     return 0;
+}
+
+void OotPs2Input_SetPlayState(void* playState) {
+    sPs2InputPlayState = (PlayState*)playState;
+}
+
+static s32 OotPs2Input_FirstPersonAimActive(void) {
+    Camera* camera;
+
+    if (sPs2InputPlayState == NULL) {
+        return false;
+    }
+
+    camera = GET_ACTIVE_CAM(sPs2InputPlayState);
+    if (camera == NULL) {
+        return false;
+    }
+
+    return camera->mode == CAM_MODE_FIRST_PERSON || camera->mode == CAM_MODE_AIM_ADULT ||
+           camera->mode == CAM_MODE_AIM_CHILD;
 }
 
 void PadMgr_RequestPadData(PadMgr* padMgr, Input* inputs, s32 gameRequest) {
