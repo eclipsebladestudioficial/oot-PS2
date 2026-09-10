@@ -25,7 +25,5 @@ void OotPortControls_CycleBinding(int index, int direction);
 int OotPortControls_GetDeadzone(void);
 void OotPortControls_SetDeadzone(int deadzone);
 void OotPortControls_AdjustDeadzone(int delta);
-int OotPortControls_IsN64StickScalingEnabled(void);
-void OotPortControls_SetN64StickScalingEnabled(int enabled);
 
 #endif

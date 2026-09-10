@@ -617,7 +617,7 @@ s32 DmaMgr_AudioDmaHandler(UNUSED OSPiHandle* pihandle, OSIoMesg* mb, UNUSED s32
     return 0;
 }
 
-void PadMgr_RequestPadData(PadMgr* padMgr, Input* inputs, UNUSED s32 gameRequest) {
+void PadMgr_RequestPadData(PadMgr* padMgr, Input* inputs, s32 gameRequest) {
     OSContPad pads[MAXCONTROLLERS];
     Input* input = &inputs[0];
 
@@ -626,6 +626,13 @@ void PadMgr_RequestPadData(PadMgr* padMgr, Input* inputs, UNUSED s32 gameRequest
 
     input->prev = padMgr->inputs[0].cur;
     input->cur = pads[0];
+
+    if (OotPs2Input_FirstPersonAimActive() &&
+        (sPs2InputPlayState == NULL || !IS_PAUSED(&sPs2InputPlayState->pauseCtx))) {
+        input->cur.stick_x /= 2;
+        input->cur.stick_y /= 2;
+    }
+
     input->press.button = (input->cur.button ^ input->prev.button) & input->cur.button;
     input->press.stick_x = input->cur.stick_x - input->prev.stick_x;
     input->press.stick_y = input->cur.stick_y - input->prev.stick_y;
@@ -634,7 +641,11 @@ void PadMgr_RequestPadData(PadMgr* padMgr, Input* inputs, UNUSED s32 gameRequest
     input->rel.stick_y = input->cur.stick_y;
 
     memset(&inputs[1], 0, sizeof(Input) * (MAXCONTROLLERS - 1));
-    padMgr->inputs[0] = *input;
+
+    if (gameRequest) {
+        padMgr->inputs[0] = *input;
+    }
+
     padMgr->validCtrlrsMask = 1;
     padMgr->ctrlrIsConnected[0] = true;
     padMgr->nControllers = 1;

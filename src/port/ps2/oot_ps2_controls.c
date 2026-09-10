@@ -56,7 +56,6 @@ static const OotPs2N64Action sN64Actions[] = {
 };
 
 static int sDeadzone;
-static int sN64StickScalingEnabled;
 static int sInitialized;
 
 static int OotPortControls_StrIcmp(const char* a, const char* b) {
@@ -181,7 +180,6 @@ void OotPortControls_InitDefaults(void) {
     }
 
     sDeadzone = 0;
-    sN64StickScalingEnabled = true;
     sInitialized = true;
 }
 
@@ -271,15 +269,8 @@ s32 OotPortControls_Load(void) {
             if (bindingIndex >= 0) {
                 sButtonBindings[bindingIndex].n64Mask = OotPortControls_ParseActionList(value);
             }
-        } else if (section == 2) {
-            if (OotPortControls_StrIcmp(key, "deadzone") == 0) {
-                OotPortControls_SetDeadzone(atoi(value));
-            } else if (OotPortControls_StrIcmp(key, "n64_stick_scaling") == 0) {
-                OotPortControls_SetN64StickScalingEnabled((OotPortControls_StrIcmp(value, "off") != 0) &&
-                                                          (OotPortControls_StrIcmp(value, "false") != 0) &&
-                                                          (OotPortControls_StrIcmp(value, "no") != 0) &&
-                                                          (OotPortControls_StrIcmp(value, "0") != 0));
-            }
+        } else if (section == 2 && OotPortControls_StrIcmp(key, "deadzone") == 0) {
+            OotPortControls_SetDeadzone(atoi(value));
         }
     }
 
@@ -315,7 +306,6 @@ s32 OotPortControls_Save(void) {
 
     OOT_PS2_CONTROLS_APPEND("\n[analog]\n");
     OOT_PS2_CONTROLS_APPEND("deadzone = %d\n", sDeadzone);
-    OOT_PS2_CONTROLS_APPEND("n64_stick_scaling = %s\n", sN64StickScalingEnabled ? "on" : "off");
 
 #undef OOT_PS2_CONTROLS_APPEND
 
@@ -347,21 +337,11 @@ u16 OotPortControls_MapButtons(u32 buttons) {
 
 s8 OotPortControls_MapStick(u8 raw) {
     s32 centered = (s32)raw - 128;
-    s32 magnitude;
 
     OotPortControls_EnsureInitialized();
 
     if (centered >= -sDeadzone && centered <= sDeadzone) {
         centered = 0;
-    }
-
-    if (sN64StickScalingEnabled) {
-        magnitude = centered < 0 ? -centered : centered;
-        if (magnitude > 127) {
-            magnitude = 127;
-        }
-        magnitude = ((magnitude * 80) + 63) / 127;
-        centered = centered < 0 ? -magnitude : magnitude;
     }
 
     if (centered < -80) {
@@ -451,13 +431,4 @@ void OotPortControls_SetDeadzone(int deadzone) {
 
 void OotPortControls_AdjustDeadzone(int delta) {
     OotPortControls_SetDeadzone(sDeadzone + delta);
-}
-
-int OotPortControls_IsN64StickScalingEnabled(void) {
-    OotPortControls_EnsureInitialized();
-    return sN64StickScalingEnabled;
-}
-
-void OotPortControls_SetN64StickScalingEnabled(int enabled) {
-    sN64StickScalingEnabled = enabled != 0;
 }

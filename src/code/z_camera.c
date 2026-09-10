@@ -26,6 +26,10 @@
 #include "save.h"
 #include "overlays/actors/ovl_En_Horse/z_en_horse.h"
 
+#if defined(TARGET_PS2)
+extern void OotPs2_GetRightStick(int* x, int* y);
+#endif
+
 #pragma increment_block_number "gc-eu:128 gc-eu-mq:128 gc-jp:128 gc-jp-ce:128 gc-jp-mq:128 gc-us:128 gc-us-mq:128" \
                                "ique-cn:64 ntsc-1.0:128 ntsc-1.1:128 ntsc-1.2:128 pal-1.0:128 pal-1.1:128"
 
@@ -1679,11 +1683,15 @@ s32 Camera_Normal1(Camera* camera) {
     if (camera->xzSpeed > 0.001f) {
         rwData->startSwingTimer = CAM_GLOBAL_50 + CAM_GLOBAL_51;
     } else if (rwData->startSwingTimer > 0) {
+#if defined(TARGET_PS2)
+        rwData->startSwingTimer = CAM_GLOBAL_50 + CAM_GLOBAL_51;
+#else
         if (rwData->startSwingTimer > CAM_GLOBAL_50) {
             rwData->swingYawTarget = atEyeGeo.yaw + ((s16)((s16)(camera->playerPosRot.rot.y - 0x7FFF) - atEyeGeo.yaw) /
                                                      rwData->startSwingTimer);
         }
         rwData->startSwingTimer--;
+#endif
     }
 
     spA0 = camera->speedRatio * CAM_UPDATE_RATE_STEP_SCALE_XZ;
@@ -1767,6 +1775,21 @@ s32 Camera_Normal1(Camera* camera) {
         eyeAdjustment.pitch =
             Camera_CalcDefaultPitch(camera, atEyeNextGeo.pitch, roData->pitchTarget, rwData->slopePitchAdj);
     }
+
+#if defined(TARGET_PS2)
+    {
+        int camStickX = 0;
+        int camStickY = 0;
+
+        OotPs2_GetRightStick(&camStickX, &camStickY);
+        if (camStickX != 0 || camStickY != 0) {
+            eyeAdjustment.yaw -= (s16)(camStickX * 8);
+            eyeAdjustment.pitch += (s16)(camStickY * 5);
+            rwData->swingYawTarget = eyeAdjustment.yaw;
+            rwData->startSwingTimer = CAM_GLOBAL_50 + CAM_GLOBAL_51;
+        }
+    }
+#endif
 
     // set eyeAdjustment pitch from 79.65 degrees to -85 degrees
     if (eyeAdjustment.pitch > 0x38A4) {
