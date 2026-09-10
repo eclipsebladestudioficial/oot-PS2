@@ -293,7 +293,7 @@ s32 Room_DecodeJpeg(void* data) {
         PRINTF(T("ワークバッファアドレス（Ｚバッファ）%08x\n", "Work buffer address (Z buffer) %08x\n"), gZBuffer);
 
         time = osGetTime();
-#if defined(TARGET_PSP)
+#if defined(TARGET_PSP) || defined(TARGET_PS2)
         if (!Jpeg_Decode(data, data, gGfxSPTaskOutputBuffer, sizeof(gGfxSPTaskOutputBuffer))) {
 #else
         if (!Jpeg_Decode(data, gZBuffer, gGfxSPTaskOutputBuffer, sizeof(gGfxSPTaskOutputBuffer))) {
@@ -302,7 +302,7 @@ s32 Room_DecodeJpeg(void* data) {
 
             PRINTF(T("成功…だと思う。 time = %6.3f ms \n", "Success... I think. time = %6.3f ms\n"),
                    OS_CYCLES_TO_USEC(time) / 1000.0f);
-#if !defined(TARGET_PSP)
+#if !defined(TARGET_PSP) && !defined(TARGET_PS2)
             PRINTF(T("ワークバッファから元のアドレスに書き戻します。\n",
                      "Writing back to original address from work buffer.\n"));
             PRINTF(T("元のバッファのサイズが150キロバイト無いと暴走するでしょう。\n",

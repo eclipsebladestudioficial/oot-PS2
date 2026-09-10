@@ -35,12 +35,12 @@
 typedef enum JpegByteLayout {
     JPEG_BYTE_LAYOUT_INVALID,
     JPEG_BYTE_LAYOUT_DIRECT,
-    JPEG_BYTE_LAYOUT_PSP_TEXTURE_WORDS,
+    JPEG_BYTE_LAYOUT_TEXTURE_WORDS,
 } JpegByteLayout;
 
 static u8 Jpeg_ReadByteWithLayout(const u8* data, size_t offset, JpegByteLayout layout) {
-#if defined(TARGET_PSP)
-    if (layout == JPEG_BYTE_LAYOUT_PSP_TEXTURE_WORDS) {
+#if defined(TARGET_PSP) || defined(TARGET_PS2)
+    if (layout == JPEG_BYTE_LAYOUT_TEXTURE_WORDS) {
         return data[offset ^ 7U];
     }
 #else
@@ -55,9 +55,11 @@ static JpegByteLayout Jpeg_GetByteLayout(const u8* data) {
         return JPEG_BYTE_LAYOUT_DIRECT;
     }
 
-#if defined(TARGET_PSP)
-    if ((data[7] == 0xFF) && (data[6] == MARKER_SOI) && (data[5] == 0xFF)) {
-        return JPEG_BYTE_LAYOUT_PSP_TEXTURE_WORDS;
+#if defined(TARGET_PSP) || defined(TARGET_PS2)
+    if ((Jpeg_ReadByteWithLayout(data, 0, JPEG_BYTE_LAYOUT_TEXTURE_WORDS) == 0xFF) &&
+        (Jpeg_ReadByteWithLayout(data, 1, JPEG_BYTE_LAYOUT_TEXTURE_WORDS) == MARKER_SOI) &&
+        (Jpeg_ReadByteWithLayout(data, 2, JPEG_BYTE_LAYOUT_TEXTURE_WORDS) == 0xFF)) {
+        return JPEG_BYTE_LAYOUT_TEXTURE_WORDS;
     }
 #endif
 
@@ -504,7 +506,7 @@ static s32 JpegPsp_Decode(void* data, void* output) {
      * image still has to preserve that byte layout because the PSP texture importer
      * reads the room segment through the same mapped texture-word path.
      */
-    textureWords = (layout == JPEG_BYTE_LAYOUT_PSP_TEXTURE_WORDS) ||
+    textureWords = (layout == JPEG_BYTE_LAYOUT_TEXTURE_WORDS) ||
                    OotPsp_IsNativeExternalTextureRange(output, JPEG_PSP_RGBA16_SIZE);
     memset(dst, 0, JPEG_PSP_RGBA16_SIZE);
 
@@ -522,7 +524,7 @@ static s32 JpegPsp_Decode(void* data, void* output) {
     }
 
     sceKernelDcacheWritebackRange(dst, JPEG_PSP_RGBA16_SIZE);
-    if ((layout == JPEG_BYTE_LAYOUT_PSP_TEXTURE_WORDS) ||
+    if ((layout == JPEG_BYTE_LAYOUT_TEXTURE_WORDS) ||
         OotPsp_IsNativeExternalTextureRange(output, JPEG_PSP_RGBA16_SIZE)) {
         JpegPsp_RecordDecodedImage(output);
     }
@@ -541,6 +543,17 @@ s32 Jpeg_Decode(void* data, void* zbuffer, void* work, u32 workSize) {
     (void)workSize;
 
     return JpegPsp_Decode(data, zbuffer);
+#elif defined(TARGET_PS2) && defined(OOT_PS2_PREDECODED_JPEG_ASSETS)
+    static s32 sWarned;
+    (void)data;
+    (void)zbuffer;
+    (void)work;
+    (void)workSize;
+    if (!sWarned) {
+        osSyncPrintf("oot-ps2 compressed room JPEG found in outdated asset pack\n");
+        sWarned = true;
+    }
+    return -1;
 #else
     s32 y;
     s32 x;

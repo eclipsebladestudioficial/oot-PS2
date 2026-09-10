@@ -6,6 +6,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <setjmp.h>
+#include <jpeglib.h>
 #include <zlib.h>
 
 #define OOT_PS2_INPUT_ROM_PATH "baserom.z64"
@@ -20,6 +22,148 @@
 #define OOT_PS2_IO_CHUNK_SIZE 0x4000U
 #define OOT_PS2_IO_ZERO_RETRY_COUNT 16
 #define OOT_PS2_IO_ZERO_RETRY_USEC 1000
+#define OOT_PS2_PRERENDER_WIDTH 320U
+#define OOT_PS2_PRERENDER_HEIGHT 240U
+#define OOT_PS2_PRERENDER_RGBA16_SIZE (OOT_PS2_PRERENDER_WIDTH * OOT_PS2_PRERENDER_HEIGHT * 2U)
+
+typedef struct OotPs2AssetSetupJpegError {
+    struct jpeg_error_mgr base;
+    jmp_buf jump;
+} OotPs2AssetSetupJpegError;
+
+static void OotPs2AssetSetup_JpegErrorExit(j_common_ptr common) {
+    OotPs2AssetSetupJpegError* error = (OotPs2AssetSetupJpegError*)common->err;
+    longjmp(error->jump, 1);
+}
+
+static u8 OotPs2AssetSetup_ReadTextureWordByte(const u8* data, size_t base, size_t offset) {
+    return data[base + (offset ^ 7U)];
+}
+
+static s32 OotPs2AssetSetup_ExtractTextureWordJpeg(const u8* data, size_t size, size_t base, u8* output,
+                                                   size_t outputCapacity, size_t* outputSize) {
+    size_t capacity;
+    size_t offset;
+    u8 previous = 0;
+
+    if ((base & 7U) != 0 || base + 8U > size ||
+        OotPs2AssetSetup_ReadTextureWordByte(data, base, 0) != 0xFF ||
+        OotPs2AssetSetup_ReadTextureWordByte(data, base, 1) != 0xD8 ||
+        OotPs2AssetSetup_ReadTextureWordByte(data, base, 2) != 0xFF) {
+        return false;
+    }
+
+    capacity = size - base;
+    if (capacity > OOT_PS2_PRERENDER_RGBA16_SIZE) {
+        capacity = OOT_PS2_PRERENDER_RGBA16_SIZE;
+    }
+    if (capacity > outputCapacity) {
+        capacity = outputCapacity;
+    }
+
+    for (offset = 0; offset < capacity; offset++) {
+        u8 current = OotPs2AssetSetup_ReadTextureWordByte(data, base, offset);
+        output[offset] = current;
+        if (previous == 0xFF && current == 0xD9) {
+            *outputSize = offset + 1U;
+            return true;
+        }
+        previous = current;
+    }
+
+    return false;
+}
+
+static void OotPs2AssetSetup_WriteTextureWordRgba16(u8* data, size_t base, size_t pixelIndex, u8 r, u8 g, u8 b) {
+    size_t offset = pixelIndex * 2U;
+    u16 value = (u16)(((r >> 3) << 11) | ((g >> 3) << 6) | ((b >> 3) << 1) | 1);
+
+    data[base + (offset ^ 7U)] = (u8)(value >> 8);
+    data[base + ((offset + 1U) ^ 7U)] = (u8)value;
+}
+
+static s32 OotPs2AssetSetup_DecodePrerenderJpeg(u8* data, size_t size, size_t base, u8* jpegInput,
+                                                size_t jpegInputCapacity) {
+    struct jpeg_decompress_struct decoder;
+    OotPs2AssetSetupJpegError error;
+    JSAMPROW rows[1];
+    u8 row[OOT_PS2_PRERENDER_WIDTH * 3U];
+    size_t jpegSize = 0;
+    size_t y;
+
+    if (!OotPs2AssetSetup_ExtractTextureWordJpeg(data, size, base, jpegInput, jpegInputCapacity, &jpegSize)) {
+        return 0;
+    }
+
+    memset(&decoder, 0, sizeof(decoder));
+    memset(&error, 0, sizeof(error));
+    decoder.err = jpeg_std_error(&error.base);
+    error.base.error_exit = OotPs2AssetSetup_JpegErrorExit;
+    if (setjmp(error.jump) != 0) {
+        if (decoder.mem != NULL) {
+            jpeg_destroy_decompress(&decoder);
+        }
+        return 0;
+    }
+
+    jpeg_create_decompress(&decoder);
+    jpeg_mem_src(&decoder, jpegInput, jpegSize);
+    jpeg_read_header(&decoder, TRUE);
+    if (decoder.image_width != OOT_PS2_PRERENDER_WIDTH || decoder.image_height != OOT_PS2_PRERENDER_HEIGHT) {
+        jpeg_destroy_decompress(&decoder);
+        return 0;
+    }
+
+    decoder.out_color_space = JCS_RGB;
+    jpeg_start_decompress(&decoder);
+    if (decoder.output_width != OOT_PS2_PRERENDER_WIDTH || decoder.output_height != OOT_PS2_PRERENDER_HEIGHT ||
+        decoder.output_components != 3) {
+        jpeg_abort_decompress(&decoder);
+        jpeg_destroy_decompress(&decoder);
+        return 0;
+    }
+
+    for (y = 0; y < OOT_PS2_PRERENDER_HEIGHT; y++) {
+        size_t x;
+        rows[0] = row;
+        if (jpeg_read_scanlines(&decoder, rows, 1) != 1) {
+            jpeg_abort_decompress(&decoder);
+            jpeg_destroy_decompress(&decoder);
+            return 0;
+        }
+        for (x = 0; x < OOT_PS2_PRERENDER_WIDTH; x++) {
+            size_t rgb = x * 3U;
+            OotPs2AssetSetup_WriteTextureWordRgba16(data, base, y * OOT_PS2_PRERENDER_WIDTH + x,
+                                                     row[rgb], row[rgb + 1U], row[rgb + 2U]);
+        }
+    }
+
+    jpeg_finish_decompress(&decoder);
+    jpeg_destroy_decompress(&decoder);
+    return 1;
+}
+
+static s32 OotPs2AssetSetup_PredecodePrerenderJpegs(u8* data, size_t size, const OotPortExternalAsset* asset,
+                                                    u8* jpegInput, size_t jpegInputCapacity) {
+    size_t offset = 0;
+    s32 decoded = 0;
+
+    if ((asset->flags & OOT_PORT_EXTERNAL_ASSET_TEXTURE_WORDS) == 0 || strstr(asset->name, "_room_") == NULL ||
+        size < OOT_PS2_PRERENDER_RGBA16_SIZE) {
+        return 0;
+    }
+
+    while (offset + OOT_PS2_PRERENDER_RGBA16_SIZE <= size) {
+        if (OotPs2AssetSetup_DecodePrerenderJpeg(data, size, offset, jpegInput, jpegInputCapacity)) {
+            decoded++;
+            offset += OOT_PS2_PRERENDER_RGBA16_SIZE;
+        } else {
+            offset += 8U;
+        }
+    }
+
+    return decoded;
+}
 
 typedef struct OotPs2DmaEntry {
     u32 vromStart;
@@ -142,6 +286,53 @@ static s32 OotPs2AssetSetup_FileHasSize(const char* path, size_t expectedSize) {
     size = OotPs2File_Seek(fd, 0, OOT_PS2_SEEK_END);
     OotPs2File_Close(fd);
     return (size >= 0) && ((size_t)size == expectedSize);
+}
+
+static s32 OotPs2AssetSetup_PackHasCompressedPrerenderJpeg(const char* path) {
+    const OotPortExternalAsset* asset = NULL;
+    OotPs2Handle fd;
+    u8 buffer[OOT_PS2_IO_CHUNK_SIZE];
+    size_t i;
+    size_t offset;
+    size_t size;
+
+    for (i = 0; i < gOotPortExternalAssetCount; i++) {
+        if (strcmp(gOotPortExternalAssets[i].name, "link_home_room_0") == 0) {
+            asset = &gOotPortExternalAssets[i];
+            break;
+        }
+    }
+    if (asset == NULL) {
+        return false;
+    }
+
+    fd = OotPs2File_Open(path, OOT_PS2_FILE_RDONLY, 0);
+    if (fd < 0) {
+        return false;
+    }
+
+    size = asset->vromEnd - asset->vromStart;
+    for (offset = 0; offset < size; offset += sizeof(buffer)) {
+        size_t chunk = size - offset;
+        size_t j;
+        if (chunk > sizeof(buffer)) {
+            chunk = sizeof(buffer);
+        }
+        if (!OotPs2AssetSetup_ReadAt(fd, (u32)(asset->fileOffset + offset), buffer, chunk)) {
+            OotPs2File_Close(fd);
+            return false;
+        }
+        for (j = 0; j + 8U <= chunk; j += 8U) {
+            if ((buffer[j] == 0xFF && buffer[j + 1U] == 0xD8 && buffer[j + 2U] == 0xFF) ||
+                (buffer[j + 7U] == 0xFF && buffer[j + 6U] == 0xD8 && buffer[j + 5U] == 0xFF)) {
+                OotPs2File_Close(fd);
+                return true;
+            }
+        }
+    }
+
+    OotPs2File_Close(fd);
+    return false;
 }
 
 static s32 OotPs2AssetSetup_CopyFile(const char* sourcePath, const char* destinationPath) {
@@ -569,7 +760,9 @@ static s32 OotPs2AssetSetup_Build(OotPs2Handle romFd, const char* outputPath, co
     u32 nativeSeen = 0;
     OotPs2DmaEntry* dmaEntries = NULL;
     OotPs2Handle outputFd = -1;
+    u8* jpegInput = NULL;
     size_t assetIndex;
+    u32 jpegCount = 0;
     s32 ok = false;
 
     if ((compressedSize < 12) || (memcmp(compressed, "OPZ4", 4) != 0)) {
@@ -599,6 +792,12 @@ static s32 OotPs2AssetSetup_Build(OotPs2Handle romFd, const char* outputPath, co
 
     if (!OotPs2AssetSetup_LoadDmaTable(romFd, dmaEntries)) {
         OotPs2AssetSetup_ShowError("Could not read the ROM file table");
+        goto cleanup;
+    }
+
+    jpegInput = malloc(OOT_PS2_PRERENDER_RGBA16_SIZE);
+    if (jpegInput == NULL) {
+        OotPs2AssetSetup_ShowError("Not enough memory for JPEG conversion");
         goto cleanup;
     }
 
@@ -659,6 +858,9 @@ static s32 OotPs2AssetSetup_Build(OotPs2Handle romFd, const char* outputPath, co
                 goto cleanup;
             }
 
+            jpegCount += OotPs2AssetSetup_PredecodePrerenderJpegs(data, assetSize, asset, jpegInput,
+                                                                  OOT_PS2_PRERENDER_RGBA16_SIZE);
+
             if (!OotPs2AssetSetup_WriteAt(outputFd, asset->fileOffset, data, assetSize)) {
                 OotPs2AssetSetup_ShowError("Could not write the asset file");
                 free(data);
@@ -679,6 +881,10 @@ static s32 OotPs2AssetSetup_Build(OotPs2Handle romFd, const char* outputPath, co
 
     if ((nativeSeen != manifestEntryCount) || (manifestCursor != manifestEnd)) {
         OotPs2AssetSetup_ShowError("Conversion data did not match the ROM");
+        goto cleanup;
+    }
+    if (jpegCount == 0) {
+        OotPs2AssetSetup_ShowError("Could not predecode room JPEGs");
         goto cleanup;
     }
 
@@ -703,6 +909,7 @@ cleanup:
     if (outputFd >= 0) {
         OotPs2File_Close(outputFd);
     }
+    free(jpegInput);
     free(dmaEntries);
     return ok;
 }
@@ -725,7 +932,8 @@ s32 OotPs2AssetSetup_Ensure(void) {
                    (gOotPortExternalAssets[gOotPortExternalAssetCount - 1].vromEnd -
                     gOotPortExternalAssets[gOotPortExternalAssetCount - 1].vromStart);
 
-    if (OotPs2AssetSetup_FileHasSize(outputPath, expectedSize)) {
+    if (OotPs2AssetSetup_FileHasSize(outputPath, expectedSize) &&
+        !OotPs2AssetSetup_PackHasCompressedPrerenderJpeg(outputPath)) {
         return true;
     }
 
