@@ -270,8 +270,8 @@ static struct RSP {
     uint8_t modelview_matrix_stack_size;
 
     Light_t current_lights[MAX_LIGHTS + 1];
-    float current_lights_coeffs[MAX_LIGHTS][3];
-    float current_lookat_coeffs[2][3];
+    float current_lights_coeffs[MAX_LIGHTS][4] __attribute__((aligned(16)));
+    float current_lookat_coeffs[2][4] __attribute__((aligned(16)));
     uint8_t current_num_lights;
     bool lights_changed;
 
@@ -1188,23 +1188,50 @@ static inline float vec3_dot(const float *lhs, const float *rhs){
     return (lhs[0]*rhs[0]) + (lhs[1]*rhs[1]) + (lhs[2]*rhs[2]);
 }
 
-static inline float vec4_dot(const float *lhs, const float *rhs){
-    return (lhs[0]*rhs[0]) + (lhs[1]*rhs[1]) + (lhs[2]*rhs[2])+ (lhs[3]*rhs[3]);
+static inline __attribute__((always_inline)) float vec4_dot(const float *lhs, const float *rhs) {
+    union {
+        uint32_t bits;
+        float value;
+    } result;
+    uint64_t packed;
+
+    __asm__ volatile(
+        "lqc2 $vf13, 0(%[lhs])\n"
+        "lqc2 $vf14, 0(%[rhs])\n"
+        "vmul $vf15, $vf13, $vf14\n"
+        "vaddy.x $vf15, $vf15, $vf15\n"
+        "vaddz.x $vf15, $vf15, $vf15\n"
+        "vaddw.x $vf15, $vf15, $vf15\n"
+        "qmfc2 %[packed], $vf15\n"
+        : [packed] "=r"(packed)
+        : [lhs] "r"(lhs), [rhs] "r"(rhs)
+        : "memory");
+
+    result.bits = (uint32_t)packed;
+    return result.value;
 }
 
-void gfx_clip_interpolate_vert(struct LoadedVertex* out, const struct  LoadedVertex* lhs, const struct LoadedVertex* rhs, const float factor )
-{
+void gfx_clip_interpolate_vert(struct LoadedVertex* out, const struct LoadedVertex* lhs,
+                               const struct LoadedVertex* rhs, const float factor) {
+    float factorVec[4] __attribute__((aligned(16))) = { factor, factor, factor, factor };
 
-    out->x = lhs->x + (rhs->x - lhs->x) * factor;
-    out->y = lhs->y + (rhs->y - lhs->y) * factor;
-    out->z = lhs->z + (rhs->z - lhs->z) * factor;
-
-    out->w = lhs->w + (rhs->w - lhs->w) * factor;
-
-    out->_x = lhs->_x + (rhs->_x - lhs->_x) * factor;
-    out->_y = lhs->_y + (rhs->_y - lhs->_y) * factor;
-    out->_z = lhs->_z + (rhs->_z - lhs->_z) * factor;
-    out->_w = lhs->_w + (rhs->_w - lhs->_w) * factor;
+    __asm__ volatile(
+        "lqc2 $vf13, 0(%[lhs])\n"
+        "lqc2 $vf14, 0(%[rhs])\n"
+        "lqc2 $vf15, 0(%[factor])\n"
+        "vsub $vf16, $vf14, $vf13\n"
+        "vmul $vf16, $vf16, $vf15\n"
+        "vadd $vf16, $vf13, $vf16\n"
+        "sqc2 $vf16, 0(%[out])\n"
+        "lqc2 $vf13, 16(%[lhs])\n"
+        "lqc2 $vf14, 16(%[rhs])\n"
+        "vsub $vf16, $vf14, $vf13\n"
+        "vmul $vf16, $vf16, $vf15\n"
+        "vadd $vf16, $vf13, $vf16\n"
+        "sqc2 $vf16, 16(%[out])\n"
+        :
+        : [out] "r"(out), [lhs] "r"(lhs), [rhs] "r"(rhs), [factor] "r"(factorVec)
+        : "memory");
 
     out->color.r = lhs->color.r + (rhs->color.r - lhs->color.r) * factor;
     out->color.g = lhs->color.g + (rhs->color.g - lhs->color.g) * factor;
@@ -3749,26 +3776,47 @@ static uint8_t gfx_clamp_num_lights(uint32_t num_lights) {
     return (num_lights > max_lights_with_ambient) ? max_lights_with_ambient : num_lights;
 }
 
-static void calculate_normal_dir(const Light_t *light, float coeffs[3]) {
-    float light_dir[3] = {
-        light->dir[0] / 127.0f,
-        light->dir[1] / 127.0f,
-        light->dir[2] / 127.0f
+static void calculate_normal_dir(const Light_t *light, float coeffs[4]) {
+    float lightDir[4] __attribute__((aligned(16))) = {
+        light->dir[0] * (1.0f / 127.0f),
+        light->dir[1] * (1.0f / 127.0f),
+        light->dir[2] * (1.0f / 127.0f),
+        0.0f,
     };
     const float (*matrix)[4] = rsp.modelview_matrix_stack[rsp.modelview_matrix_stack_size - 1];
-    float dot;
+    float dotValue;
 
-    coeffs[0] = light_dir[0] * matrix[0][0] + light_dir[1] * matrix[0][1] + light_dir[2] * matrix[0][2];
-    coeffs[1] = light_dir[0] * matrix[1][0] + light_dir[1] * matrix[1][1] + light_dir[2] * matrix[1][2];
-    coeffs[2] = light_dir[0] * matrix[2][0] + light_dir[1] * matrix[2][1] + light_dir[2] * matrix[2][2];
+    __asm__ volatile(
+        "lqc2 $vf1, 0(%[matrix])\n"
+        "lqc2 $vf2, 16(%[matrix])\n"
+        "lqc2 $vf3, 32(%[matrix])\n"
+        "lqc2 $vf4, 0(%[dir])\n"
+        "vmul $vf5, $vf1, $vf4\n"
+        "vaddy.x $vf5, $vf5, $vf5\n"
+        "vaddz.x $vf5, $vf5, $vf5\n"
+        "vmul $vf6, $vf2, $vf4\n"
+        "vaddy.x $vf6, $vf6, $vf6\n"
+        "vaddz.x $vf6, $vf6, $vf6\n"
+        "vmul $vf7, $vf3, $vf4\n"
+        "vaddy.x $vf7, $vf7, $vf7\n"
+        "vaddz.x $vf7, $vf7, $vf7\n"
+        "vsub $vf8, $vf0, $vf0\n"
+        "vaddx.x $vf8, $vf0, $vf5\n"
+        "vaddx.y $vf8, $vf0, $vf6\n"
+        "vaddx.z $vf8, $vf0, $vf7\n"
+        "sqc2 $vf8, 0(%[coeffs])\n"
+        :
+        : [matrix] "r"(matrix), [dir] "r"(lightDir), [coeffs] "r"(coeffs)
+        : "memory");
 
-    dot = coeffs[0] * coeffs[0] + coeffs[1] * coeffs[1] + coeffs[2] * coeffs[2];
-    if (dot > 0.00001f) {
-        const float scale = 1.0f / sqrtf(dot);
+    dotValue = coeffs[0] * coeffs[0] + coeffs[1] * coeffs[1] + coeffs[2] * coeffs[2];
+    if (dotValue > 0.00001f) {
+        const float scale = 1.0f / sqrtf(dotValue);
         coeffs[0] *= scale;
         coeffs[1] *= scale;
         coeffs[2] *= scale;
     }
+    coeffs[3] = 0.0f;
 }
 
 static void gfx_matrix_mul(float res[4][4], const float a[4][4], const float b[4][4]) {
@@ -3848,6 +3896,81 @@ static inline __attribute__((always_inline)) void gfx_ps2_vu0_transform_vec4_res
         :
         : [out] "r"(out), [in] "r"(in)
         : "memory");
+}
+
+static inline __attribute__((always_inline)) void gfx_ps2_vu0_load_resident_vertex_params(
+    const float projectionParams[4], const float fogParams[4]) {
+    __asm__ volatile(
+        "lqc2 $vf7, 0(%[projection])\n"
+        "lqc2 $vf8, 0(%[fog])\n"
+        :
+        : [projection] "r"(projectionParams), [fog] "r"(fogParams)
+        : "memory");
+}
+
+static inline __attribute__((always_inline)) float gfx_ps2_vu0_dot3(const float lhs[4], const float rhs[4]) {
+    union {
+        uint32_t bits;
+        float value;
+    } result;
+    uint64_t packed;
+
+    __asm__ volatile(
+        "lqc2 $vf13, 0(%[lhs])\n"
+        "lqc2 $vf14, 0(%[rhs])\n"
+        "vmul $vf15, $vf13, $vf14\n"
+        "vaddy.x $vf15, $vf15, $vf15\n"
+        "vaddz.x $vf15, $vf15, $vf15\n"
+        "qmfc2 %[packed], $vf15\n"
+        : [packed] "=r"(packed)
+        : [lhs] "r"(lhs), [rhs] "r"(rhs)
+        : "memory");
+
+    result.bits = (uint32_t)packed;
+    return result.value;
+}
+
+static inline __attribute__((always_inline)) void gfx_ps2_vu0_transform_project_resident(
+    struct LoadedVertex* dest, const float in[4], uint32_t* clipFlags, uint32_t* fogAlpha) {
+    uint64_t fogPacked;
+    uint32_t vuClipFlags;
+
+    __asm__ volatile(
+        "lqc2 $vf5, 0(%[in])\n"
+        "vmulax $ACC, $vf1, $vf5\n"
+        "vmadday $ACC, $vf2, $vf5\n"
+        "vmaddaz $ACC, $vf3, $vf5\n"
+        "vmaddw $vf6, $vf4, $vf5\n"
+        "vmulx.x $vf6, $vf6, $vf7\n"
+        "vaddw.x $vf9, $vf0, $vf6\n"
+        "vmuly.x $vf9, $vf9, $vf7\n"
+        "vadd.x $vf6, $vf6, $vf9\n"
+        "sqc2 $vf6, 16(%[dest])\n"
+        "vclipw.xyz $vf6, $vf6\n"
+        "vdiv $Q, $vf0w, $vf6w\n"
+        "vwaitq\n"
+        "vmulq $vf9, $vf6, $Q\n"
+        "vsub $vf10, $vf0, $vf0\n"
+        "vaddq.x $vf10, $vf0, $Q\n"
+        "vaddx.y $vf10, $vf0, $vf9\n"
+        "vaddy.z $vf10, $vf0, $vf9\n"
+        "vaddz.w $vf10, $vf0, $vf9\n"
+        "vmulz.w $vf10, $vf10, $vf7\n"
+        "sqc2 $vf10, 0(%[dest])\n"
+        "vaddz.x $vf11, $vf0, $vf9\n"
+        "vmulx.x $vf11, $vf11, $vf8\n"
+        "vaddy.x $vf11, $vf11, $vf8\n"
+        "vmaxx.x $vf11, $vf11, $vf0\n"
+        "vminiw.x $vf11, $vf11, $vf7\n"
+        "vftoi0.x $vf11, $vf11\n"
+        "qmfc2 %[fog], $vf11\n"
+        "cfc2 %[clip], $18\n"
+        : [fog] "=r"(fogPacked), [clip] "=r"(vuClipFlags)
+        : [dest] "r"(dest), [in] "r"(in)
+        : "memory");
+
+    *clipFlags = ((vuClipFlags & 0x03U) << 4) | (vuClipFlags & 0x0CU) | ((vuClipFlags & 0x30U) >> 4);
+    *fogAlpha = (uint32_t)fogPacked;
 }
 
 static inline void gfx_upload_projection_matrix(const float matrix[4][4]) {
@@ -4042,12 +4165,24 @@ static bool gfx_sp_vertex(size_t n_vertices, size_t dest_index, const Vtx *verti
 #if OOT_PS2_DEEP_PROFILE
     const uint32_t ps2DeepStart = gfx_ps2_read_count();
 #endif
-    float temp_vec[4] __attribute__((aligned(16)));
-    float model_vec[4] __attribute__((aligned(16)));
-    float proj_vec[4] __attribute__((aligned(16)));
+    float tempVec[4] __attribute__((aligned(16)));
+    float normalVec[4] __attribute__((aligned(16)));
     const float hudAnchorOffsetNdc = sHudViewportFullscreen ? sHudAnchorOffsetNdc : 0.0f;
+    float projectionParams[4] __attribute__((aligned(16))) = {
+        sNdcAspectScale,
+        hudAnchorOffsetNdc,
+        0.5f,
+        255.0f,
+    };
+    float fogParams[4] __attribute__((aligned(16))) = {
+        (float)rsp.fog_mul,
+        (float)rsp.fog_offset,
+        0.0f,
+        0.0f,
+    };
     const uint32_t geometryMode = rsp.geometry_mode;
     const uint8_t directionalLightCount = rsp.current_num_lights - 1;
+
     if ((n_vertices == 0) || (dest_index >= MAX_VERTICES) ||
         (n_vertices > (MAX_VERTICES - dest_index)) || (vertices == NULL)) {
         if (n_vertices != 0) {
@@ -4055,6 +4190,7 @@ static bool gfx_sp_vertex(size_t n_vertices, size_t dest_index, const Vtx *verti
         }
         return n_vertices == 0;
     }
+
     if ((geometryMode & G_LIGHTING) && rsp.lights_changed) {
         static const Light_t lookat_x = {{0, 0, 0}, 0, {0, 0, 0}, 0, {127, 0, 0}, 0};
         static const Light_t lookat_y = {{0, 0, 0}, 0, {0, 0, 0}, 0, {0, 127, 0}, 0};
@@ -4073,27 +4209,47 @@ static bool gfx_sp_vertex(size_t n_vertices, size_t dest_index, const Vtx *verti
                        rsp.P_matrix);
         sPs2MvpDirty = false;
     }
+
     gfx_ps2_vu0_load_resident_mvp(sPs2MvpMatrix);
+    gfx_ps2_vu0_load_resident_vertex_params(projectionParams, fogParams);
 
     for (size_t i = 0; i < n_vertices; i++, dest_index++) {
         const Vtx_t *v = &vertices[i].v;
         const Vtx_tn *vn = &vertices[i].n;
         struct LoadedVertex *d = &rsp.loaded_vertices[dest_index];
+        uint32_t clipRej;
+        uint32_t fogAlphaVu;
+        float w;
 
-        temp_vec[0] = v->ob[0];
-        temp_vec[1] = v->ob[1];
-        temp_vec[2] = v->ob[2];
-        temp_vec[3] = 1.0f;
+        tempVec[0] = v->ob[0];
+        tempVec[1] = v->ob[1];
+        tempVec[2] = v->ob[2];
+        tempVec[3] = 1.0f;
 
-        gfx_ps2_vu0_transform_vec4_resident(proj_vec, temp_vec);
+        gfx_ps2_vu0_transform_project_resident(d, tempVec, &clipRej, &fogAlphaVu);
+        w = d->_w;
 
-        float w = proj_vec[3];
-        float x = gfx_adjust_x_for_aspect_ratio(proj_vec[0]);
-        const float y = proj_vec[1];
-        const float z = proj_vec[2];
+        if (!__builtin_isfinite(w) || w < 0.0001f) {
+            const float x = d->_x;
+            const float y = d->_y;
+            const float z = d->_z;
 
-        if (hudAnchorOffsetNdc != 0.0f) {
-            x += hudAnchorOffsetNdc * w;
+            clipRej = 0;
+            if (x < -w) clipRej |= X_POS;
+            if (x > w) clipRej |= X_NEG;
+            if (y < -w) clipRej |= Y_POS;
+            if (y > w) clipRej |= Y_NEG;
+            if (z < -w) clipRej |= Z_POS;
+            if (z > w) clipRej |= Z_NEG;
+            clipRej |= W_NEG;
+        }
+        d->clip_rej = clipRej;
+
+        if (!__builtin_isfinite(w) || fabsf(w) <= 0.000001f) {
+            d->x = 1.0f;
+            d->y = d->_x;
+            d->z = d->_y;
+            d->w = (d->_z + w) * 0.5f;
         }
 
         short U = v->tc[0] * rsp.texture_scaling_factor.s >> 16;
@@ -4104,16 +4260,18 @@ static bool gfx_sp_vertex(size_t n_vertices, size_t dest_index, const Vtx *verti
             unsigned int g = rsp.current_lights[directionalLightCount].col[1];
             unsigned int b = rsp.current_lights[directionalLightCount].col[2];
 
-            for (int i = 0; i < directionalLightCount; i++) {
-                float intensity = 0;
-                intensity += vn->n[0] * rsp.current_lights_coeffs[i][0];
-                intensity += vn->n[1] * rsp.current_lights_coeffs[i][1];
-                intensity += vn->n[2] * rsp.current_lights_coeffs[i][2];
+            normalVec[0] = (float)vn->n[0];
+            normalVec[1] = (float)vn->n[1];
+            normalVec[2] = (float)vn->n[2];
+            normalVec[3] = 0.0f;
+
+            for (int lightIndex = 0; lightIndex < directionalLightCount; lightIndex++) {
+                float intensity = gfx_ps2_vu0_dot3(normalVec, rsp.current_lights_coeffs[lightIndex]);
                 intensity *= (1.0f / 127.0f);
                 if (intensity > 0.0f) {
-                    r += intensity * rsp.current_lights[i].col[0];
-                    g += intensity * rsp.current_lights[i].col[1];
-                    b += intensity * rsp.current_lights[i].col[2];
+                    r += intensity * rsp.current_lights[lightIndex].col[0];
+                    g += intensity * rsp.current_lights[lightIndex].col[1];
+                    b += intensity * rsp.current_lights[lightIndex].col[2];
                 }
             }
 
@@ -4122,13 +4280,8 @@ static bool gfx_sp_vertex(size_t n_vertices, size_t dest_index, const Vtx *verti
             d->color.b = b > 255 ? 255 : b;
 
             if (geometryMode & G_TEXTURE_GEN) {
-                float dotx = 0, doty = 0;
-                dotx += vn->n[0] * rsp.current_lookat_coeffs[0][0];
-                dotx += vn->n[1] * rsp.current_lookat_coeffs[0][1];
-                dotx += vn->n[2] * rsp.current_lookat_coeffs[0][2];
-                doty += vn->n[0] * rsp.current_lookat_coeffs[1][0];
-                doty += vn->n[1] * rsp.current_lookat_coeffs[1][1];
-                doty += vn->n[2] * rsp.current_lookat_coeffs[1][2];
+                const float dotx = gfx_ps2_vu0_dot3(normalVec, rsp.current_lookat_coeffs[0]);
+                const float doty = gfx_ps2_vu0_dot3(normalVec, rsp.current_lookat_coeffs[1]);
 
                 U = (int32_t)((dotx * (1.0f / 127.0f) + 1.0f) * 0.25f * rsp.texture_scaling_factor.s);
                 V = (int32_t)((doty * (1.0f / 127.0f) + 1.0f) * 0.25f * rsp.texture_scaling_factor.t);
@@ -4141,32 +4294,17 @@ static bool gfx_sp_vertex(size_t n_vertices, size_t dest_index, const Vtx *verti
 
         d->u = U;
         d->v = V;
-
-        uint32_t clipRej = 0;
-        if (x < -w) clipRej |= X_POS;
-        if (x > w) clipRej |= X_NEG;
-        if (y < -w) clipRej |= Y_POS;
-        if (y > w) clipRej |= Y_NEG;
-        if (z < -w) clipRej |= Z_POS;
-        if (z > w) clipRej |= Z_NEG;
-        if (!__builtin_isfinite(w) || w < 0.0001f) clipRej |= W_NEG;
-        d->clip_rej = clipRej;
-
-        d->x = (fabsf(w) > 0.000001f) ? (1.0f / w) : 1.0f;
-        d->y = x * d->x;
-        d->z = y * d->x;
-        d->w = (z + w) * 0.5f * d->x;
         d->screen_serial = 0U;
 
-        d->_x = x;
-        d->_y = y;
-        d->_z = z;
-        d->_w = w;
         if ((geometryMode & G_FOG) && w > 0.0f) {
-            float fogAlpha = (z * d->x) * rsp.fog_mul + rsp.fog_offset;
-            if (fogAlpha < 0.0f) fogAlpha = 0.0f;
-            if (fogAlpha > 255.0f) fogAlpha = 255.0f;
-            d->fog_alpha = (uint8_t)fogAlpha;
+            if (__builtin_isfinite(w) && fabsf(w) > 0.000001f) {
+                d->fog_alpha = (uint8_t)fogAlphaVu;
+            } else {
+                float fogAlpha = (d->_z * d->x) * rsp.fog_mul + rsp.fog_offset;
+                if (fogAlpha < 0.0f) fogAlpha = 0.0f;
+                if (fogAlpha > 255.0f) fogAlpha = 255.0f;
+                d->fog_alpha = (uint8_t)fogAlpha;
+            }
         } else {
             d->fog_alpha = 0;
         }

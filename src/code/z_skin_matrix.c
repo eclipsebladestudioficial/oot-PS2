@@ -8,6 +8,8 @@
 
 #if defined(TARGET_PSP)
 #include "port/psp/oot_psp_vfpu_matrix.h"
+#elif defined(TARGET_PS2)
+#include "port/ps2/oot_ps2_vu0_matrix.h"
 #endif
 
 // clang-format off
@@ -32,6 +34,11 @@ void SkinMatrix_Vec3fMtxFMultXYZW(MtxF* mf, Vec3f* src, Vec3f* xyzDest, f32* wDe
 #if defined(TARGET_PSP)
     OotPspVfpu_MtxFMultVec3fW(mf, src, xyzDest, wDest);
 #else
+#if defined(TARGET_PS2)
+    if (OotPs2Vu0_MtxFMultVec3fW(mf, src, xyzDest, wDest)) {
+        return;
+    }
+#endif
     xyzDest->x = mf->xw + ((src->x * mf->xx) + (src->y * mf->xy) + (src->z * mf->xz));
     xyzDest->y = mf->yw + ((src->x * mf->yx) + (src->y * mf->yy) + (src->z * mf->yz));
     xyzDest->z = mf->zw + ((src->x * mf->zx) + (src->y * mf->zy) + (src->z * mf->zz));
@@ -51,6 +58,11 @@ void SkinMatrix_Vec3fMtxFMultXYZ(MtxF* mf, Vec3f* src, Vec3f* dest) {
 #if defined(TARGET_PSP)
     OotPspVfpu_MtxFMultVec3f(mf, src, dest);
 #else
+#if defined(TARGET_PS2)
+    if (OotPs2Vu0_MtxFMultVec3f(mf, src, dest)) {
+        return;
+    }
+#endif
     f32 mx = mf->xx;
     f32 my = mf->xy;
     f32 mz = mf->xz;
@@ -78,6 +90,11 @@ void SkinMatrix_MtxFMtxFMult(MtxF* mfA, MtxF* mfB, MtxF* dest) {
 #if defined(TARGET_PSP)
     OotPspVfpu_MtxFMult(mfA, mfB, dest);
 #else
+#if defined(TARGET_PS2)
+    if (OotPs2Vu0_MtxFMult(mfA, mfB, dest)) {
+        return;
+    }
+#endif
     f32 cx;
     f32 cy;
     f32 cz;
