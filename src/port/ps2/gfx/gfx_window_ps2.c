@@ -355,6 +355,9 @@ static void GfxPs2Window_AllocPauseBackground(void) {
     sPauseBackgroundBytes = __real_gsKit_texture_size(OOT_PS2_PAUSE_BG_WIDTH, OOT_PS2_PAUSE_BG_HEIGHT,
                                                        OOT_PS2_PAUSE_BG_PSM);
     sPauseBackgroundVram = __real_gsKit_vram_alloc(gs_global, sPauseBackgroundBytes, GSKIT_ALLOC_SYSBUFFER);
+    if (sPauseBackgroundVram != GSKIT_ALLOC_ERROR) {
+      gs_global->TexturePointer = gs_global->CurrentPointer;
+    }
 }
 
 static void GfxPs2Window_QueueFrameState(u32 frameAddr, u32 framePsm, u32 frameWidth,

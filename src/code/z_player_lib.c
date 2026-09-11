@@ -2103,7 +2103,7 @@ static void Player_SetPauseJointTable(SkelAnime* skelAnime, s32 sword, s32 shiel
     }
 }
 
-#if PLATFORM_PSP
+#if PLATFORM_PSP || defined(TARGET_PS2)
 void Player_DrawPauseOnPage(PlayState* play, u8* segment, SkelAnime* skelAnime, Vec3f* pos, Vec3s* rot, f32 scale,
                             s32 sword, s32 tunic, s32 shield, s32 boots) {
     static Lights1 lights1 = gdSPDefLights1(80, 80, 80, 255, 255, 255, 84, 84, -84);

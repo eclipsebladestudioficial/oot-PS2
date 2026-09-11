@@ -6,13 +6,13 @@
 #include "z_kaleido_scope.h"
 #include "z_lib.h"
 #include "play_state.h"
-#if PLATFORM_PSP
+#if PLATFORM_PSP || defined(TARGET_PS2)
 #include "segmented_address.h"
 #endif
 
 #include "assets/textures/parameter_static/parameter_static.h"
 
-#if PLATFORM_PSP
+#if PLATFORM_PSP || defined(TARGET_PS2)
 #define PAUSE_MAP_MARK_TEXTURE(ptr) SEGMENTED_TO_VIRTUAL(ptr)
 #else
 #define PAUSE_MAP_MARK_TEXTURE(ptr) (ptr)

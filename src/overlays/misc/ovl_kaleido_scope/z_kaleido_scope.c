@@ -29,6 +29,8 @@
 #include "save.h"
 #if PLATFORM_PSP
 #include "oot_psp_renderer.h"
+#elif defined(TARGET_PS2)
+#include "oot_ps2_renderer.h"
 #endif
 
 #include "assets/textures/icon_item_static/icon_item_static.h"
@@ -43,17 +45,17 @@
 #endif
 #include "assets/textures/icon_item_gameover_static/icon_item_gameover_static.h"
 
-#if PLATFORM_PSP
+#if PLATFORM_PSP || defined(TARGET_PS2)
 void KaleidoScope_UpdateCursorVtx(PlayState* play);
 
 #define KALEIDO_SEGMENTED_PTR(ptr) SEGMENTED_TO_VIRTUAL(ptr)
 #define KALEIDO_SEGMENTED_DL(dl) ((Gfx*)SEGMENTED_TO_VIRTUAL(dl))
 
-static void KaleidoScope_SetPspSegmentBase(s32 segment, void* base) {
+static void KaleidoScope_SetPortSegmentBase(s32 segment, void* base) {
     gSegments[segment] = (base != NULL) ? OS_K0_TO_PHYSICAL(base) : 0;
 }
 
-static void KaleidoScope_RestorePspGameplaySegments(PlayState* play) {
+static void KaleidoScope_RestorePortGameplaySegments(PlayState* play) {
     Player* player = GET_PLAYER(play);
 
     gSegments[2] = OS_K0_TO_PHYSICAL(play->sceneSegment);
@@ -974,7 +976,7 @@ static PreRender sPlayerPreRender;
 void* sPreRenderCvg;
 
 void KaleidoScope_SetupPlayerPreRender(PlayState* play) {
-#if PLATFORM_PSP
+#if PLATFORM_PSP || defined(TARGET_PS2)
     return;
 #else
     Gfx* gfx;
@@ -1004,7 +1006,7 @@ void KaleidoScope_SetupPlayerPreRender(PlayState* play) {
 }
 
 void KaleidoScope_ProcessPlayerPreRender(void) {
-#if !PLATFORM_PSP
+#if !PLATFORM_PSP && !defined(TARGET_PS2)
     Sleep_Msec(50);
     PreRender_ApplyFilters(&sPlayerPreRender);
     PreRender_Destroy(&sPlayerPreRender);
@@ -1071,9 +1073,9 @@ void KaleidoScope_MoveCursorToSpecialPos(PlayState* play, u16 specialPos) {
 }
 
 void KaleidoScope_DrawQuadTextureRGBA32(GraphicsContext* gfxCtx, void* texture, u16 width, u16 height, u16 point) {
-#if PLATFORM_PSP
-    /* Callers pass asset symbols here. Resolve them as segmented addresses even
-     * when segment 9 numerically overlaps the PSP system heap. */
+#if PLATFORM_PSP || defined(TARGET_PS2)
+    /* Port backends use host pointers for these assets. Resolve explicit segmented
+     * symbols before recording the texture load. */
     texture = SEGMENTED_TO_VIRTUAL_EXPLICIT(texture);
 #else
     texture = KALEIDO_SEGMENTED_PTR(texture);
@@ -1211,7 +1213,7 @@ void KaleidoScope_DrawCursor(PlayState* play, u16 pageIndex) {
         if (pauseCtx->pageIndex == pageIndex) {
 
             // Draw PAUSE_CURSOR_QUAD_TL, PAUSE_CURSOR_QUAD_TR, PAUSE_CURSOR_QUAD_BL, PAUSE_CURSOR_QUAD_BR
-#if PLATFORM_PSP
+#if PLATFORM_PSP || defined(TARGET_PS2)
             KaleidoScope_UpdateCursorVtx(play);
 #endif
 
@@ -3490,15 +3492,15 @@ void KaleidoScope_Draw(PlayState* play) {
     pauseCtx->stickAdjX = input->rel.stick_x;
     pauseCtx->stickAdjY = input->rel.stick_y;
 
-#if PLATFORM_PSP
-    KaleidoScope_SetPspSegmentBase(0x02, interfaceCtx->parameterSegment);
-    KaleidoScope_SetPspSegmentBase(0x07, pauseCtx->playerSegment);
-    KaleidoScope_SetPspSegmentBase(0x08, pauseCtx->iconItemSegment);
-    KaleidoScope_SetPspSegmentBase(0x09, pauseCtx->iconItem24Segment);
-    KaleidoScope_SetPspSegmentBase(0x0A, pauseCtx->nameSegment);
-    KaleidoScope_SetPspSegmentBase(0x0B, interfaceCtx->mapSegment);
-    KaleidoScope_SetPspSegmentBase(0x0C, pauseCtx->iconItemAltSegment);
-    KaleidoScope_SetPspSegmentBase(0x0D, pauseCtx->iconItemLangSegment);
+#if PLATFORM_PSP || defined(TARGET_PS2)
+    KaleidoScope_SetPortSegmentBase(0x02, interfaceCtx->parameterSegment);
+    KaleidoScope_SetPortSegmentBase(0x07, pauseCtx->playerSegment);
+    KaleidoScope_SetPortSegmentBase(0x08, pauseCtx->iconItemSegment);
+    KaleidoScope_SetPortSegmentBase(0x09, pauseCtx->iconItem24Segment);
+    KaleidoScope_SetPortSegmentBase(0x0A, pauseCtx->nameSegment);
+    KaleidoScope_SetPortSegmentBase(0x0B, interfaceCtx->mapSegment);
+    KaleidoScope_SetPortSegmentBase(0x0C, pauseCtx->iconItemAltSegment);
+    KaleidoScope_SetPortSegmentBase(0x0D, pauseCtx->iconItemLangSegment);
 #endif
     gSPSegment(POLY_OPA_DISP++, 0x02, interfaceCtx->parameterSegment);
     gSPSegment(POLY_OPA_DISP++, 0x07, pauseCtx->playerSegment);
@@ -3598,7 +3600,7 @@ void KaleidoScope_UpdateCursorVtx(PlayState* play) {
     s16 tlOffsetY;
     s16 bottomOffsetY;
     s16 rightOffsetX;
-#if PLATFORM_PSP
+#if PLATFORM_PSP || defined(TARGET_PS2)
     s16 baseX;
     s16 baseY;
 #endif
@@ -3664,7 +3666,7 @@ void KaleidoScope_UpdateCursorVtx(PlayState* play) {
     // and the position of the cursor in `pauseCtx->cursorVtx[0].v.ob`
     // (see `KaleidoScope_SetCursorPos` and other `PAUSE_CURSOR_QUAD_TL` uses)
 
-#if PLATFORM_PSP
+#if PLATFORM_PSP || defined(TARGET_PS2)
     baseX = pauseCtx->cursorVtx[0].v.ob[0] + tlOffsetX;
     baseY = pauseCtx->cursorVtx[0].v.ob[1] + tlOffsetY;
 
@@ -3831,8 +3833,8 @@ void KaleidoScope_Update(PlayState* play) {
             size1 = Player_InitPauseDrawData(play, pauseCtx->playerSegment, &pauseCtx->playerSkelAnime);
             PRINTF(T("プレイヤー size1＝%x\n", "Player size1=%x\n"), size1);
 
-#if PLATFORM_PSP
-            KaleidoScope_SetPspSegmentBase(0x07, pauseCtx->playerSegment);
+#if PLATFORM_PSP || defined(TARGET_PS2)
+            KaleidoScope_SetPortSegmentBase(0x07, pauseCtx->playerSegment);
 #endif
 
             size0 = (uintptr_t)_icon_item_staticSegmentRomEnd - (uintptr_t)_icon_item_staticSegmentRomStart;
@@ -3842,8 +3844,8 @@ void KaleidoScope_Update(PlayState* play) {
             DMA_REQUEST_SYNC(pauseCtx->iconItemSegment, (uintptr_t)_icon_item_staticSegmentRomStart, size0,
                              "../z_kaleido_scope_PAL.c", 3662);
 
-#if PLATFORM_PSP
-            KaleidoScope_SetPspSegmentBase(0x08, pauseCtx->iconItemSegment);
+#if PLATFORM_PSP || defined(TARGET_PS2)
+            KaleidoScope_SetPortSegmentBase(0x08, pauseCtx->iconItemSegment);
 #else
             gSegments[8] = OS_K0_TO_PHYSICAL(pauseCtx->iconItemSegment);
 #endif
@@ -3862,8 +3864,8 @@ void KaleidoScope_Update(PlayState* play) {
             DMA_REQUEST_SYNC(pauseCtx->iconItem24Segment, (uintptr_t)_icon_item_24_staticSegmentRomStart, size,
                              "../z_kaleido_scope_PAL.c", 3675);
 
-#if PLATFORM_PSP
-            KaleidoScope_SetPspSegmentBase(0x09, pauseCtx->iconItem24Segment);
+#if PLATFORM_PSP || defined(TARGET_PS2)
+            KaleidoScope_SetPortSegmentBase(0x09, pauseCtx->iconItem24Segment);
 #endif
 
             pauseCtx->iconItemAltSegment = (void*)ALIGN16((uintptr_t)pauseCtx->iconItem24Segment + size);
@@ -3894,8 +3896,8 @@ void KaleidoScope_Update(PlayState* play) {
                     DMA_REQUEST_SYNC(pauseCtx->iconItemAltSegment, (uintptr_t)_icon_item_dungeon_staticSegmentRomStart,
                                      size2, "../z_kaleido_scope_PAL.c", 3712);
 
-#if PLATFORM_PSP
-                    KaleidoScope_SetPspSegmentBase(0x0C, pauseCtx->iconItemAltSegment);
+#if PLATFORM_PSP || defined(TARGET_PS2)
+                    KaleidoScope_SetPortSegmentBase(0x0C, pauseCtx->iconItemAltSegment);
 #endif
 
                     interfaceCtx->mapPalette[28] = 6;
@@ -3910,8 +3912,8 @@ void KaleidoScope_Update(PlayState* play) {
                     PRINTF("icon_item_field field-size2=%x\n", size2);
                     DMA_REQUEST_SYNC(pauseCtx->iconItemAltSegment, (uintptr_t)_icon_item_field_staticSegmentRomStart,
                                      size2, "../z_kaleido_scope_PAL.c", 3726);
-#if PLATFORM_PSP
-                    KaleidoScope_SetPspSegmentBase(0x0C, pauseCtx->iconItemAltSegment);
+#if PLATFORM_PSP || defined(TARGET_PS2)
+                    KaleidoScope_SetPortSegmentBase(0x0C, pauseCtx->iconItemAltSegment);
 #endif
                     break;
             }
@@ -3924,16 +3926,16 @@ void KaleidoScope_Update(PlayState* play) {
                 PRINTF("icon_item_jpn dungeon-size=%x\n", size);
                 DMA_REQUEST_SYNC(pauseCtx->iconItemLangSegment, (uintptr_t)_icon_item_jpn_staticSegmentRomStart, size,
                                  "../z_kaleido_scope_PAL.c", UNK_LINE);
-#if PLATFORM_PSP
-                KaleidoScope_SetPspSegmentBase(0x0D, pauseCtx->iconItemLangSegment);
+#if PLATFORM_PSP || defined(TARGET_PS2)
+                KaleidoScope_SetPortSegmentBase(0x0D, pauseCtx->iconItemLangSegment);
 #endif
             } else {
                 size = (uintptr_t)_icon_item_nes_staticSegmentRomEnd - (uintptr_t)_icon_item_nes_staticSegmentRomStart;
                 PRINTF("icon_item_dungeon dungeon-size=%x\n", size);
                 DMA_REQUEST_SYNC(pauseCtx->iconItemLangSegment, (uintptr_t)_icon_item_nes_staticSegmentRomStart, size,
                                  "../z_kaleido_scope_PAL.c", UNK_LINE);
-#if PLATFORM_PSP
-                KaleidoScope_SetPspSegmentBase(0x0D, pauseCtx->iconItemLangSegment);
+#if PLATFORM_PSP || defined(TARGET_PS2)
+                KaleidoScope_SetPortSegmentBase(0x0D, pauseCtx->iconItemLangSegment);
 #endif
             }
 #else
@@ -3942,31 +3944,31 @@ void KaleidoScope_Update(PlayState* play) {
                 PRINTF("icon_item_dungeon dungeon-size=%x\n", size);
                 DMA_REQUEST_SYNC(pauseCtx->iconItemLangSegment, (uintptr_t)_icon_item_nes_staticSegmentRomStart, size,
                                  "../z_kaleido_scope_PAL.c", 3739);
-#if PLATFORM_PSP
-                KaleidoScope_SetPspSegmentBase(0x0D, pauseCtx->iconItemLangSegment);
+#if PLATFORM_PSP || defined(TARGET_PS2)
+                KaleidoScope_SetPortSegmentBase(0x0D, pauseCtx->iconItemLangSegment);
 #endif
             } else if (gSaveContext.language == LANGUAGE_GER) {
                 size = (uintptr_t)_icon_item_ger_staticSegmentRomEnd - (uintptr_t)_icon_item_ger_staticSegmentRomStart;
                 PRINTF("icon_item_dungeon dungeon-size=%x\n", size);
                 DMA_REQUEST_SYNC(pauseCtx->iconItemLangSegment, (uintptr_t)_icon_item_ger_staticSegmentRomStart, size,
                                  "../z_kaleido_scope_PAL.c", 3746);
-#if PLATFORM_PSP
-                KaleidoScope_SetPspSegmentBase(0x0D, pauseCtx->iconItemLangSegment);
+#if PLATFORM_PSP || defined(TARGET_PS2)
+                KaleidoScope_SetPortSegmentBase(0x0D, pauseCtx->iconItemLangSegment);
 #endif
             } else {
                 size = (uintptr_t)_icon_item_fra_staticSegmentRomEnd - (uintptr_t)_icon_item_fra_staticSegmentRomStart;
                 PRINTF("icon_item_dungeon dungeon-size=%x\n", size);
                 DMA_REQUEST_SYNC(pauseCtx->iconItemLangSegment, (uintptr_t)_icon_item_fra_staticSegmentRomStart, size,
                                  "../z_kaleido_scope_PAL.c", 3753);
-#if PLATFORM_PSP
-                KaleidoScope_SetPspSegmentBase(0x0D, pauseCtx->iconItemLangSegment);
+#if PLATFORM_PSP || defined(TARGET_PS2)
+                KaleidoScope_SetPortSegmentBase(0x0D, pauseCtx->iconItemLangSegment);
 #endif
             }
 #endif
 
             pauseCtx->nameSegment = (void*)ALIGN16((uintptr_t)pauseCtx->iconItemLangSegment + size);
-#if PLATFORM_PSP
-            KaleidoScope_SetPspSegmentBase(0x0A, pauseCtx->nameSegment);
+#if PLATFORM_PSP || defined(TARGET_PS2)
+            KaleidoScope_SetPortSegmentBase(0x0A, pauseCtx->nameSegment);
 #endif
 
             PRINTF(T("サイズ＝%x\n", "size=%x\n"), size2 + size1 + size0 + size);
@@ -4520,8 +4522,8 @@ void KaleidoScope_Update(PlayState* play) {
             DMA_REQUEST_SYNC(pauseCtx->iconItemSegment, (uintptr_t)_icon_item_staticSegmentRomStart, size0,
                              "../z_kaleido_scope_PAL.c", 4356);
 
-#if PLATFORM_PSP
-            KaleidoScope_SetPspSegmentBase(0x08, pauseCtx->iconItemSegment);
+#if PLATFORM_PSP || defined(TARGET_PS2)
+            KaleidoScope_SetPortSegmentBase(0x08, pauseCtx->iconItemSegment);
 #endif
 
             pauseCtx->iconItem24Segment = (void*)ALIGN16((uintptr_t)pauseCtx->iconItemSegment + size0);
@@ -4530,8 +4532,8 @@ void KaleidoScope_Update(PlayState* play) {
             DMA_REQUEST_SYNC(pauseCtx->iconItem24Segment, (uintptr_t)_icon_item_24_staticSegmentRomStart, size,
                              "../z_kaleido_scope_PAL.c", 4363);
 
-#if PLATFORM_PSP
-            KaleidoScope_SetPspSegmentBase(0x09, pauseCtx->iconItem24Segment);
+#if PLATFORM_PSP || defined(TARGET_PS2)
+            KaleidoScope_SetPortSegmentBase(0x09, pauseCtx->iconItem24Segment);
 #endif
 
             pauseCtx->iconItemAltSegment = (void*)ALIGN16((uintptr_t)pauseCtx->iconItem24Segment + size);
@@ -4541,8 +4543,8 @@ void KaleidoScope_Update(PlayState* play) {
             DMA_REQUEST_SYNC(pauseCtx->iconItemAltSegment, (uintptr_t)_icon_item_gameover_staticSegmentRomStart, size2,
                              "../z_kaleido_scope_PAL.c", 4370);
 
-#if PLATFORM_PSP
-            KaleidoScope_SetPspSegmentBase(0x0C, pauseCtx->iconItemAltSegment);
+#if PLATFORM_PSP || defined(TARGET_PS2)
+            KaleidoScope_SetPortSegmentBase(0x0C, pauseCtx->iconItemAltSegment);
 #endif
 
             pauseCtx->iconItemLangSegment = (void*)ALIGN16((uintptr_t)pauseCtx->iconItemAltSegment + size2);
@@ -4553,16 +4555,16 @@ void KaleidoScope_Update(PlayState* play) {
                 PRINTF("icon_item_jpn dungeon-size=%x\n", size);
                 DMA_REQUEST_SYNC(pauseCtx->iconItemLangSegment, (uintptr_t)_icon_item_jpn_staticSegmentRomStart, size,
                                  "../z_kaleido_scope_PAL.c", UNK_LINE);
-#if PLATFORM_PSP
-                KaleidoScope_SetPspSegmentBase(0x0D, pauseCtx->iconItemLangSegment);
+#if PLATFORM_PSP || defined(TARGET_PS2)
+                KaleidoScope_SetPortSegmentBase(0x0D, pauseCtx->iconItemLangSegment);
 #endif
             } else {
                 size = (uintptr_t)_icon_item_nes_staticSegmentRomEnd - (uintptr_t)_icon_item_nes_staticSegmentRomStart;
                 PRINTF("icon_item_dungeon dungeon-size=%x\n", size);
                 DMA_REQUEST_SYNC(pauseCtx->iconItemLangSegment, (uintptr_t)_icon_item_nes_staticSegmentRomStart, size,
                                  "../z_kaleido_scope_PAL.c", UNK_LINE);
-#if PLATFORM_PSP
-                KaleidoScope_SetPspSegmentBase(0x0D, pauseCtx->iconItemLangSegment);
+#if PLATFORM_PSP || defined(TARGET_PS2)
+                KaleidoScope_SetPortSegmentBase(0x0D, pauseCtx->iconItemLangSegment);
 #endif
             }
 #else
@@ -4571,24 +4573,24 @@ void KaleidoScope_Update(PlayState* play) {
                 PRINTF("icon_item_dungeon dungeon-size=%x\n", size);
                 DMA_REQUEST_SYNC(pauseCtx->iconItemLangSegment, (uintptr_t)_icon_item_nes_staticSegmentRomStart, size,
                                  "../z_kaleido_scope_PAL.c", 4379);
-#if PLATFORM_PSP
-                KaleidoScope_SetPspSegmentBase(0x0D, pauseCtx->iconItemLangSegment);
+#if PLATFORM_PSP || defined(TARGET_PS2)
+                KaleidoScope_SetPortSegmentBase(0x0D, pauseCtx->iconItemLangSegment);
 #endif
             } else if (gSaveContext.language == LANGUAGE_GER) {
                 size = (uintptr_t)_icon_item_ger_staticSegmentRomEnd - (uintptr_t)_icon_item_ger_staticSegmentRomStart;
                 PRINTF("icon_item_dungeon dungeon-size=%x\n", size);
                 DMA_REQUEST_SYNC(pauseCtx->iconItemLangSegment, (uintptr_t)_icon_item_ger_staticSegmentRomStart, size,
                                  "../z_kaleido_scope_PAL.c", 4386);
-#if PLATFORM_PSP
-                KaleidoScope_SetPspSegmentBase(0x0D, pauseCtx->iconItemLangSegment);
+#if PLATFORM_PSP || defined(TARGET_PS2)
+                KaleidoScope_SetPortSegmentBase(0x0D, pauseCtx->iconItemLangSegment);
 #endif
             } else {
                 size = (uintptr_t)_icon_item_fra_staticSegmentRomEnd - (uintptr_t)_icon_item_fra_staticSegmentRomStart;
                 PRINTF("icon_item_dungeon dungeon-size=%x\n", size);
                 DMA_REQUEST_SYNC(pauseCtx->iconItemLangSegment, (uintptr_t)_icon_item_fra_staticSegmentRomStart, size,
                                  "../z_kaleido_scope_PAL.c", 4393);
-#if PLATFORM_PSP
-                KaleidoScope_SetPspSegmentBase(0x0D, pauseCtx->iconItemLangSegment);
+#if PLATFORM_PSP || defined(TARGET_PS2)
+                KaleidoScope_SetPortSegmentBase(0x0D, pauseCtx->iconItemLangSegment);
 #endif
             }
 #endif
@@ -4813,6 +4815,8 @@ void KaleidoScope_Update(PlayState* play) {
                     R_PAUSE_BG_PRERENDER_STATE = PAUSE_BG_PRERENDER_OFF;
 #if PLATFORM_PSP
                     OotPspRenderer_SetPauseBackgroundActive(false);
+#elif defined(TARGET_PS2)
+                    OotPs2Renderer_SetPauseBackgroundActive(false);
 #endif
                     func_800981B8(&play->objectCtx);
                     func_800418D0(&play->colCtx, play);
@@ -4876,7 +4880,11 @@ void KaleidoScope_Update(PlayState* play) {
             R_PAUSE_BG_PRERENDER_STATE = PAUSE_BG_PRERENDER_OFF;
 #if PLATFORM_PSP
             OotPspRenderer_SetPauseBackgroundActive(false);
-            KaleidoScope_RestorePspGameplaySegments(play);
+#elif defined(TARGET_PS2)
+            OotPs2Renderer_SetPauseBackgroundActive(false);
+#endif
+#if PLATFORM_PSP || defined(TARGET_PS2)
+            KaleidoScope_RestorePortGameplaySegments(play);
 #endif
 
             func_800981B8(&play->objectCtx);

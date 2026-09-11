@@ -11,6 +11,8 @@
 #include "save.h"
 #if PLATFORM_PSP
 #include "interface.h"
+#endif
+#if PLATFORM_PSP || defined(TARGET_PS2)
 #include "segmented_address.h"
 #endif
 
@@ -19,13 +21,17 @@
 
 #define SONG_MAX_LENGTH 8
 
-#if PLATFORM_PSP
+#if PLATFORM_PSP || defined(TARGET_PS2)
 #define KALEIDO_COLLECT_TEXTURE(ptr) SEGMENTED_TO_VIRTUAL(ptr)
+#else
+#define KALEIDO_COLLECT_TEXTURE(ptr) (ptr)
+#endif
+
+#if PLATFORM_PSP
 #define gDPLoadCounterDigitTexture(pkt, digit, cms, cmt)                                                        \
     gDPLoadTextureBlock(pkt, Interface_GetCounterDigitTexture(digit), G_IM_FMT_IA, G_IM_SIZ_16b, 8, 16, 0, cms, \
                         cmt, G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD, G_TX_NOLOD)
 #else
-#define KALEIDO_COLLECT_TEXTURE(ptr) (ptr)
 #define gDPLoadCounterDigitTexture(pkt, digit, cms, cmt)                                                   \
     gDPLoadTextureBlock(pkt, ((u8*)gCounterDigit0Tex + (8 * 16 * (digit))), G_IM_FMT_I, G_IM_SIZ_8b, 8, 16, \
                         0, cms, cmt, G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD, G_TX_NOLOD)

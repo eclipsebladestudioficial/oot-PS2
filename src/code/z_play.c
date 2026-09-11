@@ -43,6 +43,9 @@
 #include "frame_advance.h"
 #include "light.h"
 #include "play_state.h"
+#if defined(TARGET_PS2)
+#include "oot_port_gfx_ext.h"
+#endif
 #include "player.h"
 #include "save.h"
 #include "vis.h"
@@ -1395,7 +1398,7 @@ void Play_Draw(PlayState* this) {
             R_PAUSE_BG_PRERENDER_STATE = PAUSE_BG_PRERENDER_OFF;
         }
 
-#if PLATFORM_PSP
+#if PLATFORM_PSP || defined(TARGET_PS2)
         if (R_PAUSE_BG_PRERENDER_STATE == PAUSE_BG_PRERENDER_READY) {
             goto Play_Draw_DrawOverlayElements;
         }
@@ -1530,6 +1533,15 @@ void Play_Draw(PlayState* this) {
         if ((R_PAUSE_BG_PRERENDER_STATE == PAUSE_BG_PRERENDER_SETUP) || (gTransitionTileState == TRANS_TILE_SETUP)) {
             Gfx* gfxP = OVERLAY_DISP;
 
+#if defined(TARGET_PS2)
+            if (R_PAUSE_BG_PRERENDER_STATE == PAUSE_BG_PRERENDER_SETUP) {
+    
+                gOotPortCapturePauseBackground(gfxP++);
+                R_PAUSE_BG_PRERENDER_STATE = PAUSE_BG_PRERENDER_READY;
+            } else {
+                gTransitionTileState = TRANS_TILE_PROCESS;
+            }
+#else
             // Copy the frame buffer contents at this point in the display list to the zbuffer
             // The zbuffer must then stay untouched until unpausing
             this->pauseBgPreRender.fbuf = gfxCtx->curFrameBuffer;
@@ -1543,6 +1555,7 @@ void Play_Draw(PlayState* this) {
             } else {
                 gTransitionTileState = TRANS_TILE_PROCESS;
             }
+#endif
             OVERLAY_DISP = gfxP;
             this->unk_121C7 = 2;
             R_GRAPH_TASKSET00_FLAGS |= 1;

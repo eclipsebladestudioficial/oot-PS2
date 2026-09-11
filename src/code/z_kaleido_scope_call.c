@@ -11,6 +11,8 @@
 #include "play_state.h"
 #if PLATFORM_PSP
 #include "oot_psp_renderer.h"
+#elif defined(TARGET_PS2)
+#include "oot_ps2_renderer.h"
 #endif
 
 void (*sKaleidoScopeUpdateFunc)(PlayState* play);
@@ -27,6 +29,10 @@ static void KaleidoScopeCall_RequestPauseBg(void) {
     OotPspRenderer_SetPauseBackgroundActive(true);
     OotPspRenderer_RequestPauseBackground();
     R_PAUSE_BG_PRERENDER_STATE = PAUSE_BG_PRERENDER_READY;
+#elif defined(TARGET_PS2)
+    OotPs2Renderer_SetPauseBackgroundActive(true);
+    OotPs2Renderer_RequestPauseBackground();
+    R_PAUSE_BG_PRERENDER_STATE = PAUSE_BG_PRERENDER_SETUP;
 #else
     R_PAUSE_BG_PRERENDER_STATE = PAUSE_BG_PRERENDER_SETUP;
 #endif

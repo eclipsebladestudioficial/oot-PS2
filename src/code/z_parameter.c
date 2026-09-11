@@ -28,6 +28,8 @@
 #include "oot_psp_asset_loader.h"
 #include "oot_psp_compat.h"
 #include "oot_psp_gfx_ext.h"
+#elif defined(TARGET_PS2)
+#include "oot_port_gfx_ext.h"
 #endif
 
 #include "assets/textures/parameter_static/parameter_static.h"
@@ -3027,6 +3029,8 @@ void Interface_DrawItemButtons(PlayState* play) {
         if (IS_PAUSED(&play->pauseCtx)) {
 #if PLATFORM_PSP
             gOotPspSetHudAnchor(OVERLAY_DISP++, OOT_PSP_HUD_ANCHOR_NONE);
+#elif defined(TARGET_PS2)
+            gOotPortSetHudAnchor(OVERLAY_DISP++, OOT_PORT_HUD_ANCHOR_NONE);
 #endif
             // Start Button Texture, Color & Label
             gDPPipeSync(OVERLAY_DISP++);
@@ -3077,6 +3081,8 @@ void Interface_DrawItemButtons(PlayState* play) {
 #endif
 #if PLATFORM_PSP
             gOotPspSetHudAnchor(OVERLAY_DISP++, OOT_PSP_HUD_ANCHOR_RIGHT);
+#elif defined(TARGET_PS2)
+            gOotPortSetHudAnchor(OVERLAY_DISP++, OOT_PORT_HUD_ANCHOR_RIGHT);
 #endif
         }
     }
@@ -3390,7 +3396,7 @@ void Interface_Draw(PlayState* play) {
     s16 svar4;
     s16 svar5;
     s16 timerId;
-#if PLATFORM_PSP
+#if PLATFORM_PSP || defined(TARGET_PS2)
     uintptr_t savedSegment2;
     uintptr_t savedSegment7;
     uintptr_t savedSegment8;
@@ -3399,15 +3405,15 @@ void Interface_Draw(PlayState* play) {
 
     OPEN_DISPS(play->state.gfxCtx, "../z_parameter.c", 3405);
 
-#if PLATFORM_PSP
+#if PLATFORM_PSP || defined(TARGET_PS2)
     savedSegment2 = gSegments[0x02];
     savedSegment7 = gSegments[0x07];
     savedSegment8 = gSegments[0x08];
     savedSegmentB = gSegments[0x0B];
-    Interface_SetPspSegmentBase(0x02, interfaceCtx->parameterSegment);
-    Interface_SetPspSegmentBase(0x07, interfaceCtx->doActionSegment);
-    Interface_SetPspSegmentBase(0x08, interfaceCtx->iconItemSegment);
-    Interface_SetPspSegmentBase(0x0B, interfaceCtx->mapSegment);
+    gSegments[0x02] = OS_K0_TO_PHYSICAL(interfaceCtx->parameterSegment);
+    gSegments[0x07] = OS_K0_TO_PHYSICAL(interfaceCtx->doActionSegment);
+    gSegments[0x08] = OS_K0_TO_PHYSICAL(interfaceCtx->iconItemSegment);
+    gSegments[0x0B] = OS_K0_TO_PHYSICAL(interfaceCtx->mapSegment);
 #endif
     gSPSegment(OVERLAY_DISP++, 0x02, interfaceCtx->parameterSegment);
     gSPSegment(OVERLAY_DISP++, 0x07, interfaceCtx->doActionSegment);
@@ -3419,6 +3425,8 @@ void Interface_Draw(PlayState* play) {
         func_8008A994(interfaceCtx);
 #if PLATFORM_PSP
         gOotPspSetHudAnchor(OVERLAY_DISP++, OOT_PSP_HUD_ANCHOR_LEFT);
+#elif defined(TARGET_PS2)
+        gOotPortSetHudAnchor(OVERLAY_DISP++, OOT_PORT_HUD_ANCHOR_LEFT);
 #endif
         Health_DrawMeter(play);
 
@@ -3525,11 +3533,15 @@ void Interface_Draw(PlayState* play) {
         Magic_DrawMeter(play);
 #if PLATFORM_PSP
         gOotPspSetHudAnchor(OVERLAY_DISP++, OOT_PSP_HUD_ANCHOR_RIGHT);
+#elif defined(TARGET_PS2)
+        gOotPortSetHudAnchor(OVERLAY_DISP++, OOT_PORT_HUD_ANCHOR_RIGHT);
 #endif
         Minimap_Draw(play);
 
 #if PLATFORM_PSP
         gOotPspSetHudAnchor(OVERLAY_DISP++, OOT_PSP_HUD_ANCHOR_CENTER);
+#elif defined(TARGET_PS2)
+        gOotPortSetHudAnchor(OVERLAY_DISP++, OOT_PORT_HUD_ANCHOR_CENTER);
 #endif
         if ((R_PAUSE_BG_PRERENDER_STATE != PAUSE_BG_PRERENDER_PROCESS) &&
             (R_PAUSE_BG_PRERENDER_STATE != PAUSE_BG_PRERENDER_READY)) {
@@ -3540,6 +3552,8 @@ void Interface_Draw(PlayState* play) {
 
 #if PLATFORM_PSP
         gOotPspSetHudAnchor(OVERLAY_DISP++, OOT_PSP_HUD_ANCHOR_RIGHT);
+#elif defined(TARGET_PS2)
+        gOotPortSetHudAnchor(OVERLAY_DISP++, OOT_PORT_HUD_ANCHOR_RIGHT);
 #endif
         Interface_DrawItemButtons(play);
 
@@ -3650,12 +3664,14 @@ void Interface_Draw(PlayState* play) {
         func_8008A994(interfaceCtx);
 #if PLATFORM_PSP
         gOotPspSetHudAnchor(OVERLAY_DISP++, OOT_PSP_HUD_ANCHOR_NONE);
+#elif defined(TARGET_PS2)
+        gOotPortSetHudAnchor(OVERLAY_DISP++, OOT_PORT_HUD_ANCHOR_NONE);
 #endif
 
         if ((pauseCtx->state == PAUSE_STATE_MAIN) && (pauseCtx->mainState == PAUSE_MAIN_STATE_3)) {
             // Inventory Equip Effects
-#if PLATFORM_PSP
-            Interface_SetPspSegmentBase(0x08, pauseCtx->iconItemSegment);
+#if PLATFORM_PSP || defined(TARGET_PS2)
+            gSegments[0x08] = OS_K0_TO_PHYSICAL(pauseCtx->iconItemSegment);
 #endif
             gSPSegment(OVERLAY_DISP++, 0x08, pauseCtx->iconItemSegment);
             Gfx_SetupDL_42Overlay(play->state.gfxCtx);
@@ -4232,7 +4248,7 @@ void Interface_Draw(PlayState* play) {
 
     CLOSE_DISPS(play->state.gfxCtx, "../z_parameter.c", 4269);
 
-#if PLATFORM_PSP
+#if PLATFORM_PSP || defined(TARGET_PS2)
     gSegments[0x02] = savedSegment2;
     gSegments[0x07] = savedSegment7;
     gSegments[0x08] = savedSegment8;
