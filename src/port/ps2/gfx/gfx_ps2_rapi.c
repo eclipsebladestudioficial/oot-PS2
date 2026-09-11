@@ -106,6 +106,7 @@ static bool sTextureBlendReverse;
 static bool sTextureBlendPrecolor;
 static bool sDinFireTint;
 static bool sTwoTextureBlendActive;
+static bool sTwoTextureAlphaBlendActive;
 static bool sTwoTextureEnvPrimTint;
 static bool sSkipContentHash;
 static bool sSuppressFpsOverlay;
@@ -186,6 +187,7 @@ void gfx_ps2_set_texture_blend_reverse(bool enabled){sTextureBlendReverse=enable
 void gfx_ps2_set_texture_blend_precolor(bool enabled){sTextureBlendPrecolor=enabled;}
 void gfx_ps2_set_din_fire_tint(bool enabled){sDinFireTint=enabled;}
 void gfx_ps2_set_two_texture_blend_active(bool enabled){sTwoTextureBlendActive=enabled;}
+void gfx_ps2_set_two_texture_alpha_blend_active(bool enabled){sTwoTextureAlphaBlendActive=enabled;}
 void gfx_ps2_set_two_texture_env_prim_tint(bool enabled){sTwoTextureEnvPrimTint=enabled;}
 void gfx_ps2_set_skip_content_hash(bool enabled){sSkipContentHash=enabled;}
 void gfx_ps2_set_fps_overlay_enabled(bool enabled){sFpsOverlayEnabled=enabled;}
@@ -1530,9 +1532,11 @@ static void ps2_draw(float*raw,size_t len,size_t tris){
 
     const bool has_fog = cur_shader != NULL && cur_shader->cc.opt_fog;
 
-    const bool prefer_native_fog = has_fog && !depth_only && !do_blend && cur_shader != NULL &&
-                                   !cur_shader->texture_alpha && !sTwoTextureBlendActive &&
-                                   !sTextureBlendPrecolor && !reverse_tint && !blend_tint &&
+    const bool native_fog_alpha_safe = cur_shader != NULL &&
+                                       (!cur_shader->texture_alpha || cur_shader->alpha_test);
+    const bool native_fog_two_texture_safe = !sTwoTextureBlendActive || !sTwoTextureAlphaBlendActive;
+    const bool prefer_native_fog = has_fog && !depth_only && cur_shader != NULL &&
+                                   native_fog_alpha_safe && native_fog_two_texture_safe && !reverse_tint &&
                                    !env_prim_tint && !deku_warp_tint && !pause_name_tint && !deku_water;
     const bool exact_tint=textured && sTextureBlendPrecolor && cur_shader &&
                           cur_shader->cc.opt_texture_blend && !reverse_tint && !blend_tint &&
@@ -1716,13 +1720,20 @@ static void ps2_draw_fog(float*raw,size_t len,size_t tris,bool texture_alpha,boo
         const size_t expected=tris*3U*sizeof(Ps2FogColor);
         if(len<expected){malformed=true;goto fog_restore;}
         Ps2FogColor* v=(Ps2FogColor*)raw;
-        for(size_t i=0;i<tris;i++){
-            Ps2FogColor* q=&v[i*3U];
-            gsKit_prim_triangle_gouraud_3d(gs_global,
-                q[0].x,q[0].y,(int)q[0].z,q[1].x,q[1].y,(int)q[1].z,q[2].x,q[2].y,(int)q[2].z,
-                colorq_from_rgba(q[0].rgba,1.0f,false),
-                colorq_from_rgba(q[1].rgba,1.0f,false),
-                colorq_from_rgba(q[2].rgba,1.0f,false));
+        size_t done=0;
+        while(done<tris){
+            const size_t wanted=tris-done;
+            const size_t batch=tri_col_batch_safe_count(wanted,false);
+            u64* packet=tri_col_batch_begin(batch,false);
+            for(size_t j=0;j<batch;j++){
+                Ps2FogColor* q=&v[(done+j)*3U];
+                tri_col_emit_reserved(&packet,
+                    q[0].x,q[0].y,(int)q[0].z,colorq_from_rgba(q[0].rgba,1.0f,false),
+                    q[1].x,q[1].y,(int)q[1].z,colorq_from_rgba(q[1].rgba,1.0f,false),
+                    q[2].x,q[2].y,(int)q[2].z,colorq_from_rgba(q[2].rgba,1.0f,false),
+                    false,255,255,255);
+            }
+            done+=batch;
         }
     }
 
@@ -1945,6 +1956,7 @@ static void ps2_start(void){
     sTextureBlendPrecolor=false;
     sDinFireTint=false;
     sTwoTextureBlendActive=false;
+    sTwoTextureAlphaBlendActive=false;
     sTwoTextureEnvPrimTint=false;
     sPs2RenderFrameSerial++;
     if(sPs2RenderFrameSerial==0) sPs2RenderFrameSerial=1;

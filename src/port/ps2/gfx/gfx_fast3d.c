@@ -91,6 +91,7 @@ extern void gfx_ps2_set_texture_blend_reverse(bool enabled);
 extern void gfx_ps2_set_texture_blend_precolor(bool enabled);
 extern void gfx_ps2_set_din_fire_tint(bool enabled);
 extern void gfx_ps2_set_two_texture_blend_active(bool enabled);
+extern void gfx_ps2_set_two_texture_alpha_blend_active(bool enabled);
 extern void gfx_ps2_set_two_texture_env_prim_tint(bool enabled);
 extern void gfx_ps2_set_skip_content_hash(bool enabled);
 
@@ -1471,6 +1472,8 @@ static void gfx_flush(void) {
         gfx_ps2_set_texture_blend_precolor(rendering_state.tri_pipeline.texture_blend_precolor);
         gfx_ps2_set_din_fire_tint(rendering_state.tri_pipeline.din_fire_tint);
         gfx_ps2_set_two_texture_blend_active(twoTextureBlend);
+        gfx_ps2_set_two_texture_alpha_blend_active(
+            twoTextureBlend && rendering_state.tri_pipeline.two_texture_alpha_blend);
         gfx_ps2_set_two_texture_env_prim_tint(
             twoTextureBlend && rendering_state.tri_pipeline.two_texture_env_prim_tint);
         gfx_rapi->draw_triangles((float *)buf_vbo, buf_vbo_len, buf_vbo_num_tris);
@@ -3724,7 +3727,9 @@ static void gfx_prepare_tri_pipeline_state(void) {
     state->texture_blend_reverse = rdp.combine_texture_blend_reverse;
     state->texture_blend_precolor = textureBlendPrecolor;
     state->din_fire_tint = rdp.combine_din_fire_tint;
-    state->fog_uses_texture_alpha = use_fog && comb->uses_texture_alpha;
+
+    state->fog_uses_texture_alpha =
+        use_fog && comb->uses_texture_alpha && !(texture_edge && depth_test && z_upd);
     state->flame_texture_atlas = flame_texture_atlas;
     state->texture_tint_colors_corrected = textureTintColorsCorrected;
     state->two_texture_uncompensated_alpha = twoTextureUncompensatedAlpha;
@@ -4931,6 +4936,7 @@ static void gfx_sp_tri1_2d(uint8_t vtx1_idx, uint8_t vtx2_idx, UNUSED uint8_t vt
     gfx_ps2_set_texture_blend_precolor(state->texture_blend_precolor);
     gfx_ps2_set_din_fire_tint(false);
     gfx_ps2_set_two_texture_blend_active(twoTextureBlend);
+    gfx_ps2_set_two_texture_alpha_blend_active(twoTextureBlend && state->two_texture_alpha_blend);
     gfx_ps2_set_two_texture_env_prim_tint(twoTextureBlend && state->two_texture_env_prim_tint);
     gfx_ps2_draw_triangles_2d((float*)&tri_buf[0],0,1);
     if (twoTextureBlend) {
