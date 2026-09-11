@@ -20,6 +20,8 @@ void gfx_ps2_render_boot_progress(int code, const char* label);
 void gfx_ps2_set_fps_overlay_enabled(bool enabled);
 bool gfx_ps2_get_fps_overlay_enabled(void);
 void gfx_ps2_set_prerender_room_state(bool active, u32 roomKey);
+void gfx_ps2_depth_query_begin(void);
+bool gfx_ps2_depth_read(int32_t x, int32_t y, uint16_t* depth);
 
 static bool sInitialized;
 
@@ -84,6 +86,37 @@ void OotPs2Renderer_SetWidescreen(bool enabled) {
 
 bool OotPs2Renderer_IsWidescreen(void) {
     return gfx_get_ps2_widescreen();
+}
+
+void OotPs2Renderer_BeginDepthQueries(void) {
+    OotPs2Renderer_Init();
+    gfx_ps2_depth_query_begin();
+}
+
+bool OotPs2Renderer_IsDepthClear(int32_t x, int32_t y) {
+    uint16_t depth;
+
+    OotPs2Renderer_Init();
+    if (!gfx_ps2_depth_read(x, y, &depth)) {
+        return true;
+    }
+    return depth == 0;
+}
+
+bool OotPs2Renderer_DepthTest(int32_t x, int32_t y, float projectedZ) {
+    uint16_t depth;
+    uint32_t projectedDepth;
+
+    OotPs2Renderer_Init();
+    if (!gfx_ps2_depth_read(x, y, &depth)) {
+      
+        return true;
+    }
+    if (projectedZ < 0.0f) projectedZ = 0.0f;
+    else if (projectedZ > 1.0f) projectedZ = 1.0f;
+
+    projectedDepth = (uint32_t)((1.0f - projectedZ) * 65535.0f);
+    return projectedDepth >= depth;
 }
 
 void OotPs2Renderer_RequestPauseBackground(void) {

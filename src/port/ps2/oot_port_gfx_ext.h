@@ -5,6 +5,7 @@
 
 #define OOT_PORT_HUD_ANCHOR_TAG 0x48554400U
 #define OOT_PS2_PAUSE_BG_CAPTURE_TAG 0x50534247U
+#define OOT_PS2_VISMONO_TAG 0x564D4F4EU
 
 typedef enum OotPortHudAnchor {
     OOT_PORT_HUD_ANCHOR_NONE,
@@ -15,5 +16,6 @@ typedef enum OotPortHudAnchor {
 
 #define gOotPortSetHudAnchor(pkt, anchor) gDPNoOpTag((pkt), OOT_PORT_HUD_ANCHOR_TAG | (anchor))
 #define gOotPortCapturePauseBackground(pkt) gDPNoOpTag((pkt), OOT_PS2_PAUSE_BG_CAPTURE_TAG)
+#define gOotPortApplyVisMono(pkt) gDPNoOpTag((pkt), OOT_PS2_VISMONO_TAG)
 
 #endif

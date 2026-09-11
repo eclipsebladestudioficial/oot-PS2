@@ -8,6 +8,8 @@
 
 #if PLATFORM_PSP
 #include "oot_psp_renderer.h"
+#elif defined(TARGET_PS2)
+#include "oot_ps2_renderer.h"
 #endif
 
 #include "assets/objects/gameplay_keep/fairy_skel.h"
@@ -334,7 +336,7 @@ void Lights_GlowCheck(PlayState* play) {
             f32 cappedInvWDest;
             f32 wX;
             f32 wY;
-#if !PLATFORM_PSP
+#if !PLATFORM_PSP && !defined(TARGET_PS2)
             s32 wZ;
             s32 zBuf;
 #endif
@@ -351,6 +353,12 @@ void Lights_GlowCheck(PlayState* play) {
                 // Obtain the z-buffer value for the screen pixel corresponding to the center of the glow.
 #if PLATFORM_PSP
                 if (OotPspRenderer_DepthTest((s32)((wX * (SCREEN_WIDTH / 2)) + (SCREEN_WIDTH / 2)),
+                                             (s32)((wY * -(SCREEN_HEIGHT / 2)) + (SCREEN_HEIGHT / 2)),
+                                             multDest.z * cappedInvWDest)) {
+                    params->drawGlow = true;
+                }
+#elif defined(TARGET_PS2)
+                if (OotPs2Renderer_DepthTest((s32)((wX * (SCREEN_WIDTH / 2)) + (SCREEN_WIDTH / 2)),
                                              (s32)((wY * -(SCREEN_HEIGHT / 2)) + (SCREEN_HEIGHT / 2)),
                                              multDest.z * cappedInvWDest)) {
                     params->drawGlow = true;

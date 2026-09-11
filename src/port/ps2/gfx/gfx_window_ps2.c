@@ -1,8 +1,13 @@
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
+#include <stdlib.h>
+#include <malloc.h>
 #include <string.h>
 
 #include <dmaKit.h>
+#include <ee_regs.h>
+#include <vif_registers.h>
 #include <gsKit.h>
 #include <gsInline.h>
 #include <gif_registers.h>
@@ -26,6 +31,11 @@ static bool sPauseBackgroundCapturePending;
 static bool sPauseBackgroundCaptured;
 static u32 sPauseBackgroundVram;
 static u32 sPauseBackgroundBytes;
+static u32* sVisMonoReadback;
+static size_t sVisMonoReadbackBytes;
+static u16 sDepthReadback[64] __attribute__((aligned(64)));
+static int sDepthReadbackX = -1;
+static int sDepthReadbackY = -1;
 
 #define OOT_PS2_PAUSE_BG_PSM GS_PSM_CT16
 #define OOT_PS2_PAUSE_BG_WIDTH 320
@@ -170,6 +180,187 @@ static int GfxPs2WaitFinishBounded(void) {
         return 0;
     }
     return 1;
+}
+
+static int GfxPs2WaitVif1Bounded(void) {
+    u32 timeout = 4000000U;
+
+    while (((*R_EE_D1_CHCR) & 0x100U) != 0U && timeout-- != 0U) {
+        __asm__ volatile("nop");
+    }
+    return ((*R_EE_D1_CHCR) & 0x100U) == 0U;
+}
+
+static bool GfxPs2Window_ReadLocalRect(void* dst, size_t dstBytes, u32 sourceAddr, u32 sourcePsm,
+                                       u32 sourceWidth, u32 x, u32 y, u32 width, u32 height) {
+    u64 packet[10] __attribute__((aligned(64)));
+    u64* p = packet;
+    size_t transferBytes;
+    u32 qwc;
+
+    if (gs_global == NULL || dst == NULL || width == 0 || height == 0 || sourceWidth == 0) {
+        return false;
+    }
+
+    if (sourcePsm == GS_PSM_CT16 || sourcePsm == GS_PSM_CT16S) {
+        transferBytes = (size_t)width * (size_t)height * 2U;
+    } else if (sourcePsm == GS_PSM_CT24 || sourcePsm == GS_PSM_CT32) {
+        transferBytes = (size_t)width * (size_t)height * 4U;
+    } else {
+        return false;
+    }
+    if (transferBytes > dstBytes) {
+        return false;
+    }
+    qwc = (u32)((transferBytes + 15U) >> 4);
+
+   if (!GfxPs2WaitFinishBounded()) {
+        return false;
+    }
+    if (dmaKit_wait(DMA_CHANNEL_GIF, 4000000U) < 0) {
+        return false;
+    }
+
+    *p++ = GIF_TAG_AD(4);
+    *p++ = GIF_AD;
+    *p++ = GS_SETREG_BITBLTBUF(sourceAddr / 256U, sourceWidth / 64U, sourcePsm, 0, 0, 0);
+    *p++ = GS_BITBLTBUF;
+    *p++ = GS_SETREG_TRXPOS(x, y, 0, 0, 0);
+    *p++ = GS_TRXPOS;
+    *p++ = GS_SETREG_TRXREG(width, height);
+    *p++ = GS_TRXREG;
+    *p++ = GS_SETREG_TRXDIR(1);
+    *p++ = GS_TRXDIR;
+
+    SyncDCache(packet, (u8*)packet + sizeof(packet));
+    dmaKit_send(DMA_CHANNEL_GIF, packet, 5);
+    if (dmaKit_wait(DMA_CHANNEL_GIF, 4000000U) < 0) {
+        return false;
+    }
+
+    SyncDCache(dst, (u8*)dst + transferBytes);
+    *DMA_REG_STAT = 1U << DMA_CHANNEL_VIF1;
+    VIF1_STAT = 1U << 23;
+    GS_SETREG_BUSDIR(1);
+    __asm__ volatile("sync.p; nop;");
+
+    *R_EE_D1_QWC = DMA_SET_SIZE(qwc);
+    *R_EE_D1_MADR = DMA_SET_MADR((u32)(uintptr_t)dst, 0);
+    *R_EE_D1_CHCR = DMA_SET_CHCR(0, 0, 0, 0, 0, 1, 0);
+
+    if (!GfxPs2WaitVif1Bounded()) {
+        *R_EE_D1_CHCR = 0;
+        VIF1_STAT = 0;
+        GS_SETREG_BUSDIR(0);
+        return false;
+    }
+
+    __asm__ volatile("sync.p; nop;");
+    VIF1_STAT = 0;
+    GS_SETREG_BUSDIR(0);
+    __asm__ volatile("sync.p; nop;");
+    InvalidDCache(dst, (u8*)dst + transferBytes);
+    return true;
+}
+
+void gfx_ps2_depth_query_begin(void) {
+    sDepthReadbackX = -1;
+    sDepthReadbackY = -1;
+}
+
+bool gfx_ps2_depth_read(int32_t x, int32_t y, uint16_t* depth) {
+    const int blockW = 16;
+    const int blockH = 4;
+    int screenX;
+    int screenY;
+    int baseX;
+    int baseY;
+
+    if (gs_global == NULL || depth == NULL || gs_global->PSMZ != GS_PSMZ_16) {
+        return false;
+    }
+
+   {
+        const float scale = (float)gs_global->Height / 240.0f;
+        screenX = (int)(((float)gs_global->Width * 0.5f) + ((x - 160) * scale));
+        screenY = (int)(y * scale);
+    }
+    if (screenX < 0 || screenX >= gs_global->Width || screenY < 0 || screenY >= gs_global->Height) {
+        return false;
+    }
+
+    baseX = screenX - (screenX % blockW);
+    baseY = screenY - (screenY % blockH);
+    if (baseX > gs_global->Width - blockW) baseX = gs_global->Width - blockW;
+    if (baseY > gs_global->Height - blockH) baseY = gs_global->Height - blockH;
+
+    if (baseX != sDepthReadbackX || baseY != sDepthReadbackY) {
+        if (!GfxPs2Window_ReadLocalRect(sDepthReadback, sizeof(sDepthReadback), gs_global->ZBuffer,
+                                        gs_global->PSMZ, gs_global->Width, baseX, baseY, blockW, blockH)) {
+            sDepthReadbackX = -1;
+            sDepthReadbackY = -1;
+            return false;
+        }
+        sDepthReadbackX = baseX;
+        sDepthReadbackY = baseY;
+    }
+
+    *depth = sDepthReadback[(screenY - baseY) * blockW + (screenX - baseX)];
+    return true;
+}
+
+void gfx_ps2_apply_vismono(uint8_t primR, uint8_t primG, uint8_t primB, uint8_t alpha,
+                           uint8_t envR, uint8_t envG, uint8_t envB) {
+    const size_t pixels = gs_global != NULL ? (size_t)gs_global->Width * (size_t)gs_global->Height : 0U;
+    const size_t bytes = pixels * sizeof(u32);
+    u32 frameAddr;
+
+    if (gs_global == NULL || alpha == 0 || pixels == 0 || gs_global->PSM != GS_PSM_CT24) {
+        return;
+    }
+
+    if (sVisMonoReadback == NULL || sVisMonoReadbackBytes < bytes) {
+        if (sVisMonoReadback != NULL) free(sVisMonoReadback);
+        const size_t allocBytes = (bytes + 63U) & ~63U;
+        sVisMonoReadback = memalign(64, allocBytes);
+        sVisMonoReadbackBytes = sVisMonoReadback != NULL ? allocBytes : 0U;
+        if (sVisMonoReadback == NULL) return;
+    }
+
+    if (gs_global->Os_Queue->tag_size != 0) {
+        gsKit_queue_exec(gs_global);
+        if (dmaKit_wait(DMA_CHANNEL_GIF, 8000000U) < 0 || !GfxPs2WaitFinishBounded()) {
+            return;
+        }
+        gsKit_queue_reset(gs_global->Os_Queue);
+    }
+
+    frameAddr = gs_global->ScreenBuffer[gs_global->ActiveBuffer & 1];
+    if (!GfxPs2Window_ReadLocalRect(sVisMonoReadback, sVisMonoReadbackBytes, frameAddr, gs_global->PSM,
+                                    gs_global->Width, 0, 0, gs_global->Width, gs_global->Height)) {
+        return;
+    }
+
+    for (size_t i = 0; i < pixels; i++) {
+        const u32 pixel = sVisMonoReadback[i];
+        const unsigned int r = pixel & 0xFFU;
+        const unsigned int g = (pixel >> 8) & 0xFFU;
+        const unsigned int b = (pixel >> 16) & 0xFFU;
+        const unsigned int intensity = ((r * 2U) + (g * 4U) + b + 3U) / 7U;
+        const unsigned int tintR = envR + (((int)primR - envR) * (int)intensity + 127) / 255;
+        const unsigned int tintG = envG + (((int)primG - envG) * (int)intensity + 127) / 255;
+        const unsigned int tintB = envB + (((int)primB - envB) * (int)intensity + 127) / 255;
+        const unsigned int outR = ((tintR * alpha) + (r * (255U - alpha)) + 127U) / 255U;
+        const unsigned int outG = ((tintG * alpha) + (g * (255U - alpha)) + 127U) / 255U;
+        const unsigned int outB = ((tintB * alpha) + (b * (255U - alpha)) + 127U) / 255U;
+
+        sVisMonoReadback[i] = (pixel & 0xFF000000U) | (outB << 16) | (outG << 8) | outR;
+    }
+    SyncDCache(sVisMonoReadback, (u8*)sVisMonoReadback + bytes);
+
+    gsKit_texture_send_inline(gs_global, sVisMonoReadback, gs_global->Width, gs_global->Height,
+                              frameAddr, gs_global->PSM, gs_global->Width / 64U, GS_CLUT_NONE);
+    gfx_ps2_invalidate_register_cache();
 }
 
 static void GfxPs2SetBufferAttributesDisc(GSGLOBAL* g) {
@@ -356,7 +547,7 @@ static void GfxPs2Window_AllocPauseBackground(void) {
                                                        OOT_PS2_PAUSE_BG_PSM);
     sPauseBackgroundVram = __real_gsKit_vram_alloc(gs_global, sPauseBackgroundBytes, GSKIT_ALLOC_SYSBUFFER);
     if (sPauseBackgroundVram != GSKIT_ALLOC_ERROR) {
-      gs_global->TexturePointer = gs_global->CurrentPointer;
+        gs_global->TexturePointer = gs_global->CurrentPointer;
     }
 }
 
@@ -475,6 +666,8 @@ void gfx_ps2_restore_pause_background(void) {
 }
 
 static bool GfxPs2Window_StartFrame(void) {
+    sDepthReadbackX = -1;
+    sDepthReadbackY = -1;
     if (sFramePending) {
         u32 timeout = 12000000U;
         const int completed = gs_global->ActiveBuffer & 1;

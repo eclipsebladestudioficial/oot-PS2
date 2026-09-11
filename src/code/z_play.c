@@ -45,6 +45,7 @@
 #include "play_state.h"
 #if defined(TARGET_PS2)
 #include "oot_port_gfx_ext.h"
+#include "oot_ps2_renderer.h"
 #endif
 #include "player.h"
 #include "save.h"
@@ -267,6 +268,9 @@ void Play_Destroy(GameState* thisx) {
 
 #if PLATFORM_PSP
     OotPspRenderer_SetJpegBackgroundResolution(false, 0, 0);
+#elif defined(TARGET_PS2)
+    OotPs2Renderer_SetPrerenderRoomState(false, 0xFFFFFFFFU);
+    OotPs2Renderer_SetPauseBackgroundActive(false);
 #endif
 
     if (1) {}
@@ -1535,7 +1539,7 @@ void Play_Draw(PlayState* this) {
 
 #if defined(TARGET_PS2)
             if (R_PAUSE_BG_PRERENDER_STATE == PAUSE_BG_PRERENDER_SETUP) {
-    
+
                 gOotPortCapturePauseBackground(gfxP++);
                 R_PAUSE_BG_PRERENDER_STATE = PAUSE_BG_PRERENDER_READY;
             } else {

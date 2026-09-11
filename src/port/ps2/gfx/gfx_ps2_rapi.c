@@ -898,6 +898,7 @@ static struct Texture* ps2_reverse_tint_texture(struct Texture* source, uint32_t
     const uint32_t primRgb=prim&0x00ffffffU;
     const uint32_t envRgb=env&0x00ffffffU;
     Ps2ReverseTintCacheEntry* entry=NULL;
+    Ps2ReverseTintCacheEntry* sameSourceOld=NULL;
     Ps2ReverseTintCacheEntry* victim=NULL;
 
     if(!ps2_texture_cpu_rgba_supported(source) || pixels==0)return source;
@@ -912,13 +913,20 @@ static struct Texture* ps2_reverse_tint_texture(struct Texture* source, uint32_t
             return &e->tex;
         }
         if(!e->valid && entry==NULL)entry=e;
+        if(e->valid && e->source==source && e->source_serial==source->upload_serial &&
+           e->last_used_frame!=sPs2RenderFrameSerial &&
+           (sameSourceOld==NULL || e->stamp<sameSourceOld->stamp)){
+            sameSourceOld=e;
+        }
         if(e->valid && (victim==NULL || e->stamp<victim->stamp))victim=e;
     }
 
+    if(sameSourceOld!=NULL)entry=sameSourceOld;
     if(entry==NULL){
         entry=victim;
         if(entry==NULL)return source;
-
+    }
+    if(entry->valid){
         if(entry->last_used_frame==sPs2RenderFrameSerial && gs_global && gs_global->Os_Queue->tag_size!=0){
             gsKit_queue_exec(gs_global);
             dmaKit_wait_fast();
@@ -1027,7 +1035,9 @@ static struct Texture* ps2_derived_texture(struct Texture* source, uint32_t base
     const uint32_t baseRgb=base&0x00ffffffU, targetRgb=target&0x00ffffffU;
     const size_t pixels=(size_t)source->tex.Width*(size_t)source->tex.Height;
     const size_t bytes=pixels*4U;
-    Ps2BlendCacheEntry* entry=NULL; Ps2BlendCacheEntry* victim=NULL;
+    Ps2BlendCacheEntry* entry=NULL;
+    Ps2BlendCacheEntry* sameSourceOld=NULL;
+    Ps2BlendCacheEntry* victim=NULL;
     for(unsigned i=0;i<PS2_BLEND_CACHE_SLOTS;i++){
         Ps2BlendCacheEntry* e=&sBlendCache[i];
         if(e->valid && e->source==source && e->source_serial==source->upload_serial &&
@@ -1037,11 +1047,19 @@ static struct Texture* ps2_derived_texture(struct Texture* source, uint32_t base
             e->stamp=++sBlendStamp; e->last_used_frame=sPs2RenderFrameSerial; return &e->tex;
         }
         if(!e->valid && entry==NULL)entry=e;
+        if(e->valid && e->source==source && e->source_serial==source->upload_serial && e->kind==kind &&
+           e->last_used_frame!=sPs2RenderFrameSerial &&
+           (sameSourceOld==NULL || e->stamp<sameSourceOld->stamp)){
+            sameSourceOld=e;
+        }
         if(e->valid && (victim==NULL || e->stamp<victim->stamp))victim=e;
     }
+
+    if(sameSourceOld!=NULL)entry=sameSourceOld;
     if(entry==NULL){
         entry=victim; if(entry==NULL)return source;
-
+    }
+    if(entry->valid){
         if(entry->last_used_frame==sPs2RenderFrameSerial && gs_global && gs_global->Os_Queue->tag_size!=0){
             gsKit_queue_exec(gs_global); dmaKit_wait_fast(); gsKit_queue_reset(gs_global->Os_Queue);
         }
@@ -1450,6 +1468,7 @@ static void ps2_draw(float*raw,size_t len,size_t tris){
     bool textured=draw_tex!=NULL && cur_shader && (cur_shader->texture_used[0]||cur_shader->texture_used[1]);
 
     bool blend_single_pass=false;
+    bool blend_fallback_target=false;
     if(textured && !depth_only && cur_shader!=NULL &&
        cur_shader->texture_mode==PS2_TEXTURE_MODE_BLEND && sTextureBlendPrecolor &&
        !sTextureBlendReverse && !sDinFireTint && !sTwoTextureEnvPrimTint &&
@@ -1472,12 +1491,14 @@ static void ps2_draw(float*raw,size_t len,size_t tris){
     }
     if(textured && !depth_only && cur_shader!=NULL){
         if(cur_shader->texture_mode==PS2_TEXTURE_MODE_BLEND && sTextureBlendPrecolor && !blend_single_pass &&
-           !sTextureBlendReverse && !sDinFireTint && !sTwoTextureEnvPrimTint &&
-           ps2_draw_ps2_blend_exact(v,tris,draw_tex)){
+           !sTextureBlendReverse && !sDinFireTint && !sTwoTextureEnvPrimTint){
+            if(ps2_draw_ps2_blend_exact(v,tris,draw_tex)){
 #if OOT_PS2_RAPI_PROFILE
-            profPath=1;
+                profPath=1;
 #endif
-            goto draw_complete;
+                goto draw_complete;
+            }
+            blend_fallback_target=true;
         }
         if(cur_shader->texture_mode==PS2_TEXTURE_MODE_DECAL && cur_shader->texture_alpha &&
            ps2_draw_ps2_decal_rgba_exact(v,tris,draw_tex)){
@@ -1584,7 +1605,7 @@ static void ps2_draw(float*raw,size_t len,size_t tris){
                 const uint8_t f0=(uint8_t)t[0].fog,f1=(uint8_t)t[1].fog,f2=(uint8_t)t[2].fog;
                 uint32_t c0,c1,c2;
                 const bool neutralTint=reverse_tint||blend_tint||env_prim_tint;
-                const bool targetTint=deku_warp_tint||pause_name_tint;
+                const bool targetTint=deku_warp_tint||pause_name_tint||blend_fallback_target;
                 if(__builtin_expect(!neutralTint && !targetTint && !deku_water,1)){
                     c0=t[0].rgba; c1=t[1].rgba; c2=t[2].rgba;
                 }else if(neutralTint){
@@ -1780,6 +1801,7 @@ void gfx_ps2_draw_triangles_2d(float *raw,size_t unused,size_t count){
                                    (x2-x1)>=300.0f && (y2-y1)>=200.0f;
 
     bool blend_single_pass_2d=false;
+    bool blend_fallback_target_2d=false;
     bool decal_single_pass_2d=false;
     const uint8_t saved_2d_tfx=cur_shader!=NULL?cur_shader->tfx:0;
     const bool saved_2d_texture_alpha=cur_shader!=NULL?cur_shader->texture_alpha:false;
@@ -1812,9 +1834,11 @@ void gfx_ps2_draw_triangles_2d(float *raw,size_t unused,size_t count){
     }
     if(textured && !depth_only && !prerender_candidate && cur_shader!=NULL){
         if(cur_shader->texture_mode==PS2_TEXTURE_MODE_BLEND && sTextureBlendPrecolor && !blend_single_pass_2d &&
-           !sTextureBlendReverse && !sDinFireTint && !sTwoTextureEnvPrimTint &&
-           ps2_draw_ps2_blend_exact_2d(q,draw_tex,x1,y1,z1,u1,v1,x2,y2,z2,u2,v2)){
-            goto cleanup;
+           !sTextureBlendReverse && !sDinFireTint && !sTwoTextureEnvPrimTint){
+            if(ps2_draw_ps2_blend_exact_2d(q,draw_tex,x1,y1,z1,u1,v1,x2,y2,z2,u2,v2)){
+                goto cleanup;
+            }
+            blend_fallback_target_2d=true;
         }
         if(cur_shader->texture_mode==PS2_TEXTURE_MODE_DECAL && cur_shader->texture_alpha && !decal_single_pass_2d &&
            ps2_draw_ps2_decal_rgba_exact_2d(q,draw_tex,x1,y1,z1,u1,v1,x2,y2,z2,u2,v2)){
@@ -1843,7 +1867,13 @@ void gfx_ps2_draw_triangles_2d(float *raw,size_t unused,size_t count){
         const uint32_t base0=q[0].rgba&0x00ffffffU, base1=q[1].rgba&0x00ffffffU;
         if(base0==base1){ struct Texture* tinted=ps2_blend_texture(draw_tex,base0,sEnvColor); blend_tint=(tinted!=draw_tex); draw_tex=tinted; }
     }
-    const uint64_t col=colorq_from_rgba((reverse_tint||blend_tint||env_prim_tint)?ps2_reverse_neutral_color(q[0].rgba):q[0].rgba,1.0f,textured);
+    uint32_t drawColor=q[0].rgba;
+    if(reverse_tint||blend_tint||env_prim_tint){
+        drawColor=ps2_reverse_neutral_color(drawColor);
+    }else if(blend_fallback_target_2d){
+        drawColor=ps2_target_rgb_preserve_alpha(drawColor);
+    }
+    const uint64_t col=colorq_from_rgba(drawColor,1.0f,textured);
     if(textured){
         ps2_bind_texture(&draw_tex->tex);
 

@@ -11,7 +11,7 @@
 #include "translation.h"
 #include "play_state.h"
 #include "save.h"
-#if PLATFORM_PSP
+#if PLATFORM_PSP || defined(TARGET_PS2)
 #include "segmented_address.h"
 #endif
 
@@ -19,6 +19,12 @@
 
 #if PLATFORM_PSP
 #define AMMO_DIGIT_TEXTURE(digit) SEGMENTED_TO_VIRTUAL(gAmmoDigitTextures[(digit)])
+#elif defined(TARGET_PS2)
+static void* sPs2AmmoDigitTextures[] = {
+    gAmmoDigit0Tex, gAmmoDigit1Tex, gAmmoDigit2Tex, gAmmoDigit3Tex, gAmmoDigit4Tex,
+    gAmmoDigit5Tex, gAmmoDigit6Tex, gAmmoDigit7Tex, gAmmoDigit8Tex, gAmmoDigit9Tex,
+};
+#define AMMO_DIGIT_TEXTURE(digit) SEGMENTED_TO_VIRTUAL(sPs2AmmoDigitTextures[(digit)])
 #else
 #define AMMO_DIGIT_TEXTURE(digit) ((u8*)gAmmoDigit0Tex + (8 * 8 * (digit)))
 #endif

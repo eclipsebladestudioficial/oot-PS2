@@ -39,7 +39,7 @@
 #pragma increment_block_number "gc-jp:128 gc-jp-ce:128 gc-jp-mq:128 gc-us:128 gc-us-mq:128 ntsc-1.0:128 ntsc-1.1:128" \
                                "ntsc-1.2:128"
 
-#if PLATFORM_PSP
+#if PLATFORM_PSP || defined(TARGET_PS2)
 static void* sCounterDigitTextures[] = {
     gCounterDigit0Tex,
     gCounterDigit1Tex,
@@ -58,7 +58,7 @@ static void* sCounterDigitTextures[] = {
 #define COUNTER_DIGIT_TEXTURE(digit) ((u8*)gCounterDigit0Tex + (8 * 16 * (digit)))
 #endif
 
-#if PLATFORM_PSP
+#if PLATFORM_PSP || defined(TARGET_PS2)
 void* gAmmoDigitTextures[] = {
     gAmmoDigit0Tex,
     gAmmoDigit1Tex,
@@ -2823,7 +2823,7 @@ void Magic_DrawMeter(PlayState* play) {
         OVERLAY_DISP = Gfx_TextureIA8(OVERLAY_DISP, gMagicMeterEndTex, 8, 16, R_MAGIC_METER_X, magicMeterY, 8, 16,
                                       1 << 10, 1 << 10);
 
-#if PLATFORM_PSP
+#if PLATFORM_PSP || defined(TARGET_PS2)
         {
             s16 midX = R_MAGIC_METER_X + 8;
             s16 remainingWidth = gSaveContext.magicCapacity;
@@ -2952,7 +2952,7 @@ void Interface_DrawActionLabel(GraphicsContext* gfxCtx, void* texture) {
 
 void Interface_DrawItemButtons(PlayState* play) {
     static void* cUpLabelTextures[] = LANGUAGE_ARRAY(gNaviCUpJPNTex, gNaviCUpENGTex, gNaviCUpENGTex, gNaviCUpENGTex);
-#if PLATFORM_PSP
+#if PLATFORM_PSP || defined(TARGET_PS2)
     static void* emptyCButtonTextures[] = {
         NULL,
         gEmptyCLeftArrowTex,
@@ -2989,7 +2989,7 @@ void Interface_DrawItemButtons(PlayState* play) {
     gDPPipeSync(OVERLAY_DISP++);
     gDPSetPrimColor(OVERLAY_DISP++, 0, 0, R_C_BTN_COLOR(0), R_C_BTN_COLOR(1), R_C_BTN_COLOR(2),
                     interfaceCtx->cLeftAlpha);
-#if PLATFORM_PSP
+#if PLATFORM_PSP || defined(TARGET_PS2)
     OVERLAY_DISP =
         Gfx_TextureIA8(OVERLAY_DISP, gButtonBackgroundTex, 32, 32, R_ITEM_BTN_X(1), R_ITEM_BTN_Y(1),
                        R_ITEM_BTN_WIDTH(1), R_ITEM_BTN_WIDTH(1), R_ITEM_BTN_DD(1) << 1, R_ITEM_BTN_DD(1) << 1);
@@ -3002,7 +3002,7 @@ void Interface_DrawItemButtons(PlayState* play) {
     // C-Down Button Color & Texture
     gDPSetPrimColor(OVERLAY_DISP++, 0, 0, R_C_BTN_COLOR(0), R_C_BTN_COLOR(1), R_C_BTN_COLOR(2),
                     interfaceCtx->cDownAlpha);
-#if PLATFORM_PSP
+#if PLATFORM_PSP || defined(TARGET_PS2)
     OVERLAY_DISP =
         Gfx_TextureIA8(OVERLAY_DISP, gButtonBackgroundTex, 32, 32, R_ITEM_BTN_X(2), R_ITEM_BTN_Y(2),
                        R_ITEM_BTN_WIDTH(2), R_ITEM_BTN_WIDTH(2), R_ITEM_BTN_DD(2) << 1, R_ITEM_BTN_DD(2) << 1);
@@ -3015,7 +3015,7 @@ void Interface_DrawItemButtons(PlayState* play) {
     // C-Right Button Color & Texture
     gDPSetPrimColor(OVERLAY_DISP++, 0, 0, R_C_BTN_COLOR(0), R_C_BTN_COLOR(1), R_C_BTN_COLOR(2),
                     interfaceCtx->cRightAlpha);
-#if PLATFORM_PSP
+#if PLATFORM_PSP || defined(TARGET_PS2)
     OVERLAY_DISP =
         Gfx_TextureIA8(OVERLAY_DISP, gButtonBackgroundTex, 32, 32, R_ITEM_BTN_X(3), R_ITEM_BTN_Y(3),
                        R_ITEM_BTN_WIDTH(3), R_ITEM_BTN_WIDTH(3), R_ITEM_BTN_DD(3) << 1, R_ITEM_BTN_DD(3) << 1);
@@ -3154,7 +3154,7 @@ void Interface_DrawItemButtons(PlayState* play) {
             }
 
             OVERLAY_DISP = Gfx_TextureIA8(
-#if PLATFORM_PSP
+#if PLATFORM_PSP || defined(TARGET_PS2)
                 OVERLAY_DISP, emptyCButtonTextures[temp],
 #else
                 OVERLAY_DISP, ((u8*)gButtonBackgroundTex + ((32 * 32) * (temp + 1))),

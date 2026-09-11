@@ -31,6 +31,14 @@
 #define gDPLoadCounterDigitTexture(pkt, digit, cms, cmt)                                                        \
     gDPLoadTextureBlock(pkt, Interface_GetCounterDigitTexture(digit), G_IM_FMT_IA, G_IM_SIZ_16b, 8, 16, 0, cms, \
                         cmt, G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD, G_TX_NOLOD)
+#elif defined(TARGET_PS2)
+static void* sPs2CounterDigitTextures[] = {
+    gCounterDigit0Tex, gCounterDigit1Tex, gCounterDigit2Tex, gCounterDigit3Tex, gCounterDigit4Tex, gCounterDigit5Tex,
+    gCounterDigit6Tex, gCounterDigit7Tex, gCounterDigit8Tex, gCounterDigit9Tex, gCounterColonTex,
+};
+#define gDPLoadCounterDigitTexture(pkt, digit, cms, cmt)                                               \
+    gDPLoadTextureBlock(pkt, SEGMENTED_TO_VIRTUAL(sPs2CounterDigitTextures[(digit)]), G_IM_FMT_I,       \
+                        G_IM_SIZ_8b, 8, 16, 0, cms, cmt, G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD, G_TX_NOLOD)
 #else
 #define gDPLoadCounterDigitTexture(pkt, digit, cms, cmt)                                                   \
     gDPLoadTextureBlock(pkt, ((u8*)gCounterDigit0Tex + (8 * 16 * (digit))), G_IM_FMT_I, G_IM_SIZ_8b, 8, 16, \

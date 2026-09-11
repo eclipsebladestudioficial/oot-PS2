@@ -313,7 +313,7 @@ static AttentionColor sAttentionColors[ACTORCAT_MAX + 1] = {
     { { 0, 255, 0, 255 }, { 0, 255, 0, 0 } },         // unused extra entry
 };
 
-#if PLATFORM_PSP
+#if PLATFORM_PSP || defined(TARGET_PS2)
 /* The original NoN microcode draws the reticle at z = 0 without near clipping.
  * Keep it inside the PSP GU's HUD projection instead. */
 #define LOCK_ON_RETICLE_Z -50.0f

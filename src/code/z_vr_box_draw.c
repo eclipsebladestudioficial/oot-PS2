@@ -25,7 +25,7 @@ void Skybox_Draw(SkyboxContext* skyboxCtx, GraphicsContext* gfxCtx, s16 skyboxId
 
     gDPSetPrimColor(POLY_OPA_DISP++, 0x00, 0x00, 0, 0, 0, blend);
     gSPTexture(POLY_OPA_DISP++, 0x8000, 0x8000, 0, G_TX_RENDERTILE, G_ON);
-#if PLATFORM_PSP
+#if PLATFORM_PSP || defined(TARGET_PS2)
     if (blend == 0) {
         gDPSetCombineMode(POLY_OPA_DISP++, G_CC_DECALRGBA, G_CC_DECALRGBA);
         gDPSetCycleType(POLY_OPA_DISP++, G_CYC_1CYCLE);

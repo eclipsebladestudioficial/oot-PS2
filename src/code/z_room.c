@@ -27,6 +27,8 @@
 #include "skin_matrix.h"
 #if PLATFORM_PSP
 #include "oot_psp_renderer.h"
+#elif defined(TARGET_PS2)
+#include "oot_ps2_renderer.h"
 #endif
 
 Vec3f D_801270A0 = { 0.0f, 0.0f, 0.0f };
@@ -648,6 +650,44 @@ static void Room_ApplyPspPendingRenderResolution(void) {
 }
 #endif
 
+#if defined(TARGET_PS2)
+static s32 sPs2PendingPrerenderRoomActive;
+static u32 sPs2PendingPrerenderRoomKey = 0xFFFFFFFFU;
+
+static void Room_SetPs2PendingPrerenderState(Room* room) {
+    s32 active = false;
+
+    if ((room != NULL) && (room->segment != NULL) && (room->roomShape != NULL) &&
+        (room->roomShape->base.type == ROOM_SHAPE_TYPE_IMAGE)) {
+        RoomShapeImageBase* imageBase = &room->roomShape->image.base;
+
+        if (imageBase->amountType == ROOM_SHAPE_IMAGE_AMOUNT_SINGLE) {
+            active = room->roomShape->image.single.source != NULL;
+        } else if (imageBase->amountType == ROOM_SHAPE_IMAGE_AMOUNT_MULTI) {
+            RoomShapeImageMulti* image = &room->roomShape->image.multi;
+            RoomShapeImageMultiBgEntry* backgrounds = SEGMENTED_TO_VIRTUAL(image->backgrounds);
+            s32 i;
+
+            if (backgrounds != NULL) {
+                for (i = 0; i < image->numBackgrounds; i++) {
+                    if (backgrounds[i].source != NULL) {
+                        active = true;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    sPs2PendingPrerenderRoomActive = active;
+    sPs2PendingPrerenderRoomKey = active ? (u32)(uintptr_t)room->segment : 0xFFFFFFFFU;
+}
+
+static void Room_ApplyPs2PendingPrerenderState(void) {
+    OotPs2Renderer_SetPrerenderRoomState(sPs2PendingPrerenderRoomActive, sPs2PendingPrerenderRoomKey);
+}
+#endif
+
 static u32 Room_GetRomFileSize(RomFile* roomFile) {
 #if PLATFORM_PSP
     if ((roomFile->vromStart != 0) && (roomFile->vromEnd == 0)) {
@@ -833,6 +873,11 @@ s32 Room_ProcessRoomRequest(PlayState* play, RoomContext* roomCtx) {
             if (roomCtx->prevRoom.num < 0) {
                 Room_ApplyPspPendingRenderResolution();
             }
+#elif defined(TARGET_PS2)
+            Room_SetPs2PendingPrerenderState(&roomCtx->curRoom);
+            if (roomCtx->prevRoom.num < 0) {
+                Room_ApplyPs2PendingPrerenderState();
+            }
 #endif
             Player_SetBootData(play, GET_PLAYER(play));
             Actor_SpawnTransitionActors(play, &play->actorCtx);
@@ -866,6 +911,8 @@ void Room_FinishRoomChange(PlayState* play, RoomContext* roomCtx) {
 
 #if PLATFORM_PSP
     Room_ApplyPspPendingRenderResolution();
+#elif defined(TARGET_PS2)
+    Room_ApplyPs2PendingPrerenderState();
 #endif
 
     func_80031B14(play, &play->actorCtx);

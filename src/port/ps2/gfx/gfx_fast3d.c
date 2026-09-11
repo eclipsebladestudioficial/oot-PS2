@@ -3727,7 +3727,6 @@ static void gfx_prepare_tri_pipeline_state(void) {
     state->texture_blend_reverse = rdp.combine_texture_blend_reverse;
     state->texture_blend_precolor = textureBlendPrecolor;
     state->din_fire_tint = rdp.combine_din_fire_tint;
-
     state->fog_uses_texture_alpha =
         use_fog && comb->uses_texture_alpha && !(texture_edge && depth_test && z_upd);
     state->flame_texture_atlas = flame_texture_atlas;
@@ -6215,7 +6214,17 @@ static void gfx_dp_set_other_mode(uint32_t mode_h, uint32_t mode_l) {
     gfx_mark_tri_pipeline_dirty();
 }
 
+extern void gfx_ps2_apply_vismono(uint8_t primR, uint8_t primG, uint8_t primB, uint8_t alpha,
+                                   uint8_t envR, uint8_t envG, uint8_t envB);
+
 static void gfx_dp_noop(uint32_t tag) {
+    if (tag == OOT_PS2_VISMONO_TAG) {
+        gfx_flush();
+        gfx_ps2_apply_vismono(rdp.prim_color.r, rdp.prim_color.g, rdp.prim_color.b, rdp.prim_color.a,
+                              rdp.env_color.r, rdp.env_color.g, rdp.env_color.b);
+        gfx_mark_tri_pipeline_dirty();
+        return;
+    }
     if (tag == OOT_PS2_PAUSE_BG_CAPTURE_TAG) {
 
         gfx_flush();

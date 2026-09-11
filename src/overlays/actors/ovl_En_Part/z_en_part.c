@@ -24,7 +24,7 @@
 
 #define FLAGS ACTOR_FLAG_UPDATE_CULLING_DISABLED
 
-#if PLATFORM_PSP
+#if PLATFORM_PSP || defined(TARGET_PS2)
 #define ENPART_DISPLAY_LIST_MATCHES(this, dList) \
     (((this)->displayList == (dList)) || ((this)->displayList == SEGMENTED_TO_VIRTUAL(dList)))
 #else

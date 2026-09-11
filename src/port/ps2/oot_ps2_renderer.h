@@ -2,6 +2,7 @@
 #define OOT_PS2_RENDERER_H
 
 #include <stdbool.h>
+#include <stdint.h>
 #include "sched.h"
 
 void OotPs2Renderer_Init(void);
@@ -11,6 +12,9 @@ void OotPs2Renderer_RenderMenu(const char* title, const char* const* lines, int 
                                const char* statusMessage, int firstRow, int totalRows);
 void OotPs2Renderer_SetWidescreen(bool enabled);
 bool OotPs2Renderer_IsWidescreen(void);
+void OotPs2Renderer_BeginDepthQueries(void);
+bool OotPs2Renderer_IsDepthClear(int32_t x, int32_t y);
+bool OotPs2Renderer_DepthTest(int32_t x, int32_t y, float projectedZ);
 void OotPs2Renderer_RequestPauseBackground(void);
 bool OotPs2Renderer_IsPauseBackgroundReady(void);
 void OotPs2Renderer_SetPauseBackgroundActive(bool active);

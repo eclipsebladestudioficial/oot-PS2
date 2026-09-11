@@ -27,7 +27,7 @@ s16 sPlayerInitialPosZ = 0;
 s16 sPlayerInitialDirection = 0;
 s16 sEntranceIconMapIndex = 0;
 
-#if PLATFORM_PSP
+#if PLATFORM_PSP || defined(TARGET_PS2)
 /* The original NoN microcode draws these at z = 0 without near clipping.
  * Keep them inside the PSP GU's HUD projection instead. */
 #define COMPASS_ARROW_Z -50.0f
