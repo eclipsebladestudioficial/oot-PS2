@@ -330,6 +330,7 @@ s32 OotPs2Pad_Read(OotPs2PadState* out) {
         return -1;
     }
 
+    OotPs2Pad_Init();
     memset(out, 0, sizeof(*out));
     out->lx = 128;
     out->ly = 128;
