@@ -18,9 +18,13 @@
 #include "oot_ps2_platform.h"
 #include "oot_ps2_renderer.h"
 #include "oot_ps2_runtime_patch.h"
+#include "oot_ps2_home_menu.h"
 #include "play_state.h"
+#include "player.h"
 #include "setup_state.h"
 #include "title_setup_state.h"
+
+const Color_RGB8* tunicColor = NULL;
 
 void OotPortGame_Init(void);
 void Graph_Init(GraphicsContext* gfxCtx);
@@ -92,7 +96,7 @@ int main(int argc, char** argv) {
     OotPs2Thread_ChangePriority(OotPs2Thread_GetId(), 0x30);
     OotPs2Platform_SetDiscBoot(OotPs2BootIsDisc(executablePath));
     OotPs2Drivers_Init(executablePath);
-
+    OotPs2Video_Init(executablePath);
     osInitialize();
     OotPs2Renderer_Init();
 
@@ -106,6 +110,7 @@ int main(int argc, char** argv) {
 
     OotPortControls_Load();
     OotPortGame_Init();
+    OotPs2HomeMenu_Init();
     Graph_Init(&gfxCtx);
 
     while (nextInit != NULL) {
@@ -119,6 +124,26 @@ int main(int argc, char** argv) {
         OotPs2Input_SetPlayState(nextInit == Play_Init ? gameState : NULL);
 
         while (GameState_IsRunning(gameState)) {
+            OotPs2HomeMenu_PollHomeButton();
+
+            if (OotPs2HomeMenu_IsOpen()) {
+
+                if (nextInit == Play_Init) {
+                    Player* player = GET_PLAYER((PlayState*)gameState);
+
+                    if ((player != NULL) && (player->currentTunic >= PLAYER_TUNIC_KOKIRI) &&
+                        (player->currentTunic < PLAYER_TUNIC_MAX)) {
+                        tunicColor = &sTunicColors[player->currentTunic];
+                    }
+                }
+
+                if (OotPs2HomeMenu_RunFrame(tunicColor) == OOT_PS2_HOME_MENU_RESULT_EXIT_GAME) {
+                    gameState->running = false;
+                    nextInit = NULL;
+                    break;
+                }
+                continue;
+            }
             Graph_Update(&gfxCtx, gameState);
         }
 

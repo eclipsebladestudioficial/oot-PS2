@@ -12,6 +12,11 @@
 #include "gfx_cc.h"
 #include "gfx_window_manager_api.h"
 #include "oot_ps2_platform.h"
+#include "oot_port_controls.h"
+#include "oot_ps2_video.h"
+#include "array_count.h"
+#include "oot_ps2_renderer.h"
+#include "oot_ps2_video.h"
 
 #define MAX_TEXTURES 768
 #define MAX_SHADERS 1024
@@ -34,6 +39,8 @@ static uint32_t sProfFrameDrawCalls=0,sProfFrameExactCalls=0,sProfFrameFogCalls=
 #define PS2_SETREG_FOGCOL(R,G,B) ((u64)((R)&0xff) | ((u64)((G)&0xff)<<8) | ((u64)((B)&0xff)<<16))
 
 extern GSGLOBAL *gs_global;
+extern void gfx_set_ps2_widescreen(bool enabled);
+
 void gfx_ps2_restore_pause_background(void);
 bool gfx_ps2_pause_background_active(void);
 static void ps2_restore_prerender_fallback(void);
@@ -183,6 +190,17 @@ static bool sPrerender3dStarted;
 static bool sPrerenderRoomActive;
 static bool sPrerenderDepthOnlyPass;
 static u32 sPrerenderRoomKey = 0xffffffffU;
+
+static bool sPauseBgActive;
+static bool sPauseBgCaptureRequested;
+static bool sPauseBgCaptured;
+static void *sPauseBgBuffer;
+static bool sHomeMenuBgActive;
+static bool sHomeMenuBgCaptureRequested;
+static bool sHomeMenuBgCaptured;
+static void *sHomeMenuBgBuffer;
+static void *sHomeMenuBgBlurScratch;
+
 void gfx_ps2_set_texture_blend_reverse(bool enabled){sTextureBlendReverse=enabled;}
 void gfx_ps2_set_texture_blend_precolor(bool enabled){sTextureBlendPrecolor=enabled;}
 void gfx_ps2_set_din_fire_tint(bool enabled){sDinFireTint=enabled;}
@@ -1906,6 +1924,33 @@ cleanup:
     }
 }
 
+int gfx_ps2_apply_video_mode(void) {
+    OotPs2VideoMode vmode;
+
+    OotPs2Video_GetMode(&vmode);
+
+    //gsKit_deinit_global(gs_global);
+    //gs_global = gsKit_init_global();
+
+    if(vmode.widescreen) gs_global->Aspect = GS_ASPECT_16_9;
+    else gs_global->Aspect = GS_ASPECT_4_3; 
+
+    gs_global->Width = vmode.displayWidth;
+    gs_global->Height = vmode.displayHeight;
+    gs_global->Field = vmode.field;
+    gs_global->Interlace = vmode.interlaced;
+    gs_global->Mode = vmode.mode;
+
+    gsKit_init_screen(gs_global);
+
+    ps2_viewport(0, 0, vmode.displayWidth, vmode.displayHeight);
+    ps2_scissor(0, 0, vmode.viewportWidth, vmode.viewportHeight);
+
+    gfx_set_ps2_widescreen(vmode.widescreen);
+
+    return 0;
+}
+
 static void ps2_init(void) {
     u64* p;
 
@@ -1948,6 +1993,8 @@ static void ps2_init(void) {
     OotPs2Trace_Log("rapi scissor begin");
     ps2_scissor(0, 0, gs_global->Width, gs_global->Height);
     OotPs2Trace_Log("rapi scissor done");
+
+    gfx_ps2_apply_video_mode();
 }
 static void ps2_restore_prerender_fallback(void){
     if(!sPrerenderRoomActive){
@@ -2374,5 +2421,349 @@ static void ps2_end(void){
     ps2_build_overlay();
 }
 static void ps2_finish(void){}
+
+static void gfx_ps2_render_home_menu_main(int selectedIndex, uint8_t highlightRed, uint8_t highlightGreen,
+                                            uint8_t highlightBlue) {
+    static const char *items[] = {
+        "Resume Game",
+        "Controller Mapping",
+        "Video Settings",
+        "About",
+        "Exit Game",
+    };
+    int i;
+
+    ps2_home_rect(0, 0, PS2_HOME_MENU_WIDTH, PS2_HOME_MENU_HEIGHT, ps2_home_rgba(0, 0, 0, 96));
+    ps2_home_rect(112, 34, 256, 210, ps2_home_rgba(0, 0, 0, 132));
+
+    for (i = 0; i < 5; i++) {
+        int y = 62 + (i * 38);
+        unsigned int color = ps2_home_rgba(218, 224, 218, 255);
+
+        if (selectedIndex == i) {
+            ps2_home_rect(128, y - 22, 224, 28,
+                                ps2_home_rgba(highlightRed, highlightGreen, highlightBlue, 205));
+            color = ps2_home_rgba(255, 255, 245, 255);
+        }
+
+        ps2_home_text(PS2_HOME_MENU_WIDTH / 2, y, items[i], 0.72f, color,
+                                      ps2_home_rgba(0, 0, 0, 180),
+                                      true);
+    }
+}
+
+void gfx_ps2_set_home_menu_background_active(bool active) {
+    sHomeMenuBgActive = active;
+
+    if (!active) {
+        sHomeMenuBgCaptureRequested = false;
+        sHomeMenuBgCaptured = false;
+    }
+}
+
+void gfx_ps2_request_home_menu_background(void) {
+    sHomeMenuBgCaptureRequested = true;
+}
+
+static void gfx_ps2_render_controller_mapping(int selectedIndex, const char* statusMessage, uint8_t highlightRed,
+                                                 uint8_t highlightGreen, uint8_t highlightBlue) {
+    char line[80];
+    char value[96];
+    int bindingCount = OotPortControls_GetBindingCount();
+    int deadzoneRow = bindingCount;
+    int n64StickScalingRow = bindingCount + 1;
+    int saveRow = bindingCount + 2;
+    int resetRow = bindingCount + 3;
+    int backRow = bindingCount + 4;
+    int totalRows = backRow + 1;
+    int visibleRows = 7;
+    int firstRow = selectedIndex - (visibleRows / 2);
+    int row;
+
+    if (visibleRows > totalRows) {
+        visibleRows = totalRows;
+    }
+    if (firstRow < 0) {
+        firstRow = 0;
+    }
+    if ((firstRow + visibleRows) > totalRows) {
+        firstRow = totalRows - visibleRows;
+    }
+
+    ps2_home_rect(0, 0, PS2_HOME_MENU_WIDTH, PS2_HOME_MENU_HEIGHT, ps2_home_rgba(0, 0, 0, 112));
+    ps2_home_rect(34, 20, 412, 232, ps2_home_rgba(0, 0, 0, 154));
+    ps2_home_text(PS2_HOME_MENU_WIDTH / 2, 50, "Controller Mapping", 0.82f,
+                                  ps2_home_rgba(255, 255, 245, 255), ps2_home_rgba(0, 0, 0, 180),
+                                  true); // intrafont center
+
+
+        for (row = firstRow; row < firstRow + visibleRows; row++) {
+            int y = 82 + ((row - firstRow) * 22);
+            unsigned int color = ps2_home_rgba(218, 224, 218, 255);
+
+            if (selectedIndex == row) {
+                ps2_home_rect(54, y - 17, 372, 22,
+                                    ps2_home_rgba(highlightRed, highlightGreen, highlightBlue, 205));
+                color = ps2_home_rgba(255, 255, 245, 255);
+            }
+
+            if (row < bindingCount) {
+                OotPortControls_GetBindingValueText(row, value, sizeof(value));
+                snprintf(line, sizeof(line), "%s: %.32s", OotPortControls_GetBindingName(row), value);
+            } else if (row == deadzoneRow) {
+                snprintf(line, sizeof(line), "Deadzone: %d", OotPortControls_GetDeadzone());
+            } else if (row == n64StickScalingRow) {
+                snprintf(line, sizeof(line), "N64 Stick Scaling: %s",
+                         OotPortControls_IsN64StickScalingEnabled() ? "On" : "Off");
+            } else if (row == saveRow) {
+                snprintf(line, sizeof(line), "Save controls.ini");
+            } else if (row == resetRow) {
+                snprintf(line, sizeof(line), "Reset defaults");
+            } else {
+                snprintf(line, sizeof(line), "Back");
+            }
+
+            ps2_home_text(70, y, line, 0.68f, color, ps2_home_rgba(0, 0, 0, 180),
+                                          true);
+        }
+
+        if (firstRow > 0) {
+            ps2_home_text(422, 82, "^", 0.48f, ps2_home_rgba(170, 190, 180, 255),
+                                          ps2_home_rgba(0, 0, 0, 160), true);
+        }
+        if ((firstRow + visibleRows) < totalRows) {
+            ps2_home_text(422, 214, "v", 0.48f, ps2_home_rgba(170, 190, 180, 255),
+                                          ps2_home_rgba(0, 0, 0, 160), true);
+        }
+
+        if ((statusMessage != NULL) && (statusMessage[0] != '\0')) {
+            ps2_home_text(PS2_HOME_MENU_WIDTH / 2, 242, statusMessage, 0.48f,
+                                          ps2_home_rgba(170, 190, 180, 255), ps2_home_rgba(0, 0, 0, 160),
+                                          true);
+        } else {
+            ps2_home_text(PS2_HOME_MENU_WIDTH / 2, 242,
+                                          "Left/Right change  Cross select  Circle back", 0.48f,
+                                          ps2_home_rgba(170, 190, 180, 255), ps2_home_rgba(0, 0, 0, 160),
+                                          true);
+        }
+        //return;
+
+    //ps2_home_text(PS2_HOME_MENU_WIDTH / 2, 116, "Controller Mapping", 4, // both gfx_scegu_draw_fallback_text_centered
+                                          //ps2_home_rgba(255, 255, 245, 255),  ps2_home_rgba(0, 0, 0, 160), true);
+    //ps2_home_text(PS2_HOME_MENU_WIDTH / 2, 158, "Back", 4,
+                                          //ps2_home_rgba(218, 224, 218, 255),  ps2_home_rgba(0, 0, 0, 160), true);
+}
+
+static void gfx_ps2_render_video_settings(int selectedIndex, const char* statusMessage, uint8_t highlightRed,
+                                             uint8_t highlightGreen, uint8_t highlightBlue) {
+    char line[80];
+    int row;
+
+    ps2_home_rect(0, 0, PS2_HOME_MENU_WIDTH, PS2_HOME_MENU_HEIGHT, ps2_home_rgba(0, 0, 0, 112));
+    ps2_home_rect(34, 20, 412, 232, ps2_home_rgba(0, 0, 0, 154));
+    ps2_home_text(PS2_HOME_MENU_WIDTH / 2, 48, "Video Settings", 0.82f,
+                                  ps2_home_rgba(255, 255, 245, 255), ps2_home_rgba(0, 0, 0, 180),
+                                  true);
+        for (row = 0; row < 6; row++) {
+            int y = 76 + (row * 22);
+            unsigned int color = ps2_home_rgba(218, 224, 218, 255);
+
+            if (selectedIndex == row) {
+                ps2_home_rect(54, y - 17, 372, 22,
+                                    ps2_home_rgba(highlightRed, highlightGreen, highlightBlue, 205));
+                color = ps2_home_rgba(255, 255, 245, 255);
+            }
+
+            switch (row) {
+                case 0:
+                    snprintf(line, sizeof(line), "Resolution: %s", OotPs2Video_GetResolutionName());
+                    break;
+                case 1:
+                    snprintf(line, sizeof(line), "Aspect Ratio: %s", OotPs2Video_GetAspectName());
+                    break;
+                case 2:
+                    snprintf(line, sizeof(line), "Apply video mode");
+                    break;
+                case 3:
+                    snprintf(line, sizeof(line), "Save video.ini");
+                    break;
+                case 4:
+                    snprintf(line, sizeof(line), "Reset defaults");
+                    break;
+                default:
+                    snprintf(line, sizeof(line), "Back");
+                    break;
+            }
+
+            ps2_home_text(70, y, line, 0.68f, color, ps2_home_rgba(0, 0, 0, 180),
+                                          true);
+        }
+
+        if ((statusMessage != NULL) && (statusMessage[0] != '\0')) {
+            ps2_home_text(PS2_HOME_MENU_WIDTH / 2, 242, statusMessage, 0.48f,
+                                          ps2_home_rgba(170, 190, 180, 255), ps2_home_rgba(0, 0, 0, 160),
+                                          true);
+        } else {
+            ps2_home_text(PS2_HOME_MENU_WIDTH / 2, 242,
+                                          "Left/Right change  Cross select  Circle back", 0.48f,
+                                          ps2_home_rgba(170, 190, 180, 255), ps2_home_rgba(0, 0, 0, 160),
+                                          true);
+        }
+
+    //return;
+
+    //ps2_home_text(PS2_HOME_MENU_WIDTH / 2, 116, "Video Settings", 4,
+                                          //ps2_home_rgba(255, 255, 245, 255), ps2_home_rgba(0, 0, 0, 160), true);
+    //ps2_home_text(PS2_HOME_MENU_WIDTH / 2, 158, "Back", 4,
+                                          //ps2_home_rgba(218, 224, 218, 255), ps2_home_rgba(0, 0, 0, 160), true);
+}
+
+#define PS2_HOME_MENU_ABOUT_QR_MODULE_COUNT 33
+#define PS2_HOME_MENU_ABOUT_QR_MODULE_SIZE 4
+#define PS2_HOME_MENU_ABOUT_VISIBLE_LINES 6
+
+static const char* const sHomeMenuAboutQrModules[PS2_HOME_MENU_ABOUT_QR_MODULE_COUNT] = {
+    "111111101011001101010111001111111",
+    "100000100101010100101001101000001",
+    "101110101100100110100111001011101",
+    "101110101000010001111111001011101",
+    "101110100000111100111100101011101",
+    "100000101000010011010010101000001",
+    "111111101010101010101010101111111",
+    "000000001101001111000110100000000",
+    "010101111100111010101101111101101",
+    "110000001011100111001100111100011",
+    "110111111111010100111000001110101",
+    "000110001101111110101111101011000",
+    "011100101100001010101010011101010",
+    "100001001000111001101100000110111",
+    "111101101011010000110001111110110",
+    "100001010100111010101110101101010",
+    "010111110110101011100111101010010",
+    "110010010011100000000011100101010",
+    "011101101110100011000100100000111",
+    "110100010000111100111010111100011",
+    "101011101011000101111000110000000",
+    "000010010100110000010101100000111",
+    "110100101010101010010100111111001",
+    "011001000001101101111100101100011",
+    "101011101100000000101100111111011",
+    "000000001101011111111111100011001",
+    "111111101011110110000010101011110",
+    "100000101101111100111111100010011",
+    "101110100101100101111000111111000",
+    "101110101100101110110110101011010",
+    "101110100011111011111010110011001",
+    "100000101001010000011100101000000",
+    "111111100011001001011101110011010",
+};
+
+static const char* const sHomeMenuAboutLines[] = {
+    "A PlayStation Portable port",
+    "of The Legend of Zelda:",
+    "Ocarina of Time.",
+    "",
+    "Ported by Z2442 and the PSP",
+    "Homebrew community. Thank you!",
+    "To my faimily that put up with",
+    "me playing around with two decade",
+    "old handheld!",
+    "Everyone for all of your help",
+    "making this a reality.",
+    "I could not done this Alone.",
+    "",
+    "Special thanks:",
+    "Original SM64 Fast3d renderer: Mr.Neo240",
+    "R&D Team: M-CID and the PSP community",
+    "Daedalus Team: Wally, Re4thewin, Dreamer72",
+    "Discord Team: Mr. Iron, Acid_Snake, Krazynez",
+    "N64 Decompilation Team",
+    "",
+    "Scan the QR code to the right",
+    "to talk to the team on discord!",
+};
+
+static void gfx_ps2_draw_home_menu_about_qr(int x, int y) {
+    const int codeSize = PS2_HOME_MENU_ABOUT_QR_MODULE_COUNT * PS2_HOME_MENU_ABOUT_QR_MODULE_SIZE;
+    const int quietZone = PS2_HOME_MENU_ABOUT_QR_MODULE_SIZE * 2;
+    int row;
+
+    ps2_home_rect(x - quietZone, y - quietZone, codeSize + (quietZone * 2), codeSize + (quietZone * 2),
+                        ps2_home_rgba(255, 255, 255, 255));
+
+    for (row = 0; row < PS2_HOME_MENU_ABOUT_QR_MODULE_COUNT; row++) {
+        int column;
+
+        for (column = 0; column < PS2_HOME_MENU_ABOUT_QR_MODULE_COUNT; column++) {
+            if (sHomeMenuAboutQrModules[row][column] == '1') {
+                ps2_home_rect(x + (column * PS2_HOME_MENU_ABOUT_QR_MODULE_SIZE),
+                                    y + (row * PS2_HOME_MENU_ABOUT_QR_MODULE_SIZE),
+                                    PS2_HOME_MENU_ABOUT_QR_MODULE_SIZE, PS2_HOME_MENU_ABOUT_QR_MODULE_SIZE,
+                                    ps2_home_rgba(0, 0, 0, 255));
+            }
+        }
+    }
+}
+
+static void gfx_ps2_render_about(int scrollOffset) {
+    const unsigned int titleColor = ps2_home_rgba(255, 255, 245, 255);
+    const unsigned int bodyColor = ps2_home_rgba(218, 224, 218, 255);
+    const unsigned int hintColor = ps2_home_rgba(170, 190, 180, 255);
+    const unsigned int shadowColor = ps2_home_rgba(0, 0, 0, 180);
+    const int aboutLineCount = ARRAY_COUNT(sHomeMenuAboutLines);
+    int line;
+
+    if (scrollOffset < 0) {
+        scrollOffset = 0;
+    }
+    if (scrollOffset > (aboutLineCount - PS2_HOME_MENU_ABOUT_VISIBLE_LINES)) {
+        scrollOffset = aboutLineCount - PS2_HOME_MENU_ABOUT_VISIBLE_LINES;
+    }
+
+    ps2_home_rect(0, 0, PS2_HOME_MENU_WIDTH, PS2_HOME_MENU_HEIGHT, ps2_home_rgba(0, 0, 0, 112));
+    ps2_home_rect(20, 20, 440, 232, ps2_home_rgba(0, 0, 0, 154));
+    ps2_home_text(PS2_HOME_MENU_WIDTH / 2, 54, "About", 0.82f, titleColor, shadowColor,
+                                  true);
+    ps2_home_rect(282, 72, 1, 142, ps2_home_rgba(112, 132, 122, 180));
+
+    for (line = 0; line < PS2_HOME_MENU_ABOUT_VISIBLE_LINES; line++) {
+        ps2_home_text(48, 96 + (line * 20), sHomeMenuAboutLines[scrollOffset + line], 0.48f,
+                                      bodyColor, shadowColor, true);
+    }
+
+    if (scrollOffset > 0) {
+        ps2_home_text(266, 90, "^", 0.48f, hintColor, shadowColor, true);
+    }
+    if ((scrollOffset + PS2_HOME_MENU_ABOUT_VISIBLE_LINES) < aboutLineCount) {
+        ps2_home_text(266, 202, "v", 0.48f, hintColor, shadowColor, true);
+    }
+
+    gfx_ps2_draw_home_menu_about_qr(306, 82);
+    ps2_home_text(PS2_HOME_MENU_WIDTH / 2, 232, "Up/Down scroll  Circle, Cross, or Start: Back", 0.42f,
+                                  hintColor, ps2_home_rgba(0, 0, 0, 160), true);
+}
+
+void gfx_ps2_render_home_menu(int selectedIndex, int screen, int submenuSelectedIndex, const char* statusMessage,
+                                uint8_t highlightRed, uint8_t highlightGreen, uint8_t highlightBlue) {
+    const bool old_test=z_test,old_blend=do_blend,old_write=z_write;
+    const struct Clip old_clip=r_clip;
+    z_test=false;z_write=false;set_blend(true);update_test();ps2_depth_mask(false);
+    set_scissor_raw(0,0,gs_global->Width-1,gs_global->Height-1);
+
+    if (screen == 1) {
+        gfx_ps2_render_controller_mapping(submenuSelectedIndex, statusMessage, highlightRed, highlightGreen,
+                                             highlightBlue);
+    } else if (screen == 2) {
+        gfx_ps2_render_video_settings(submenuSelectedIndex, statusMessage, highlightRed, highlightGreen,
+                                        highlightBlue);
+    } else if (screen == 3) {
+        gfx_ps2_render_about(submenuSelectedIndex);
+    } else {
+        gfx_ps2_render_home_menu_main(selectedIndex, highlightRed, highlightGreen, highlightBlue);
+    }
+
+    set_scissor_raw(old_clip.x0,old_clip.y0,old_clip.x1,old_clip.y1);
+    z_test=old_test;z_write=old_write;ps2_depth_mask(old_write);update_test();set_blend(old_blend);
+}
 
 struct GfxRenderingAPI gfx_ps2_rapi={ps2_z01,ps2_unload_shader,ps2_load_shader,ps2_create_shader,ps2_lookup_shader,ps2_shader_info,ps2_new_texture,ps2_select_texture,ps2_upload_texture,ps2_sampler,ps2_env_color,ps2_depth_test,ps2_depth_mask,ps2_zdecal,ps2_viewport,ps2_scissor,ps2_alpha,ps2_draw,ps2_draw_fog,ps2_init,ps2_resize,ps2_start,ps2_end,ps2_finish};

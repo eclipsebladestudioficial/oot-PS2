@@ -1478,7 +1478,9 @@ PS2_PORT_RUNTIME_SOURCES := \
 	src/port/ps2/oot_ps2_runtime_patch.c \
 	src/port/ps2/sys_ucode_port.c \
 	src/port/ps2/libultra_ps2.c \
-	src/port/ps2/sched_ps2.c
+	src/port/ps2/sched_ps2.c \
+	src/port/ps2/oot_ps2_video.c \
+	
 endif
 
 PSP_PORT_ASSET_SOURCES := \

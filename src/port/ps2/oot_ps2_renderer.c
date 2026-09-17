@@ -10,6 +10,13 @@
 
 extern struct GfxRenderingAPI gfx_ps2_rapi;
 extern struct GfxWindowManagerAPI gfx_ps2_wapi;
+
+extern void gfx_ps2_render_home_menu(int selectedIndex, int screen, int submenuSelectedIndex, const char* statusMessage,
+                                uint8_t highlightRed, uint8_t highlightGreen, uint8_t highlightBlue);
+extern void gfx_ps2_set_home_menu_background_active(bool active);
+extern void gfx_ps2_request_home_menu_background(void);
+extern int gfx_ps2_apply_video_mode(void);
+
 void gfx_ps2_render_menu(const char* title, const char* const* lines, int lineCount, int selectedIndex,
                          const char* statusMessage, int firstRow, int totalRows);
 void gfx_ps2_request_pause_background(void);
@@ -22,6 +29,8 @@ bool gfx_ps2_get_fps_overlay_enabled(void);
 void gfx_ps2_set_prerender_room_state(bool active, u32 roomKey);
 void gfx_ps2_depth_query_begin(void);
 bool gfx_ps2_depth_read(int32_t x, int32_t y, uint16_t* depth);
+void OotPs2Renderer_RenderHomeMenu(int selectedIndex, int screen, int submenuSelectedIndex, const char* statusMessage, uint8_t highlightRed, uint8_t highlightGreen, uint8_t highlightBlue);
+
 
 static bool sInitialized;
 
@@ -78,6 +87,13 @@ void OotPs2Renderer_RenderMenu(const char* title, const char* const* lines, int 
 
     OotPs2Renderer_Init();
     gfx_render_callback_frame(OotPs2Renderer_DrawMenu, &args);
+}
+
+static void OotPs2Renderer_DrawHomeMenu(void* arg) {
+    const OotPs2HomeMenuRenderArgs* menu = (const OotPs2HomeMenuRenderArgs*)arg;
+
+    gfx_ps2_render_home_menu(menu->selectedIndex, menu->screen, menu->submenuSelectedIndex, menu->statusMessage,
+                               menu->highlightRed, menu->highlightGreen, menu->highlightBlue);
 }
 
 void OotPs2Renderer_SetWidescreen(bool enabled) {
@@ -167,4 +183,38 @@ void OotPs2Renderer_ShowBootProgress(int code, const char* label) {
 
 void OotPs2Renderer_HideBootProgress(void) {
     gfx_ps2_set_boot_progress(-1, NULL);
+}
+
+void OotPs2Renderer_SetHomeMenuBackgroundActive(bool active) {
+    gfx_ps2_set_home_menu_background_active(active);
+}
+
+void OotPs2Renderer_RequestHomeMenuBackground() {
+    gfx_ps2_request_home_menu_background();
+}
+
+void OotPs2Renderer_RenderHomeMenu(int selectedIndex, int screen, int submenuSelectedIndex, const char* statusMessage, uint8_t highlightRed, uint8_t highlightGreen, uint8_t highlightBlue) {
+    OotPs2HomeMenuRenderArgs args;
+
+    OotPs2Renderer_Init();
+    args.selectedIndex = selectedIndex;
+    args.screen = screen;
+    args.submenuSelectedIndex = submenuSelectedIndex;
+    args.statusMessage = statusMessage;
+    args.highlightRed = highlightRed;
+    args.highlightGreen = highlightGreen;
+    args.highlightBlue = highlightBlue;
+
+    gfx_render_callback_frame(OotPs2Renderer_DrawHomeMenu, &args);
+}
+
+int OotPs2Renderer_ApplyVideoSettings(void) {
+    int result;
+
+    OotPs2Renderer_Init();
+    result = gfx_ps2_apply_video_mode();
+    
+    //gfx_invalidate_texture_cache(); gs texflush
+    //gfx_invalidate_render_state();
+    return result;
 }

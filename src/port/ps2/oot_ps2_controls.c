@@ -432,3 +432,14 @@ void OotPortControls_SetDeadzone(int deadzone) {
 void OotPortControls_AdjustDeadzone(int delta) {
     OotPortControls_SetDeadzone(sDeadzone + delta);
 }
+
+int OotPortControls_IsN64StickScalingEnabled(void) {
+    //OotPspControls_EnsureInitialized();
+    //return sN64StickScalingEnabled;
+    return 0;
+}
+
+void OotPortControls_SetN64StickScalingEnabled(int enabled) {
+    //sN64StickScalingEnabled = enabled != 0;
+}
+

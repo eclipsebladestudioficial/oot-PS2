@@ -5,6 +5,16 @@
 #include <stdint.h>
 #include "sched.h"
 
+typedef struct OotPs2HomeMenuRenderArgs {
+    int selectedIndex;
+    int screen;
+    int submenuSelectedIndex;
+    const char* statusMessage;
+    uint8_t highlightRed;
+    uint8_t highlightGreen;
+    uint8_t highlightBlue;
+} OotPs2HomeMenuRenderArgs;
+
 void OotPs2Renderer_Init(void);
 void OotPs2Renderer_RenderDisplayList(Gfx* dl);
 void OotPs2Renderer_RenderTask(const OSTask* task);
@@ -24,5 +34,10 @@ void OotPs2Renderer_SetPrerenderRoomState(bool active, u32 roomKey);
 void OotPs2Renderer_SetBootProgress(int code, const char* label);
 void OotPs2Renderer_ShowBootProgress(int code, const char* label);
 void OotPs2Renderer_HideBootProgress(void);
-
+void OotPs2Renderer_SetHomeMenuBackgroundActive(bool value);
+void OotPs2Renderer_RequestHomeMenuBackground();
+void OotPs2Renderer_RenderHomeMenu(int selectedIndex, int screen, int submenuSelectedIndex,
+                                   const char* statusMessage, uint8_t highlightRed, uint8_t highlightGreen,
+                                   uint8_t highlightBlue);
+int OotPs2Renderer_ApplyVideoSettings(void);
 #endif

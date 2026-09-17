@@ -2,6 +2,11 @@
 #define OOT_PS2_HOME_MENU_H
 
 #include <stdbool.h>
+#include "oot_port_controls.h"
+#include "oot_ps2_platform.h"
+#include "oot_ps2_renderer.h"
+#include "oot_ps2_video.h"
+#include "play_state.h"
 
 typedef enum OotPs2HomeMenuResult {
     OOT_PS2_HOME_MENU_RESULT_NONE,
@@ -12,6 +17,7 @@ typedef enum OotPs2HomeMenuResult {
 void OotPs2HomeMenu_Init(void);
 bool OotPs2HomeMenu_PollToggle(void);
 bool OotPs2HomeMenu_IsOpen(void);
-OotPs2HomeMenuResult OotPs2HomeMenu_RunFrame(void);
+void OotPs2HomeMenu_PollHomeButton(void);
+OotPs2HomeMenuResult OotPs2HomeMenu_RunFrame(const Color_RGB8* tunicColor);
 
 #endif
