@@ -1374,7 +1374,8 @@ PS2_PORT_ENTRY_SOURCE := src/port/ps2/oot_ps2_main.c
 PS2_PORT_RUNTIME_ASM_SOURCES := \
 	src/code/kanread.s \
 	src/port/ps2/oot_port_asset_transform.s \
-	src/port/ps2/oot_port_ucode_assets.s
+	src/port/ps2/oot_port_ucode_assets.s \
+	src/port/ps2/oot_ps2_audio_mix.s
 PS2_PORT_ASSET_SNAPSHOT := assets/ps2/$(VERSION)/generated.zip
 PS2_PORT_ASSET_TRANSFORM := assets/ps2/$(VERSION)/asset_transform.z
 PS2_PORT_RUNTIME_PATCH_MANIFEST := assets/ps2/$(VERSION)/runtime_patches.z
@@ -1466,7 +1467,9 @@ ps2-port-elf: $(PS2_PORT_ELF)
 	@echo "PS2 ELF is up to date: $(PS2_PORT_ELF)"
 
 PS2_PORT_GFX_HOT_CFLAGS := $(filter-out -O2,$(PS2_PORT_CFLAGS)) -O3
+PS2_AUDIO_MIX_CFLAGS := $(filter-out -O2,$(PS2_PORT_CFLAGS)) -O3
 
+$(PS2_PORT_BUILD_DIR)/src/port/ps2/oot_port_mixer.o: PS2_PORT_CFLAGS := $(PS2_AUDIO_MIX_CFLAGS)
 $(PS2_PORT_BUILD_DIR)/src/port/ps2/gfx/gfx_fast3d.o: PS2_PORT_CFLAGS := $(PS2_PORT_GFX_HOT_CFLAGS)
 $(PS2_PORT_BUILD_DIR)/src/port/ps2/gfx/gfx_ps2_rapi.o: PS2_PORT_CFLAGS := $(PS2_PORT_GFX_HOT_CFLAGS)
 
