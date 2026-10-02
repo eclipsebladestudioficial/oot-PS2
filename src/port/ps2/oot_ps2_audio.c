@@ -4,6 +4,7 @@
 #include "oot_port_mixer.h"
 #include "oot_ps2_platform.h"
 #include <audsrv.h>
+#include <kernel.h>
 #include <ps2_audio_driver.h>
 #include <stdio.h>
 #include <string.h>
@@ -19,7 +20,7 @@
 #define OOT_PS2_AUDIO_HIGH_BYTES (OOT_PS2_AUDIO_CHUNK_BYTES * 6)
 #define OOT_PS2_AUDIO_RING_BYTES (128 * 1024)
 #define OOT_PS2_AUDIO_OUTPUT_STACK_SIZE (16 * 1024)
-#define OOT_PS2_AUDIO_PRODUCER_STACK_SIZE (512 * 1024)
+#define OOT_PS2_AUDIO_PRODUCER_STACK_SIZE (128 * 1024)
 #define OOT_PS2_AUDIO_OUTPUT_PRIORITY 0x16
 #define OOT_PS2_AUDIO_PRODUCER_PRIORITY 0x17
 #define OOT_PS2_AUDIO_UPDATE_USEC_BASE (1000000U / 60U)
@@ -28,6 +29,7 @@
 static u8 sAudioExternalPool[OOT_PS2_AUDIO_EXTERNAL_POOL_SIZE] __attribute__((aligned(64)));
 static u8 sAudioPcmRing[OOT_PS2_AUDIO_RING_BYTES] __attribute__((aligned(64)));
 static u8 sAudioFeedChunk[OOT_PS2_AUDIO_CHUNK_BYTES] __attribute__((aligned(64)));
+static u8 sAudioProducerStack[OOT_PS2_AUDIO_PRODUCER_STACK_SIZE] __attribute__((aligned(64)));
 static s32 sAudioInitialized;
 static s32 sAudioDriverReady;
 static u32 sAudioFrequency = 32000;
@@ -218,12 +220,11 @@ static s32 OotPs2Audio_OutputThread(OotPs2ThreadArgSize args, void* argp) {
     return 0;
 }
 
-static s32 OotPs2Audio_ProducerThread(OotPs2ThreadArgSize args, void* argp) {
+static void OotPs2Audio_ProducerThread(void* arg) {
     u64 nextUpdate = OotPs2Time_GetUsec();
     u32 updateUsecPhase = 0;
 
-    (void)args;
-    (void)argp;
+    (void)arg;
 
     for (;;) {
         u64 now;
@@ -250,8 +251,6 @@ static s32 OotPs2Audio_ProducerThread(OotPs2ThreadArgSize args, void* argp) {
             updateUsecPhase = 0;
         }
     }
-
-    return 0;
 }
 
 static s32 OotPs2Audio_StartThread(const char* name, OotPs2ThreadEntry entry, s32 priority, s32 stackSize,
@@ -297,12 +296,31 @@ static s32 OotPs2Audio_StartOutputThread(void) {
 }
 
 static s32 OotPs2Audio_StartProducerThread(void) {
+    ee_thread_t thread;
+    s32 threadId;
+
     if (sAudioProducerThreadId >= 0) {
         return 0;
     }
 
-    return OotPs2Audio_StartThread("oot-audio-prod", OotPs2Audio_ProducerThread, OOT_PS2_AUDIO_PRODUCER_PRIORITY,
-                                   OOT_PS2_AUDIO_PRODUCER_STACK_SIZE, &sAudioProducerThreadId);
+    memset(&thread, 0, sizeof(thread));
+    thread.func = OotPs2Audio_ProducerThread;
+    thread.stack = sAudioProducerStack;
+    thread.stack_size = sizeof(sAudioProducerStack);
+    thread.initial_priority = OOT_PS2_AUDIO_PRODUCER_PRIORITY;
+    thread.gp_reg = &_gp;
+
+    threadId = CreateThread(&thread);
+    if (threadId < 0) {
+        return -1;
+    }
+    if (StartThread(threadId, NULL) < 0) {
+        DeleteThread(threadId);
+        return -1;
+    }
+
+    sAudioProducerThreadId = threadId;
+    return 0;
 }
 
 static s32 OotPs2Audio_SetFormat(u32 frequency) {

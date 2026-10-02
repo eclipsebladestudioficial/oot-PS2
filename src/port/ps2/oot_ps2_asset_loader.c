@@ -13,7 +13,8 @@
 #define OOT_PS2_NATIVE_ADDR_END             0x02000000U
 #define OOT_PS2_LOADED_ASSET_RANGE_COUNT    4096
 #define OOT_PS2_ASSET_READ_CHUNK_SIZE       0x4000
-#define OOT_PS2_ASSET_CACHE_SIZE            (256 * 1024)
+#define OOT_PS2_ASSET_CACHE_SIZE            (128 * 1024)
+#define OOT_PS2_PINNED_ASSET_WINDOW_SIZE    (128 * 1024)
 #define OOT_PS2_HOT_ASSET_CACHE_COUNT       4
 #define OOT_PS2_HOT_READ_TRACKER_COUNT      16
 #define OOT_PS2_HOT_READ_PROMOTE_COUNT      4
@@ -166,6 +167,7 @@ static volatile s32 sOotPs2ForegroundAssetReadWaiters;
 static volatile s32 sOotPs2ForegroundAssetReadActive;
 static OotPs2CacheAllocation sOotPs2CacheAllocations[OOT_PS2_CACHE_ALLOCATION_COUNT];
 static OotPs2PinnedAssetWindowCache sOotPs2PinnedAssetCaches[] = {
+    { OOT_PS2_AUDIOTABLE_ASSET_NAME, { NULL, NULL, 0, 0, 0, 0, false, false } },
     { OOT_PS2_LINK_ANIMATION_ASSET_NAME, { NULL, NULL, 0, 0, 0, 0, false, false } },
     { OOT_PS2_DO_ACTION_ASSET_NAME, { NULL, NULL, 0, 0, 0, 0, false, false } },
     { OOT_PS2_GAMEPLAY_KEEP_ASSET_NAME, { NULL, NULL, 0, 0, 0, 0, false, false } },
@@ -204,30 +206,13 @@ static OotPs2CacheAllocation* OotPort_FindFreeCacheAllocation(void) {
     return NULL;
 }
 
-static void* OotPort_AllocCacheMemory(size_t size) {
-    OotPs2CacheAllocation* allocation = OotPort_FindFreeCacheAllocation();
-    void* address;
-
-    if (allocation == NULL) {
-        return NULL;
-    }
-
-    address = malloc(size);
-    if (address == NULL) {
-        return NULL;
-    }
-    allocation->address = address;
-    allocation->blockId = -1;
-    allocation->size = size;
-    return address;
-}
-
 static void OotPort_FreeCacheMemory(void* address) {
     size_t i;
 
     if (address == NULL) {
         return;
     }
+
     for (i = 0; i < OOT_PS2_CACHE_ALLOCATION_COUNT; i++) {
         OotPs2CacheAllocation* allocation = &sOotPs2CacheAllocations[i];
 
@@ -239,7 +224,61 @@ static void OotPort_FreeCacheMemory(void* address) {
             return;
         }
     }
+
     printf("oot-ps2 ignored invalid cache free address=%p\n", address);
+}
+
+static s32 OotPort_ReclaimLeastRecentlyUsedHotAssetCache(void) {
+    OotPs2AssetWindowCache* leastRecentlyUsedCache = NULL;
+    size_t i;
+
+    for (i = 0; i < OOT_PS2_HOT_ASSET_CACHE_COUNT; i++) {
+        OotPs2AssetWindowCache* hotAssetCache = &sOotPs2HotAssetCaches[i];
+
+        if ((hotAssetCache->data == NULL) || hotAssetCache->loading) {
+            continue;
+        }
+        if ((leastRecentlyUsedCache == NULL) || (hotAssetCache->lastUsed < leastRecentlyUsedCache->lastUsed)) {
+            leastRecentlyUsedCache = hotAssetCache;
+        }
+    }
+
+    if (leastRecentlyUsedCache == NULL) {
+        return false;
+    }
+
+    OotPort_FreeCacheMemory(leastRecentlyUsedCache->data);
+    leastRecentlyUsedCache->asset = NULL;
+    leastRecentlyUsedCache->data = NULL;
+    leastRecentlyUsedCache->capacity = 0;
+    leastRecentlyUsedCache->offset = 0;
+    leastRecentlyUsedCache->dataSize = 0;
+    leastRecentlyUsedCache->lastUsed = 0;
+    leastRecentlyUsedCache->failed = false;
+    leastRecentlyUsedCache->loading = false;
+    return true;
+}
+
+static void* OotPort_AllocCacheMemory(size_t size) {
+    OotPs2CacheAllocation* allocation = OotPort_FindFreeCacheAllocation();
+    void* address;
+
+    if (allocation == NULL) {
+        return NULL;
+    }
+
+    address = malloc(size);
+    while ((address == NULL) && OotPort_ReclaimLeastRecentlyUsedHotAssetCache()) {
+        address = malloc(size);
+    }
+    if (address == NULL) {
+        return NULL;
+    }
+
+    allocation->address = address;
+    allocation->blockId = -1;
+    allocation->size = size;
+    return address;
 }
 
 static void OotPort_InitAssetSema(void) {
@@ -1008,21 +1047,29 @@ static s32 OotPort_ReadPackedAssetFileRange(const OotPortExternalAsset* asset, s
 
 static size_t OotPort_GetAssetCacheSizeLimit(const OotPortExternalAsset* asset) {
     size_t i;
+    size_t fileSize;
+    size_t limit;
 
     if (asset == NULL) {
         return OOT_PS2_ASSET_CACHE_SIZE;
     }
 
+    fileSize = (asset->vromEnd > asset->vromStart) ? (asset->vromEnd - asset->vromStart) : 0;
     for (i = 0; i < OOT_PS2_PINNED_ASSET_CACHE_COUNT; i++) {
-        if (OotPort_AssetNameEquals(asset, sOotPs2PinnedAssetCaches[i].name)) {
-            if (asset->vromEnd > asset->vromStart) {
-                return asset->vromEnd - asset->vromStart;
-            }
-            return 0;
+        if (!OotPort_AssetNameEquals(asset, sOotPs2PinnedAssetCaches[i].name)) {
+            continue;
         }
+
+        if (OotPort_AssetNameEquals(asset, OOT_PS2_LINK_ANIMATION_ASSET_NAME) ||
+            OotPort_AssetNameEquals(asset, OOT_PS2_AUDIOTABLE_ASSET_NAME)) {
+            return fileSize;
+        }
+
+        limit = OOT_PS2_PINNED_ASSET_WINDOW_SIZE;
+        return fileSize < limit ? fileSize : limit;
     }
 
-    return OOT_PS2_ASSET_CACHE_SIZE;
+    return fileSize < OOT_PS2_ASSET_CACHE_SIZE ? fileSize : OOT_PS2_ASSET_CACHE_SIZE;
 }
 
 static s32 OotPort_EnsureAssetCacheRange(OotPs2AssetWindowCache* cache, const OotPortExternalAsset* asset, size_t offset,
@@ -1080,9 +1127,8 @@ static s32 OotPort_EnsureAssetCacheRange(OotPs2AssetWindowCache* cache, const Oo
 
         data = OotPort_AllocCacheMemory(capacity);
         if (data == NULL) {
-            printf("oot-ps2 asset cache alloc failed name=%s size=%lu\n", OotPort_AssetName(asset),
+            printf("oot-ps2 asset cache alloc deferred name=%s size=%lu\n", OotPort_AssetName(asset),
                    (unsigned long)capacity);
-            cache->failed = true;
             return false;
         }
 
