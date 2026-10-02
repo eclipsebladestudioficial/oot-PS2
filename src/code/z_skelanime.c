@@ -1548,33 +1548,6 @@ s32 SkelAnime_Update(SkelAnime* skelAnime) {
     return skelAnime->update.normal(skelAnime);
 }
 
-#if defined(TARGET_PS2)
-
-static inline f32 SkelAnime_Ps2SnapNearIntegerFrame(f32 frame) {
-    s32 nearest;
-    f32 delta;
-
-    if (frame < 0.0f) {
-        nearest = (s32)(frame - 0.5f);
-    } else {
-        nearest = (s32)(frame + 0.5f);
-    }
-
-    delta = frame - (f32)nearest;
-    if (delta < 0.0f) {
-        delta = -delta;
-    }
-
-    if (delta <= 0.000244140625f) {
-        return (f32)nearest;
-    }
-
-    return frame;
-}
-#else
-#define SkelAnime_Ps2SnapNearIntegerFrame(frame) (frame)
-#endif
-
 /**
  * Morphs from the pose in jointTable to the one in morphTable, advancing the morph but not the animation frame
  */
@@ -1664,12 +1637,21 @@ s32 SkelAnime_LoopFull(SkelAnime* skelAnime) {
     f32 updateRate = R_UPDATE_RATE * (1.0f / 3.0f);
 
     skelAnime->curFrame += skelAnime->playSpeed * updateRate;
+
+#if defined(TARGET_PS2)
+    if ((skelAnime->curFrame >= -0.000244140625f) && (skelAnime->curFrame <= 0.000244140625f)) {
+        skelAnime->curFrame = 0.0f;
+    } else if ((skelAnime->curFrame >= (skelAnime->animLength - 0.000244140625f)) &&
+               (skelAnime->curFrame <= (skelAnime->animLength + 0.000244140625f))) {
+        skelAnime->curFrame = skelAnime->animLength;
+    }
+#endif
+
     if (skelAnime->curFrame < 0.0f) {
         skelAnime->curFrame += skelAnime->animLength;
     } else if (skelAnime->animLength <= skelAnime->curFrame) {
         skelAnime->curFrame -= skelAnime->animLength;
     }
-    skelAnime->curFrame = SkelAnime_Ps2SnapNearIntegerFrame(skelAnime->curFrame);
     SkelAnime_AnimateFrame(skelAnime);
     return false;
 }
@@ -1681,13 +1663,23 @@ s32 SkelAnime_LoopPartial(SkelAnime* skelAnime) {
     f32 updateRate = R_UPDATE_RATE * (1.0f / 3.0f);
 
     skelAnime->curFrame += skelAnime->playSpeed * updateRate;
+
+#if defined(TARGET_PS2)
+    if ((skelAnime->curFrame >= (skelAnime->startFrame - 0.000244140625f)) &&
+        (skelAnime->curFrame <= (skelAnime->startFrame + 0.000244140625f))) {
+        skelAnime->curFrame = skelAnime->startFrame;
+    } else if ((skelAnime->curFrame >= (skelAnime->endFrame - 0.000244140625f)) &&
+               (skelAnime->curFrame <= (skelAnime->endFrame + 0.000244140625f))) {
+        skelAnime->curFrame = skelAnime->endFrame;
+    }
+#endif
+
     if (skelAnime->curFrame < skelAnime->startFrame) {
         skelAnime->curFrame = (skelAnime->curFrame - skelAnime->startFrame) + skelAnime->endFrame;
     } else if (skelAnime->endFrame <= skelAnime->curFrame) {
         skelAnime->curFrame = (skelAnime->curFrame - skelAnime->endFrame) + skelAnime->startFrame;
     }
 
-    skelAnime->curFrame = SkelAnime_Ps2SnapNearIntegerFrame(skelAnime->curFrame);
     SkelAnime_AnimateFrame(skelAnime);
     return false;
 }
@@ -1707,6 +1699,13 @@ s32 SkelAnime_Once(SkelAnime* skelAnime) {
 
     skelAnime->curFrame += skelAnime->playSpeed * updateRate;
 
+#if defined(TARGET_PS2)
+    if ((skelAnime->curFrame >= (skelAnime->endFrame - 0.000244140625f)) &&
+        (skelAnime->curFrame <= (skelAnime->endFrame + 0.000244140625f))) {
+        skelAnime->curFrame = skelAnime->endFrame;
+    }
+#endif
+
     if ((skelAnime->curFrame - skelAnime->endFrame) * skelAnime->playSpeed > 0.0f) {
         skelAnime->curFrame = skelAnime->endFrame;
     } else if (skelAnime->curFrame < 0.0f) {
@@ -1714,7 +1713,6 @@ s32 SkelAnime_Once(SkelAnime* skelAnime) {
     } else if (skelAnime->animLength <= skelAnime->curFrame) {
         skelAnime->curFrame -= skelAnime->animLength;
     }
-    skelAnime->curFrame = SkelAnime_Ps2SnapNearIntegerFrame(skelAnime->curFrame);
     SkelAnime_AnimateFrame(skelAnime);
     return false;
 }
