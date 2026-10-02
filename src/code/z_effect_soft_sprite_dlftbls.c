@@ -1,9 +1,9 @@
 #include "segment_symbols.h"
 #include "effect.h"
 
-#if TARGET_PSP || defined(TARGET_PS2)
+#if defined(TARGET_PS2)
 
-// PSP links EffectSs code directly into the executable, so keep the original
+// PS2 links EffectSs code directly into the executable, so keep the original
 // table shape but point every entry at its real profile.
 #define DEFINE_EFFECT_SS(name, _1) extern EffectSsProfile name##_Profile;
 #define DEFINE_EFFECT_SS_UNSET(_0)

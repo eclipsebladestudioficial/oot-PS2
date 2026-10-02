@@ -67,8 +67,6 @@ typedef void (*AudioCustomUpdateFunction)(void);
 
 #if defined(TARGET_PS2)
 #define AUDIO_RELOCATED_ADDRESS_START 0x00010000
-#elif defined(TARGET_PSP)
-#define AUDIO_RELOCATED_ADDRESS_START 0x01000000
 #else
 #define AUDIO_RELOCATED_ADDRESS_START K0BASE
 #endif
@@ -378,7 +376,7 @@ typedef struct SequencePlayer {
 typedef struct AdsrSettings {
     /* 0x0 */ u8 decayIndex; // index used to obtain adsr decay rate from adsrDecayTable
     /* 0x1 */ u8 sustain;
-#if defined(TARGET_PSP) || defined(TARGET_PS2)
+#if defined(TARGET_PS2)
     /* 0x2 */ u8 envelopeBigEndian;
 #else
     /* 0x2 */ u8 pad_02;
@@ -390,7 +388,7 @@ typedef struct AdsrSettings {
 typedef struct AdsrState {
     /* 0x00 */ union {
         struct A {
-#if defined(TARGET_PSP) || defined(TARGET_PS2)
+#if defined(TARGET_PS2)
             /* 0x00 */ u8 envelopeBigEndian : 1;
 #else
             /* 0x00 */ u8 unused : 1;
@@ -414,7 +412,7 @@ typedef struct AdsrState {
 } AdsrState; // size = 0x20
 
 typedef struct StereoData {
-#if defined(TARGET_PSP) || defined(TARGET_PS2)
+#if defined(TARGET_PS2)
     /* 0x00 */ u8 usesHeadsetPanEffects : 1;
     /* 0x00 */ u8 stereoHeadsetEffects : 1;
     /* 0x00 */ u8 strongLeft : 1;
@@ -1062,15 +1060,6 @@ typedef struct AudioHeapInitSizes {
 Acmd* AudioSynth_Update(Acmd* cmdStart, s32* cmdCnt, s16* aiStart, s32 aiBufLen);
 void AudioSynth_ProcessSequenceControl(void);
 Acmd* AudioSynth_BuildCommandList(Acmd* cmdStart, s32* cmdCnt, s16* aiStart, s32 aiBufLen);
-#if defined(TARGET_PSP)
-Acmd* AudioSynth_BuildCommandListMe(Acmd* cmdStart, s32* cmdCnt, s16* aiStart, s32 aiBufLen);
-s32 AudioSynth_CanBuildCommandsOnMe(void);
-void OotPspAudioSynth_WritebackMeState(void);
-void OotPspAudioSynth_MeInvalidateState(void);
-void OotPspAudioSynth_MeWritebackState(void);
-void OotPspAudioSynth_InvalidateMeState(void);
-void OotPspAudioSynth_PublishMeAssetRange(const void* address, u32 size);
-#endif
 void AudioHeap_DiscardFont(s32 fontId);
 void AudioHeap_ReleaseNotesForFont(s32 fontId);
 void AudioHeap_DiscardSequence(s32 seqId);

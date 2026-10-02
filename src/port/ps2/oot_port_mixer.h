@@ -3,29 +3,6 @@
 
 #include "ultra64.h"
 
-#define OOT_PORT_MIXER_PROFILE_OPCODE_COUNT 32
-#define OOT_PORT_MIXER_PROFILE_OPCODE_IDLE 0xFFFFFFFFU
-
-typedef struct OotPortMixerOpcodeProfile {
-    u32 sequence;
-    u32 jobs;
-    u32 commands;
-    u32 jobTicks;
-    u32 jobMaxTicks;
-    u32 lastJobTicks;
-    u32 lastJobCommands;
-    u32 lastJobSlowOpcode;
-    u32 lastJobSlowTicks;
-    u32 maxJobCommands;
-    u32 maxJobSlowOpcode;
-    u32 maxJobSlowTicks;
-    u32 currentOpcode;
-    u32 currentCommandIndex;
-    u32 opcodeCalls[OOT_PORT_MIXER_PROFILE_OPCODE_COUNT];
-    u32 opcodeTicks[OOT_PORT_MIXER_PROFILE_OPCODE_COUNT];
-    u32 opcodeMaxTicks[OOT_PORT_MIXER_PROFILE_OPCODE_COUNT];
-} OotPortMixerOpcodeProfile;
-
 void OotPortMixer_ClearBuffer(u16 dmem, s32 nbytes);
 void OotPortMixer_LoadBuffer(const void* source, u16 dmemDest, u16 nbytes);
 void OotPortMixer_SaveBuffer(u16 dmemSrc, void* dest, u16 nbytes);
@@ -51,11 +28,7 @@ void OotPortMixer_Filter(u8 flags, s32 countOrBuf, void* state);
 void OotPortMixer_HiLoGain(s32 gain, u16 dmemIn, u16 dmemOut, s32 nbytes);
 void OotPortMixer_UnkCmd3(s32 arg1, s32 arg2, s32 size);
 void OotPortMixer_UnkCmd19(s32 arg1, s32 arg2, s32 size, s32 arg4);
-void OotPortMixer_InitVme(void);
-void OotPortMixer_ShutdownVme(void);
 void OotPortMixer_ExecuteCommandList(const Acmd* cmdList, s32 cmdCount);
-void OotPortMixer_ExecuteCommandListMe(const Acmd* cmdList, s32 cmdCount,
-                                      volatile OotPortMixerOpcodeProfile* profile);
 void OotPortMixer_InvalidateStateCache(void);
 
 #if defined(OOT_PORT_MIXER_INLINE)

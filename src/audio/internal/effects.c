@@ -255,7 +255,7 @@ void Audio_AdsrInit(AdsrState* adsr, EnvelopePoint* envelope, s16* volOut) {
 }
 
 static s16 Audio_AdsrReadEnvelopeS16(AdsrState* adsr, s16 value) {
-#if defined(TARGET_PSP) || defined(TARGET_PS2)
+#if defined(TARGET_PS2)
     if (adsr->action.s.envelopeBigEndian) {
         u16 raw = (u16)value;
 

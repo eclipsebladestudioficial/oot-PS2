@@ -317,7 +317,7 @@ void Health_DrawMeter(PlayState* play) {
     f32 heartTexCoordPerPixel;
     InterfaceContext* interfaceCtx = &play->interfaceCtx;
     GraphicsContext* gfxCtx = play->state.gfxCtx;
-#if !PLATFORM_PSP && !defined(TARGET_PS2)
+#if !defined(TARGET_PS2)
     Vtx* beatingHeartVtx = interfaceCtx->beatingHeartVtx;
 #endif
     s32 curHeartFraction = gSaveContext.save.info.playerData.health % 0x10;
@@ -485,7 +485,7 @@ void Health_DrawMeter(PlayState* play) {
                 }
             }
 
-#if PLATFORM_PSP || defined(TARGET_PS2)
+#if defined(TARGET_PS2)
             heartCenterY = 25.5f + offsetY;
             heartCenterX = 30.0f + offsetX;
             heartTexCoordPerPixel = 1.0f - (0.32f * beatingHeartPulsingSize);

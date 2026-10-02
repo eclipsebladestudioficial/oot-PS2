@@ -4,15 +4,9 @@
 #include "ultra64.h"
 #include "audio.h"
 
-#if defined(TARGET_PSP) || defined(TARGET_PS2)
 #if defined(TARGET_PS2)
 #define OOT_PORT_AUDIO_NATIVE_PTR_START 0x00010000U
 #define OOT_PORT_AUDIO_NATIVE_PTR_END   0x02000000U
-#else
-#define OOT_PORT_AUDIO_NATIVE_PTR_START 0x08000000U
-#define OOT_PORT_AUDIO_NATIVE_PTR_END   0x0C000000U
-#endif
-
 
 static s32 OotPortAudio_IsAlignedNativePtr(const void* ptr) {
     u32 addr = (u32)ptr;
@@ -168,7 +162,7 @@ void Audio_NoteInit(Note* note) {
     AdsrSettings* settings = (layer->adsr.decayIndex == 0) ? &layer->channel->adsr : &layer->adsr;
 
     Audio_AdsrInit(&note->playbackState.adsr, settings->envelope, &note->playbackState.adsrVolScaleUnused);
-#if defined(TARGET_PSP) || defined(TARGET_PS2)
+#if defined(TARGET_PS2)
     note->playbackState.adsr.action.s.envelopeBigEndian = settings->envelopeBigEndian;
 #endif
 
@@ -214,7 +208,7 @@ void Audio_ProcessNotes(void) {
         noteSubEu2 = &gAudioCtx.noteSubsEu[gAudioCtx.noteSubEuOffset + i];
         playbackState = &note->playbackState;
         if (playbackState->parentLayer != NO_LAYER) {
-#if defined(TARGET_PSP) || defined(TARGET_PS2)
+#if defined(TARGET_PS2)
             if (!OotPortAudio_IsSafeLayerPtr(playbackState->parentLayer)) {
                 continue;
             }
@@ -372,7 +366,7 @@ Instrument* Audio_GetInstrumentInner(s32 fontId, s32 instId) {
         return NULL;
     }
 
-#if defined(TARGET_PSP) || defined(TARGET_PS2)
+#if defined(TARGET_PS2)
     if (!OotPortAudio_IsSafeFontId(fontId) || (instId < 0)) {
         return NULL;
     }
@@ -388,14 +382,14 @@ Instrument* Audio_GetInstrumentInner(s32 fontId, s32 instId) {
         return NULL;
     }
 
-#if defined(TARGET_PSP) || defined(TARGET_PS2)
+#if defined(TARGET_PS2)
     if (!OotPortAudio_IsAlignedNativePtr(gAudioCtx.soundFontList[fontId].instruments)) {
         return NULL;
     }
 #endif
 
     inst = gAudioCtx.soundFontList[fontId].instruments[instId];
-#if defined(TARGET_PSP) || defined(TARGET_PS2)
+#if defined(TARGET_PS2)
     if ((inst != NULL) && !OotPortAudio_IsAlignedNativePtr(inst)) {
         return NULL;
     }
@@ -418,7 +412,7 @@ Drum* Audio_GetDrum(s32 fontId, s32 drumId) {
         return NULL;
     }
 
-#if defined(TARGET_PSP) || defined(TARGET_PS2)
+#if defined(TARGET_PS2)
     if (!OotPortAudio_IsSafeFontId(fontId) || (drumId < 0)) {
         return NULL;
     }
@@ -436,13 +430,13 @@ Drum* Audio_GetDrum(s32 fontId, s32 drumId) {
     if ((u32)gAudioCtx.soundFontList[fontId].drums < AUDIO_RELOCATED_ADDRESS_START) {
         return NULL;
     }
-#if defined(TARGET_PSP) || defined(TARGET_PS2)
+#if defined(TARGET_PS2)
     if (!OotPortAudio_IsAlignedNativePtr(gAudioCtx.soundFontList[fontId].drums)) {
         return NULL;
     }
 #endif
     drum = gAudioCtx.soundFontList[fontId].drums[drumId];
-#if defined(TARGET_PSP) || defined(TARGET_PS2)
+#if defined(TARGET_PS2)
     if ((drum != NULL) && !OotPortAudio_IsAlignedNativePtr(drum)) {
         return NULL;
     }
@@ -465,7 +459,7 @@ SoundEffect* Audio_GetSoundEffect(s32 fontId, s32 sfxId) {
         return NULL;
     }
 
-#if defined(TARGET_PSP) || defined(TARGET_PS2)
+#if defined(TARGET_PS2)
     if (!OotPortAudio_IsSafeFontId(fontId) || (sfxId < 0)) {
         return NULL;
     }
@@ -485,7 +479,7 @@ SoundEffect* Audio_GetSoundEffect(s32 fontId, s32 sfxId) {
         return NULL;
     }
 
-#if defined(TARGET_PSP) || defined(TARGET_PS2)
+#if defined(TARGET_PS2)
     if (!OotPortAudio_IsAlignedNativePtr(gAudioCtx.soundFontList[fontId].soundEffects)) {
         return NULL;
     }
@@ -851,7 +845,7 @@ void Audio_NotePoolFill(NotePool* pool, s32 count) {
  * original name: Nas_AddListHead
  */
 void Audio_AudioListPushFront(AudioListItem* list, AudioListItem* item) {
-#if defined(TARGET_PSP) || defined(TARGET_PS2)
+#if defined(TARGET_PS2)
     if (!OotPortAudio_IsAlignedNativePtr(list) || !OotPortAudio_IsAlignedNativePtr(item)) {
         return;
     }
@@ -880,7 +874,7 @@ void Audio_AudioListPushFront(AudioListItem* list, AudioListItem* item) {
 void Audio_AudioListRemove(AudioListItem* item) {
     // remove 'item' from the list it's in, if any
     if (item->prev != NULL) {
-#if defined(TARGET_PSP) || defined(TARGET_PS2)
+#if defined(TARGET_PS2)
         if (!OotPortAudio_IsAlignedNativePtr(item) || !OotPortAudio_IsAlignedNativePtr(item->prev) ||
             !OotPortAudio_IsAlignedNativePtr(item->next)) {
             if (OotPortAudio_IsAlignedNativePtr(item)) {

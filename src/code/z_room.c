@@ -25,9 +25,7 @@
 #include "room.h"
 #include "save.h"
 #include "skin_matrix.h"
-#if PLATFORM_PSP
-#include "oot_psp_renderer.h"
-#elif defined(TARGET_PS2)
+#if defined(TARGET_PS2)
 #include "oot_ps2_renderer.h"
 #endif
 
@@ -295,7 +293,7 @@ s32 Room_DecodeJpeg(void* data) {
         PRINTF(T("ワークバッファアドレス（Ｚバッファ）%08x\n", "Work buffer address (Z buffer) %08x\n"), gZBuffer);
 
         time = osGetTime();
-#if defined(TARGET_PSP) || defined(TARGET_PS2)
+#if defined(TARGET_PS2)
         if (!Jpeg_Decode(data, data, gGfxSPTaskOutputBuffer, sizeof(gGfxSPTaskOutputBuffer))) {
 #else
         if (!Jpeg_Decode(data, gZBuffer, gGfxSPTaskOutputBuffer, sizeof(gGfxSPTaskOutputBuffer))) {
@@ -304,7 +302,7 @@ s32 Room_DecodeJpeg(void* data) {
 
             PRINTF(T("成功…だと思う。 time = %6.3f ms \n", "Success... I think. time = %6.3f ms\n"),
                    OS_CYCLES_TO_USEC(time) / 1000.0f);
-#if !defined(TARGET_PSP) && !defined(TARGET_PS2)
+#if !defined(TARGET_PS2)
             PRINTF(T("ワークバッファから元のアドレスに書き戻します。\n",
                      "Writing back to original address from work buffer.\n"));
             PRINTF(T("元のバッファのサイズが150キロバイト無いと暴走するでしょう。\n",
@@ -595,60 +593,6 @@ void Room_Init(PlayState* play, Room* room) {
     room->segment = NULL;
 }
 
-#if PLATFORM_PSP
-static s32 sPspPendingRoomHasJpegBackground;
-static u16 sPspPendingRoomWidth;
-static u16 sPspPendingRoomHeight;
-
-static s32 Room_GetPspJpegBackgroundResolution(Room* room, u16* width, u16* height) {
-    RoomShapeImageBase* imageBase;
-
-    if ((room->segment == NULL) || (room->roomShape == NULL) ||
-        (room->roomShape->base.type != ROOM_SHAPE_TYPE_IMAGE)) {
-        return false;
-    }
-
-    imageBase = &room->roomShape->image.base;
-    if (imageBase->amountType == ROOM_SHAPE_IMAGE_AMOUNT_SINGLE) {
-        RoomShapeImageSingle* image = &room->roomShape->image.single;
-        void* source = SEGMENTED_TO_VIRTUAL(image->source);
-
-        if ((source != NULL) && (Jpeg_IsJpeg(source) || JpegPsp_WasDecoded(source))) {
-            *width = image->width;
-            *height = image->height;
-            return true;
-        }
-    } else if (imageBase->amountType == ROOM_SHAPE_IMAGE_AMOUNT_MULTI) {
-        RoomShapeImageMulti* image = &room->roomShape->image.multi;
-        RoomShapeImageMultiBgEntry* backgrounds = SEGMENTED_TO_VIRTUAL(image->backgrounds);
-        s32 i;
-
-        for (i = 0; i < image->numBackgrounds; i++) {
-            void* source = SEGMENTED_TO_VIRTUAL(backgrounds[i].source);
-
-            if ((source != NULL) && (Jpeg_IsJpeg(source) || JpegPsp_WasDecoded(source))) {
-                *width = backgrounds[i].width;
-                *height = backgrounds[i].height;
-                return true;
-            }
-        }
-    }
-
-    return false;
-}
-
-static void Room_SetPspPendingRenderResolution(Room* room) {
-    sPspPendingRoomWidth = 0;
-    sPspPendingRoomHeight = 0;
-    sPspPendingRoomHasJpegBackground =
-        Room_GetPspJpegBackgroundResolution(room, &sPspPendingRoomWidth, &sPspPendingRoomHeight);
-}
-
-static void Room_ApplyPspPendingRenderResolution(void) {
-    OotPspRenderer_SetJpegBackgroundResolution(sPspPendingRoomHasJpegBackground, sPspPendingRoomWidth,
-                                               sPspPendingRoomHeight);
-}
-#endif
 
 #if defined(TARGET_PS2)
 static s32 sPs2PendingPrerenderRoomActive;
@@ -689,11 +633,6 @@ static void Room_ApplyPs2PendingPrerenderState(void) {
 #endif
 
 static u32 Room_GetRomFileSize(RomFile* roomFile) {
-#if PLATFORM_PSP
-    if ((roomFile->vromStart != 0) && (roomFile->vromEnd == 0)) {
-        return 0;
-    }
-#endif
 
     return roomFile->vromEnd - roomFile->vromStart;
 }
@@ -752,11 +691,6 @@ u32 Room_SetupFirstRoom(PlayState* play, RoomContext* roomCtx) {
     }
 
     PRINTF_COLOR_YELLOW();
-#if PLATFORM_PSP
-    if (roomBufferSize == 0) {
-        roomBufferSize = 16;
-    }
-#endif
     PRINTF(T("部屋バッファサイズ=%08x(%5.1fK)\n", "Room buffer size=%08x(%5.1fK)\n"), roomBufferSize,
            roomBufferSize / 1024.0f);
     roomCtx->bufPtrs[0] = GAME_STATE_ALLOC(&play->state, roomBufferSize, "../z_room.c", 946);
@@ -796,37 +730,17 @@ u32 Room_SetupFirstRoom(PlayState* play, RoomContext* roomCtx) {
  */
 s32 Room_RequestNewRoom(PlayState* play, RoomContext* roomCtx, s32 roomNum) {
     if (roomCtx->status == 0) {
-#if PLATFORM_PSP
-        RomFile* roomFile;
-#else
         RomFile* roomFile = &play->roomList.romFiles[roomNum];
-#endif
         u32 size;
 
-#if PLATFORM_PSP
-        ASSERT((roomNum >= 0) && (roomNum < play->roomList.count),
-               "read_room_ID < game_play->room_rom_address.num", "../z_room.c", 1009);
-        roomFile = &play->roomList.romFiles[roomNum];
-#endif
 
         roomCtx->prevRoom = roomCtx->curRoom;
         roomCtx->curRoom.num = roomNum;
         roomCtx->curRoom.segment = NULL;
         roomCtx->status = 1;
 
-#if !PLATFORM_PSP
         ASSERT(roomNum < play->roomList.count, "read_room_ID < game_play->room_rom_address.num", "../z_room.c", 1009);
-#endif
 
-#if PLATFORM_PSP
-        if ((roomFile->vromStart != 0) && (roomFile->vromEnd == 0)) {
-            roomCtx->roomRequestAddr = (void*)roomFile->vromStart;
-            osCreateMesgQueue(&roomCtx->loadQueue, &roomCtx->loadMsg, 1);
-            osSendMesg(&roomCtx->loadQueue, NULL, OS_MESG_NOBLOCK);
-            roomCtx->activeBufPage ^= 1;
-            return true;
-        }
-#endif
 
         size = roomFile->vromEnd - roomFile->vromStart;
         roomCtx->roomRequestAddr = (void*)ALIGN16((uintptr_t)roomCtx->bufPtrs[roomCtx->activeBufPage] -
@@ -868,12 +782,7 @@ s32 Room_ProcessRoomRequest(PlayState* play, RoomContext* roomCtx) {
             gSegments[3] = OS_K0_TO_PHYSICAL(roomCtx->curRoom.segment);
 
             Scene_ExecuteCommands(play, roomCtx->curRoom.segment);
-#if PLATFORM_PSP
-            Room_SetPspPendingRenderResolution(&roomCtx->curRoom);
-            if (roomCtx->prevRoom.num < 0) {
-                Room_ApplyPspPendingRenderResolution();
-            }
-#elif defined(TARGET_PS2)
+#if defined(TARGET_PS2)
             Room_SetPs2PendingPrerenderState(&roomCtx->curRoom);
             if (roomCtx->prevRoom.num < 0) {
                 Room_ApplyPs2PendingPrerenderState();
@@ -909,9 +818,7 @@ void Room_FinishRoomChange(PlayState* play, RoomContext* roomCtx) {
     roomCtx->prevRoom.num = -1;
     roomCtx->prevRoom.segment = NULL;
 
-#if PLATFORM_PSP
-    Room_ApplyPspPendingRenderResolution();
-#elif defined(TARGET_PS2)
+#if defined(TARGET_PS2)
     Room_ApplyPs2PendingPrerenderState();
 #endif
 

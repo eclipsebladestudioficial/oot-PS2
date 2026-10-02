@@ -9,21 +9,12 @@
 #include "translation.h"
 #include "play_state.h"
 #include "save.h"
-#if PLATFORM_PSP
-#include "interface.h"
-#endif
 
 #include "assets/textures/parameter_static/parameter_static.h"
 
-#if PLATFORM_PSP
-#define gDPLoadCounterDigitTexture(pkt, digit, cms, cmt)                                                        \
-    gDPLoadTextureBlock(pkt, Interface_GetCounterDigitTexture(digit), G_IM_FMT_IA, G_IM_SIZ_16b, 8, 16, 0, cms, \
-                        cmt, G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD, G_TX_NOLOD)
-#else
 #define gDPLoadCounterDigitTexture(pkt, digit, cms, cmt)                                                   \
     gDPLoadTextureBlock(pkt, ((u8*)gCounterDigit0Tex + (8 * 16 * (digit))), G_IM_FMT_I, G_IM_SIZ_8b, 8, 16, \
                         0, cms, cmt, G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD, G_TX_NOLOD)
-#endif
 
 typedef enum DebugSection {
     /* 0x00 */ SECTION_RUPEES,

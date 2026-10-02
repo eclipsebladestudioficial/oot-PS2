@@ -83,38 +83,7 @@ Apple's version of `make` is very out-of-date, so you should use the brew-instal
 You should now be able to continue from [step 2](../README.md#2-clone-the-repository) of the Linux instructions.
 
 
-## 4. Building the PSP port
-
-The PSP port can be cross-compiled directly on macOS. In addition to the
-dependencies above, install PSPSDK and configure its install directory. For a
-typical install in `$HOME/pspdev`, add the following to `~/.zprofile`:
-
-```bash
-export PSPDEV="$HOME/pspdev"
-export PATH="$PSPDEV/bin:$PATH"
-```
-
-Open a new terminal and verify that the SDK and Homebrew GNU Make are visible:
-
-```bash
-psp-config -p
-psp-gcc --version
-gmake --version
-```
-
-From the repository root, build the PSP package with:
-
-```bash
-./psp.sh
-```
-
-The script automatically uses `gmake` on macOS and determines the available
-CPU count without requiring Linux's `nproc`. The finished package is written to
-`build/psp-port/ntsc-1.0/EBOOT.PBP`; copy the accompanying `Plugins` directory
-beside the EBOOT as well.
-
-
-## 5. Building GCC (optional)
+## 4. Building GCC (optional)
 
 If you'd like to compile with GCC instead of IDO (e.g. for modding), you can build it from source similarly to how we built binutils:
 

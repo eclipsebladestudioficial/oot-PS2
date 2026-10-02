@@ -14,9 +14,7 @@
 #include "gfx.h"
 #include "gfxalloc.h"
 #include "vis.h"
-#if PLATFORM_PSP
-#include "oot_psp_gfx_ext.h"
-#elif defined(TARGET_PS2)
+#if defined(TARGET_PS2)
 #include "oot_port_gfx_ext.h"
 #endif
 
@@ -148,10 +146,10 @@ Gfx* VisMono_DesaturateDList(VisMono* this, Gfx* gfx) {
 
 void VisMono_Draw(VisMono* this, Gfx** gfxP) {
     Gfx* gfx = *gfxP;
-#if PLATFORM_PSP || defined(TARGET_PS2)
+#if defined(TARGET_PS2)
    /*
      * The original effect reinterprets the N64 color framebuffer as 80 CI8
-     * texture strips. The PSP renderer's N64 framebuffer is only a bookkeeping
+     * texture strips. The PS2 renderer's N64 framebuffer is only a bookkeeping
      * buffer, not the GU draw buffer, so emulating that display list both reads
      * black pixels and performs dozens of needless texture uploads per frame.
      *
@@ -165,11 +163,7 @@ void VisMono_Draw(VisMono* this, Gfx** gfxP) {
                     this->vis.primColor.a);
     gDPSetEnvColor(gfx++, this->vis.envColor.r, this->vis.envColor.g, this->vis.envColor.b,
                    this->vis.envColor.a);
-#if PLATFORM_PSP
-    gOotPspApplyVisMono(gfx++);
-#else
     gOotPortApplyVisMono(gfx++);
-#endif
     gDPPipeSync(gfx++);
     *gfxP = gfx;
     return;

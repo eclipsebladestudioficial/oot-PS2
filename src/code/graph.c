@@ -29,10 +29,7 @@
 #include "audio.h"
 #include "save.h"
 #include "play_state.h"
-#if defined(TARGET_PSP)
-#include "oot_psp_audio_backend.h"
-#include "oot_psp_performance.h"
-#elif defined(TARGET_PS2)
+#if defined(TARGET_PS2)
 #include "oot_port_audio_backend.h"
 #endif
 
@@ -353,25 +350,6 @@ void Graph_TaskSet00(GraphicsContext* gfxCtx) {
 
 void Graph_Update(GraphicsContext* gfxCtx, GameState* gameState) {
     u32 problem;
-#if defined(TARGET_PSP) && defined(OOTDEBUG)
-    u64 frameStartUsec;
-    u64 gameStartUsec;
-    u64 gameEndUsec;
-    u64 audioStartUsec;
-    u64 audioEndUsec;
-    s32 sceneId = -1;
-    s32 roomId = -1;
-
-    if (gameState->main == Play_Main) {
-        PlayState* play = (PlayState*)gameState;
-
-        sceneId = play->sceneId;
-        roomId = play->roomCtx.curRoom.num;
-    }
-    frameStartUsec = OotPspPerformance_Now();
-    OotPspPerformance_BeginFrame(sceneId, roomId);
-    gameStartUsec = OotPspPerformance_Now();
-#endif
 
     gameState->inPreNMIState = false;
     Graph_InitTHGA(gfxCtx);
@@ -389,9 +367,6 @@ void Graph_Update(GraphicsContext* gfxCtx, GameState* gameState) {
 
     GameState_ReqPadData(gameState);
     GameState_Update(gameState);
-#if defined(TARGET_PSP) && defined(OOTDEBUG)
-    gameEndUsec = OotPspPerformance_Now();
-#endif
 
 #if DEBUG_FEATURES
     OPEN_DISPS(gfxCtx, "../graph.c", 987);
@@ -452,12 +427,6 @@ void Graph_Update(GraphicsContext* gfxCtx, GameState* gameState) {
         GfxPool* pool = &gGfxPools[gfxCtx->gfxPoolIdx & 1];
 
         if (pool->headMagic != GFXPOOL_HEAD_MAGIC) {
-#if PLATFORM_PSP
-            PRINTF("oot-psp gfxpool head corrupt pool=%u magic=%04x start=%08x head=%08x tail=%08x rem=%d\n",
-                   gfxCtx->gfxPoolIdx & 1, pool->headMagic, (u32)(uintptr_t)gfxCtx->polyOpa.start,
-                   (u32)(uintptr_t)gfxCtx->polyOpa.p, (u32)(uintptr_t)gfxCtx->polyOpa.d,
-                   THGA_GetRemaining(&gfxCtx->polyOpa));
-#endif
             //! @bug (?) : "problem = true;" may be missing
             PRINTF("%c", BEL);
             PRINTF(VT_COL(RED, WHITE) T("ダイナミック領域先頭が破壊されています\n", "Dynamic area head is destroyed\n")
@@ -499,17 +468,9 @@ void Graph_Update(GraphicsContext* gfxCtx, GameState* gameState) {
         gfxCtx->fbIdx++;
     }
 
-#if defined(TARGET_PSP) && defined(OOTDEBUG)
-    audioStartUsec = OotPspPerformance_Now();
-#endif
     Audio_Update();
-#if defined(TARGET_PSP)
-    OotPspAudio_Update();
-#elif defined(TARGET_PS2)
+#if defined(TARGET_PS2)
     OotPortAudio_Update();
-#endif
-#if defined(TARGET_PSP) && defined(OOTDEBUG)
-    audioEndUsec = OotPspPerformance_Now();
 #endif
 
     {
@@ -529,10 +490,6 @@ void Graph_Update(GraphicsContext* gfxCtx, GameState* gameState) {
         sGraphPrevUpdateEndTime = timeNow;
     }
 
-#if defined(TARGET_PSP) && defined(OOTDEBUG)
-    OotPspPerformance_EndFrame(gameEndUsec - gameStartUsec, audioEndUsec - audioStartUsec,
-                               OotPspPerformance_Now() - frameStartUsec);
-#endif
 
 #if DEBUG_FEATURES
     if (gIsCtrlr2Valid && CHECK_BTN_ALL(gameState->input[0].press.button, BTN_Z) &&
@@ -610,14 +567,6 @@ void* Graph_Alloc(GraphicsContext* gfxCtx, size_t size) {
 
     ptr = THGA_AllocTail(&gfxCtx->polyOpa, alignedSize);
 
-#if PLATFORM_PSP
-    if (THGA_IsCrash(&gfxCtx->polyOpa)) {
-        PRINTF("oot-psp graph alloc overflow size=%u aligned=%u start=%08x head=%08x tail=%08x rem=%d\n", (u32)size,
-               (u32)alignedSize, (u32)(uintptr_t)thga->start, (u32)(uintptr_t)thga->p, (u32)(uintptr_t)thga->d,
-               THGA_GetRemaining(thga));
-        Fault_AddHungupAndCrash("../graph.c", __LINE__);
-    }
-#endif
 
     return ptr;
 }
@@ -634,14 +583,6 @@ void* Graph_Alloc2(GraphicsContext* gfxCtx, size_t size) {
 
     ptr = THGA_AllocTail(&gfxCtx->polyOpa, alignedSize);
 
-#if PLATFORM_PSP
-    if (THGA_IsCrash(&gfxCtx->polyOpa)) {
-        PRINTF("oot-psp graph alloc2 overflow size=%u aligned=%u start=%08x head=%08x tail=%08x rem=%d\n", (u32)size,
-               (u32)alignedSize, (u32)(uintptr_t)thga->start, (u32)(uintptr_t)thga->p, (u32)(uintptr_t)thga->d,
-               THGA_GetRemaining(thga));
-        Fault_AddHungupAndCrash("../graph.c", __LINE__);
-    }
-#endif
 
     return ptr;
 }

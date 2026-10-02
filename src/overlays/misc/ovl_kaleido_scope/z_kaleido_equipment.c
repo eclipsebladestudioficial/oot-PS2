@@ -10,15 +10,15 @@
 #include "play_state.h"
 #include "player.h"
 #include "save.h"
-#if PLATFORM_PSP || defined(TARGET_PS2)
+#if defined(TARGET_PS2)
 #include "segmented_address.h"
 #endif
 
 #include "assets/textures/icon_item_static/icon_item_static.h"
 #include "assets/textures/parameter_static/parameter_static.h"
 
-#if PLATFORM_PSP || defined(TARGET_PS2)
-static void KaleidoScopeEquipment_SetPspSegmentBase(s32 segment, void* base) {
+#if defined(TARGET_PS2)
+static void KaleidoScopeEquipment_SetPortSegmentBase(s32 segment, void* base) {
     gSegments[segment] = (base != NULL) ? OS_K0_TO_PHYSICAL(base) : 0;
 }
 #endif
@@ -80,7 +80,7 @@ static u8 sEquipmentItemOffsets[] = {
 };
 
 void KaleidoScope_DrawEquipmentImage(PlayState* play, void* source, u32 width, u32 height) {
-#if PLATFORM_PSP || defined(TARGET_PS2)
+#if defined(TARGET_PS2)
     return;
 #else
     PauseContext* pauseCtx = &play->pauseCtx;
@@ -150,7 +150,7 @@ void KaleidoScope_DrawEquipmentImage(PlayState* play, void* source, u32 width, u
 }
 
 void KaleidoScope_DrawPlayerWork(PlayState* play) {
-#if PLATFORM_PSP || defined(TARGET_PS2)
+#if defined(TARGET_PS2)
     PauseContext* pauseCtx = &play->pauseCtx;
     Vec3f pos;
     Vec3s rot;
@@ -753,13 +753,13 @@ void KaleidoScope_DrawEquipment(PlayState* play) {
 #endif
     }
 
-#if PLATFORM_PSP || defined(TARGET_PS2)
-    KaleidoScopeEquipment_SetPspSegmentBase(0x07, pauseCtx->playerSegment);
-    KaleidoScopeEquipment_SetPspSegmentBase(0x08, pauseCtx->iconItemSegment);
-    KaleidoScopeEquipment_SetPspSegmentBase(0x09, pauseCtx->iconItem24Segment);
-    KaleidoScopeEquipment_SetPspSegmentBase(0x0A, pauseCtx->nameSegment);
-    KaleidoScopeEquipment_SetPspSegmentBase(0x0B, interfaceCtx->mapSegment);
-    KaleidoScopeEquipment_SetPspSegmentBase(0x0C, pauseCtx->iconItemAltSegment);
+#if defined(TARGET_PS2)
+    KaleidoScopeEquipment_SetPortSegmentBase(0x07, pauseCtx->playerSegment);
+    KaleidoScopeEquipment_SetPortSegmentBase(0x08, pauseCtx->iconItemSegment);
+    KaleidoScopeEquipment_SetPortSegmentBase(0x09, pauseCtx->iconItem24Segment);
+    KaleidoScopeEquipment_SetPortSegmentBase(0x0A, pauseCtx->nameSegment);
+    KaleidoScopeEquipment_SetPortSegmentBase(0x0B, interfaceCtx->mapSegment);
+    KaleidoScopeEquipment_SetPortSegmentBase(0x0C, pauseCtx->iconItemAltSegment);
 #endif
     gSPSegment(POLY_OPA_DISP++, 0x07, pauseCtx->playerSegment);
     gSPSegment(POLY_OPA_DISP++, 0x08, pauseCtx->iconItemSegment);

@@ -7,24 +7,8 @@
 #include "assert.h"
 #include "math.h"
 
-#if defined(TARGET_PSP)
-#ifndef OOT_PSP_FAST_SQRT
-#define OOT_PSP_FAST_SQRT 1
-#endif
 
-#if OOT_PSP_FAST_SQRT
-static inline __attribute__((always_inline)) float OotPort_Sqrtf(float value) {
-    float result;
-
-    __asm__("sqrt.s %0, %1" : "=f"(result) : "f"(value));
-    return result;
-}
-#define sqrtf OotPort_Sqrtf
-#define sqrt(value) OotPort_Sqrtf((float)(value))
-#endif
-#endif
-
-#if defined(TARGET_PSP) || defined(TARGET_PS2)
+#if defined(TARGET_PS2)
 #define OOT_PORT_SYSTEM_HEAP_SIZE (4U * 1024U * 1024U)
 
 extern unsigned char gOotPortSystemHeap[OOT_PORT_SYSTEM_HEAP_SIZE];

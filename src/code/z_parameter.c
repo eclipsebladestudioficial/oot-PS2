@@ -24,11 +24,7 @@
 #include "play_state.h"
 #include "player.h"
 #include "save.h"
-#if PLATFORM_PSP
-#include "oot_psp_asset_loader.h"
-#include "oot_psp_compat.h"
-#include "oot_psp_gfx_ext.h"
-#elif defined(TARGET_PS2)
+#if defined(TARGET_PS2)
 #include "oot_port_gfx_ext.h"
 #endif
 
@@ -39,7 +35,7 @@
 #pragma increment_block_number "gc-jp:128 gc-jp-ce:128 gc-jp-mq:128 gc-us:128 gc-us-mq:128 ntsc-1.0:128 ntsc-1.1:128" \
                                "ntsc-1.2:128"
 
-#if PLATFORM_PSP || defined(TARGET_PS2)
+#if defined(TARGET_PS2)
 static void* sCounterDigitTextures[] = {
     gCounterDigit0Tex,
     gCounterDigit1Tex,
@@ -58,7 +54,7 @@ static void* sCounterDigitTextures[] = {
 #define COUNTER_DIGIT_TEXTURE(digit) ((u8*)gCounterDigit0Tex + (8 * 16 * (digit)))
 #endif
 
-#if PLATFORM_PSP || defined(TARGET_PS2)
+#if defined(TARGET_PS2)
 void* gAmmoDigitTextures[] = {
     gAmmoDigit0Tex,
     gAmmoDigit1Tex,
@@ -1250,92 +1246,11 @@ Gfx* Gfx_TextureI8(Gfx* displayListHead, void* texture, s16 textureWidth, s16 te
     return displayListHead;
 }
 
-#if PLATFORM_PSP
-typedef struct InterfacePspTexture {
-    /* 0x00 */ const u8* data;
-    /* 0x04 */ s32 byteSwap;
-} InterfacePspTexture;
-
-static u8 sPspCounterDigitTextures[ARRAY_COUNT(sCounterDigitTextures)]
-                                    [gCounterDigit0Tex_WIDTH * gCounterDigit0Tex_HEIGHT * 2]
-    __attribute__((aligned(8)));
-static s32 sPspCounterDigitTexturesInitialized = false;
-
-static InterfacePspTexture Interface_GetPspTexture(void* texture) {
-    InterfacePspTexture source;
-    u32 loadedFlags;
-
-    source.data = SEGMENTED_TO_VIRTUAL(texture);
-    source.byteSwap = false;
-
-    if (OotPsp_GetLoadedExternalAssetRangeFlags(source.data, 1, &loadedFlags)) {
-        source.byteSwap = (loadedFlags & OOT_PSP_EXTERNAL_ASSET_NATIVE) != 0;
-    } else if (!OotPsp_IsRuntimeByteRange(source.data, 1)) {
-        source.byteSwap = true;
-    }
-
-    return source;
-}
-
-static u8 Interface_ReadPspTextureByte(InterfacePspTexture texture, size_t offset) {
-    const u8* source = texture.data + offset;
-
-    if (texture.byteSwap) {
-        source = (const u8*)((uintptr_t)source ^ 7U);
-    }
-
-    return *source;
-}
-
-static void Interface_InitPspCounterDigitTextures(void) {
-    s32 digit;
-    s32 texel;
-
-    if (sPspCounterDigitTexturesInitialized) {
-        return;
-    }
-
-    for (digit = 0; digit < ARRAY_COUNT(sPspCounterDigitTextures); digit++) {
-        InterfacePspTexture source = Interface_GetPspTexture(COUNTER_DIGIT_TEXTURE(digit));
-        u8* dst = sPspCounterDigitTextures[digit];
-
-        for (texel = 0; texel < gCounterDigit0Tex_WIDTH * gCounterDigit0Tex_HEIGHT; texel++) {
-            *dst++ = 255;
-            *dst++ = Interface_ReadPspTextureByte(source, texel);
-        }
-    }
-
-    sPspCounterDigitTexturesInitialized = true;
-}
-
-void* Interface_GetCounterDigitTexture(s16 digit) {
-    Interface_InitPspCounterDigitTextures();
-
-    return sPspCounterDigitTextures[digit];
-}
-
-static Gfx* Gfx_TextureCounterDigit(Gfx* displayListHead, s16 digit, s16 rectLeft, s16 rectTop, s16 rectWidth,
-                                    s16 rectHeight, u16 dsdx, u16 dtdy) {
-    gDPLoadTextureBlock(displayListHead++, Interface_GetCounterDigitTexture(digit), G_IM_FMT_IA, G_IM_SIZ_16b,
-                        gCounterDigit0Tex_WIDTH, gCounterDigit0Tex_HEIGHT, 0, G_TX_NOMIRROR | G_TX_WRAP,
-                        G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD, G_TX_NOLOD);
-
-    gSPTextureRectangle(displayListHead++, rectLeft << 2, rectTop << 2, (rectLeft + rectWidth) << 2,
-                        (rectTop + rectHeight) << 2, G_TX_RENDERTILE, 0, 0, dsdx, dtdy);
-
-    return displayListHead;
-}
-
-static void Interface_SetPspSegmentBase(s32 segment, void* base) {
-    gSegments[segment] = (base != NULL) ? OS_K0_TO_PHYSICAL(base) : 0;
-}
-#else
 static Gfx* Gfx_TextureCounterDigit(Gfx* displayListHead, s16 digit, s16 rectLeft, s16 rectTop, s16 rectWidth,
                                     s16 rectHeight, u16 dsdx, u16 dtdy) {
     return Gfx_TextureI8(displayListHead, COUNTER_DIGIT_TEXTURE(digit), gCounterDigit0Tex_WIDTH,
                          gCounterDigit0Tex_HEIGHT, rectLeft, rectTop, rectWidth, rectHeight, dsdx, dtdy);
 }
-#endif
 
 void Inventory_SwapAgeEquipment(void) {
     s16 i;
@@ -2823,7 +2738,7 @@ void Magic_DrawMeter(PlayState* play) {
         OVERLAY_DISP = Gfx_TextureIA8(OVERLAY_DISP, gMagicMeterEndTex, 8, 16, R_MAGIC_METER_X, magicMeterY, 8, 16,
                                       1 << 10, 1 << 10);
 
-#if PLATFORM_PSP || defined(TARGET_PS2)
+#if defined(TARGET_PS2)
         {
             s16 midX = R_MAGIC_METER_X + 8;
             s16 remainingWidth = gSaveContext.magicCapacity;
@@ -2952,7 +2867,7 @@ void Interface_DrawActionLabel(GraphicsContext* gfxCtx, void* texture) {
 
 void Interface_DrawItemButtons(PlayState* play) {
     static void* cUpLabelTextures[] = LANGUAGE_ARRAY(gNaviCUpJPNTex, gNaviCUpENGTex, gNaviCUpENGTex, gNaviCUpENGTex);
-#if PLATFORM_PSP || defined(TARGET_PS2)
+#if defined(TARGET_PS2)
     static void* emptyCButtonTextures[] = {
         NULL,
         gEmptyCLeftArrowTex,
@@ -2989,7 +2904,7 @@ void Interface_DrawItemButtons(PlayState* play) {
     gDPPipeSync(OVERLAY_DISP++);
     gDPSetPrimColor(OVERLAY_DISP++, 0, 0, R_C_BTN_COLOR(0), R_C_BTN_COLOR(1), R_C_BTN_COLOR(2),
                     interfaceCtx->cLeftAlpha);
-#if PLATFORM_PSP || defined(TARGET_PS2)
+#if defined(TARGET_PS2)
     OVERLAY_DISP =
         Gfx_TextureIA8(OVERLAY_DISP, gButtonBackgroundTex, 32, 32, R_ITEM_BTN_X(1), R_ITEM_BTN_Y(1),
                        R_ITEM_BTN_WIDTH(1), R_ITEM_BTN_WIDTH(1), R_ITEM_BTN_DD(1) << 1, R_ITEM_BTN_DD(1) << 1);
@@ -3002,7 +2917,7 @@ void Interface_DrawItemButtons(PlayState* play) {
     // C-Down Button Color & Texture
     gDPSetPrimColor(OVERLAY_DISP++, 0, 0, R_C_BTN_COLOR(0), R_C_BTN_COLOR(1), R_C_BTN_COLOR(2),
                     interfaceCtx->cDownAlpha);
-#if PLATFORM_PSP || defined(TARGET_PS2)
+#if defined(TARGET_PS2)
     OVERLAY_DISP =
         Gfx_TextureIA8(OVERLAY_DISP, gButtonBackgroundTex, 32, 32, R_ITEM_BTN_X(2), R_ITEM_BTN_Y(2),
                        R_ITEM_BTN_WIDTH(2), R_ITEM_BTN_WIDTH(2), R_ITEM_BTN_DD(2) << 1, R_ITEM_BTN_DD(2) << 1);
@@ -3015,7 +2930,7 @@ void Interface_DrawItemButtons(PlayState* play) {
     // C-Right Button Color & Texture
     gDPSetPrimColor(OVERLAY_DISP++, 0, 0, R_C_BTN_COLOR(0), R_C_BTN_COLOR(1), R_C_BTN_COLOR(2),
                     interfaceCtx->cRightAlpha);
-#if PLATFORM_PSP || defined(TARGET_PS2)
+#if defined(TARGET_PS2)
     OVERLAY_DISP =
         Gfx_TextureIA8(OVERLAY_DISP, gButtonBackgroundTex, 32, 32, R_ITEM_BTN_X(3), R_ITEM_BTN_Y(3),
                        R_ITEM_BTN_WIDTH(3), R_ITEM_BTN_WIDTH(3), R_ITEM_BTN_DD(3) << 1, R_ITEM_BTN_DD(3) << 1);
@@ -3027,9 +2942,7 @@ void Interface_DrawItemButtons(PlayState* play) {
 
     if (!IS_PAUSE_STATE_GAMEOVER(pauseCtx)) {
         if (IS_PAUSED(&play->pauseCtx)) {
-#if PLATFORM_PSP
-            gOotPspSetHudAnchor(OVERLAY_DISP++, OOT_PSP_HUD_ANCHOR_NONE);
-#elif defined(TARGET_PS2)
+#if defined(TARGET_PS2)
             gOotPortSetHudAnchor(OVERLAY_DISP++, OOT_PORT_HUD_ANCHOR_NONE);
 #endif
             // Start Button Texture, Color & Label
@@ -3079,9 +2992,7 @@ void Interface_DrawItemButtons(PlayState* play) {
                                 (R_START_LABEL_Y(gSaveContext.language) + height) << 2, G_TX_RENDERTILE, 0, 0,
                                 texCoordScale, texCoordScale);
 #endif
-#if PLATFORM_PSP
-            gOotPspSetHudAnchor(OVERLAY_DISP++, OOT_PSP_HUD_ANCHOR_RIGHT);
-#elif defined(TARGET_PS2)
+#if defined(TARGET_PS2)
             gOotPortSetHudAnchor(OVERLAY_DISP++, OOT_PORT_HUD_ANCHOR_RIGHT);
 #endif
         }
@@ -3154,7 +3065,7 @@ void Interface_DrawItemButtons(PlayState* play) {
             }
 
             OVERLAY_DISP = Gfx_TextureIA8(
-#if PLATFORM_PSP || defined(TARGET_PS2)
+#if defined(TARGET_PS2)
                 OVERLAY_DISP, emptyCButtonTextures[temp],
 #else
                 OVERLAY_DISP, ((u8*)gButtonBackgroundTex + ((32 * 32) * (temp + 1))),
@@ -3396,7 +3307,7 @@ void Interface_Draw(PlayState* play) {
     s16 svar4;
     s16 svar5;
     s16 timerId;
-#if PLATFORM_PSP || defined(TARGET_PS2)
+#if defined(TARGET_PS2)
     uintptr_t savedSegment2;
     uintptr_t savedSegment7;
     uintptr_t savedSegment8;
@@ -3405,7 +3316,7 @@ void Interface_Draw(PlayState* play) {
 
     OPEN_DISPS(play->state.gfxCtx, "../z_parameter.c", 3405);
 
-#if PLATFORM_PSP || defined(TARGET_PS2)
+#if defined(TARGET_PS2)
     savedSegment2 = gSegments[0x02];
     savedSegment7 = gSegments[0x07];
     savedSegment8 = gSegments[0x08];
@@ -3423,9 +3334,7 @@ void Interface_Draw(PlayState* play) {
     if (pauseCtx->debugState == PAUSE_DEBUG_STATE_CLOSED) {
         Interface_InitVertices(play);
         func_8008A994(interfaceCtx);
-#if PLATFORM_PSP
-        gOotPspSetHudAnchor(OVERLAY_DISP++, OOT_PSP_HUD_ANCHOR_LEFT);
-#elif defined(TARGET_PS2)
+#if defined(TARGET_PS2)
         gOotPortSetHudAnchor(OVERLAY_DISP++, OOT_PORT_HUD_ANCHOR_LEFT);
 #endif
         Health_DrawMeter(play);
@@ -3531,16 +3440,12 @@ void Interface_Draw(PlayState* play) {
         }
 
         Magic_DrawMeter(play);
-#if PLATFORM_PSP
-        gOotPspSetHudAnchor(OVERLAY_DISP++, OOT_PSP_HUD_ANCHOR_RIGHT);
-#elif defined(TARGET_PS2)
+#if defined(TARGET_PS2)
         gOotPortSetHudAnchor(OVERLAY_DISP++, OOT_PORT_HUD_ANCHOR_RIGHT);
 #endif
         Minimap_Draw(play);
 
-#if PLATFORM_PSP
-        gOotPspSetHudAnchor(OVERLAY_DISP++, OOT_PSP_HUD_ANCHOR_CENTER);
-#elif defined(TARGET_PS2)
+#if defined(TARGET_PS2)
         gOotPortSetHudAnchor(OVERLAY_DISP++, OOT_PORT_HUD_ANCHOR_CENTER);
 #endif
         if ((R_PAUSE_BG_PRERENDER_STATE != PAUSE_BG_PRERENDER_PROCESS) &&
@@ -3550,9 +3455,7 @@ void Interface_Draw(PlayState* play) {
 
         Gfx_SetupDL_39Overlay(play->state.gfxCtx);
 
-#if PLATFORM_PSP
-        gOotPspSetHudAnchor(OVERLAY_DISP++, OOT_PSP_HUD_ANCHOR_RIGHT);
-#elif defined(TARGET_PS2)
+#if defined(TARGET_PS2)
         gOotPortSetHudAnchor(OVERLAY_DISP++, OOT_PORT_HUD_ANCHOR_RIGHT);
 #endif
         Interface_DrawItemButtons(play);
@@ -3662,15 +3565,13 @@ void Interface_Draw(PlayState* play) {
         gDPPipeSync(OVERLAY_DISP++);
 
         func_8008A994(interfaceCtx);
-#if PLATFORM_PSP
-        gOotPspSetHudAnchor(OVERLAY_DISP++, OOT_PSP_HUD_ANCHOR_NONE);
-#elif defined(TARGET_PS2)
+#if defined(TARGET_PS2)
         gOotPortSetHudAnchor(OVERLAY_DISP++, OOT_PORT_HUD_ANCHOR_NONE);
 #endif
 
         if ((pauseCtx->state == PAUSE_STATE_MAIN) && (pauseCtx->mainState == PAUSE_MAIN_STATE_3)) {
             // Inventory Equip Effects
-#if PLATFORM_PSP || defined(TARGET_PS2)
+#if defined(TARGET_PS2)
             gSegments[0x08] = OS_K0_TO_PHYSICAL(pauseCtx->iconItemSegment);
 #endif
             gSPSegment(OVERLAY_DISP++, 0x08, pauseCtx->iconItemSegment);
@@ -4248,7 +4149,7 @@ void Interface_Draw(PlayState* play) {
 
     CLOSE_DISPS(play->state.gfxCtx, "../z_parameter.c", 4269);
 
-#if PLATFORM_PSP || defined(TARGET_PS2)
+#if defined(TARGET_PS2)
     gSegments[0x02] = savedSegment2;
     gSegments[0x07] = savedSegment7;
     gSegments[0x08] = savedSegment8;

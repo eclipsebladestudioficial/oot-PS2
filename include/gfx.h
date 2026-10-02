@@ -14,11 +14,7 @@
 // Texture memory size, 4 KiB
 #define TMEM_SIZE 0x1000
 
-#if PLATFORM_PSP
-#define GFX_POOL_POLY_OPA_BUFFER_SIZE 0x3000
-#else
 #define GFX_POOL_POLY_OPA_BUFFER_SIZE 0x17E0
-#endif
 
 #define GFX_POOL_POLY_XLU_BUFFER_SIZE 0x800
 #define GFX_POOL_OVERLAY_BUFFER_SIZE  0x400
@@ -130,11 +126,7 @@ void Graph_CloseDisps(Gfx** dispRefs, GraphicsContext* gfxCtx, const char* file,
     }                                   \
     (void)0
 
-#if PLATFORM_PSP
-#define GRAPH_ALLOC(gfxCtx, size) Graph_Alloc(gfxCtx, size)
-#else
 #define GRAPH_ALLOC(gfxCtx, size) ((void*)((gfxCtx)->polyOpa.d = (Gfx*)((u8*)(gfxCtx)->polyOpa.d - ALIGN16(size))))
-#endif
 
 #endif
 

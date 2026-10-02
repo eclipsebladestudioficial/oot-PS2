@@ -271,7 +271,6 @@ endif
 #### Tools ####
 ifneq ($(filter ps2-port ps2-port-elf ps2-port-clean,$(MAKECMDGOALS)),)
   PS2_PORT_ONLY := 1
-  override PSP_PORT_NO_ASSET_REGEN := 1
 endif
 
 ifneq ($(PS2_PORT_ONLY),1)
@@ -1070,9 +1069,7 @@ $(BUILD_DIR)/assets/audio/samplebanks/%.xml: $(EXTRACTED_DIR)/assets/audio/sampl
 $(BUILD_DIR)/assets/audio/samplebanks/%.s: $(BUILD_DIR)/assets/audio/samplebanks/%.xml | $(AIFC_FILES)
 	$(SBC) $(SBCFLAGS) --makedepend $(@:.s=.d) $< $@
 
-ifneq ($(PSP_PORT_NO_ASSET_REGEN),1)
 -include $(SAMPLEBANK_DEP_FILES)
-endif
 
 $(BUILD_DIR)/assets/audio/samplebanks/%.o: $(BUILD_DIR)/assets/audio/samplebanks/%.s
 	$(AS) $(ASFLAGS) $< -o $@
@@ -1095,9 +1092,7 @@ $(BUILD_DIR)/assets/audio/soundfonts/%.c $(BUILD_DIR)/assets/audio/soundfonts/%.
 # substitution $(@:.c=.h) will fail ~50% of the time with -j. Instead, don't assume anything about the suffix of $@.
 	$(SFC) $(SFCFLAGS) --makedepend $(basename $@).c.d $< $(basename $@).c $(basename $@).h $(basename $@).name
 
-ifneq ($(PSP_PORT_NO_ASSET_REGEN),1)
 -include $(SOUNDFONT_DEP_FILES)
-endif
 
 $(BUILD_DIR)/assets/audio/soundfonts/%.o: $(BUILD_DIR)/assets/audio/soundfonts/%.c $(BUILD_DIR)/assets/audio/soundfonts/%.name
 	$(CPP) $(MIPS_BUILTIN_DEFS) $(CPPFLAGS) -x assembler-with-cpp $(INC) -I include/audio -MD -MP -MF $(@:.o=.d) -MT $@ $< -o /dev/null
@@ -1132,9 +1127,7 @@ ifeq ($(AUDIO_BUILD_DEBUG),1)
 	@(cmp $(@:.o=.aseq) $(patsubst $(BUILD_DIR)/assets/audio/sequences/%,$(EXTRACTED_DIR)/baserom_audiotest/audioseq_files/%,$(@:.o=.aseq)) && echo "$(<F) OK" || (mkdir -p NONMATCHINGS/sequences && cp $(@:.o=.aseq) NONMATCHINGS/sequences/$(@F:.o=.aseq)))
 endif
 
-ifneq ($(PSP_PORT_NO_ASSET_REGEN),1)
 -include $(SEQUENCE_DEP_FILES)
-endif
 
 # put together the tables
 
@@ -1172,110 +1165,23 @@ $(BUILD_DIR)/assets/audio/sequence_font_table.o: $(BUILD_DIR)/assets/audio/seque
 
 # make headers with file sizes and amounts
 
-ifneq ($(PSP_PORT_NO_ASSET_REGEN),1)
 $(BUILD_DIR)/assets/audio/soundfont_sizes.h: $(SOUNDFONT_O_FILES)
 	$(AFILE_SIZES) $@ NUM_SOUNDFONTS SOUNDFONT_SIZES .rodata $^
 
 $(BUILD_DIR)/assets/audio/sequence_sizes.h: $(SEQUENCE_O_FILES)
 	$(AFILE_SIZES) $@ NUM_SEQUENCES SEQUENCE_SIZES .data $^
-else
-$(BUILD_DIR)/assets/audio/soundfont_sizes.h $(BUILD_DIR)/assets/audio/sequence_sizes.h:
-	@test -f $@ || { \
-		echo "Missing $@; run 'make psp-port' with the ROM available to generate PSP audio metadata."; \
-		exit 1; \
-	}
-endif
 
 # Extra audiobank padding that doesn't belong to any soundfont file
 $(BUILD_DIR)/assets/audio/audiobank_padding.o:
 	echo ".section .rodata; .fill 0x20" | $(AS) $(ASFLAGS) -o $@
 
-#### PSP Port Probe ####
+#### ps2 port ####
 
-PSP_ENABLE_GPROF ?= 0
-PSP_AUDIO_SOURCE_FREQUENCY ?= 22050
-PSP_AUDIO_HARDWARE_SRC ?= 1
-PSP_AUDIO_MEDIA_ENGINE ?= 1
-PSP_AUDIO_MIXER_VME ?= 1
-PSP_AUDIO_MIXER_FAST ?= 1
-PSP_AUDIO_MIXER_VERIFY ?= 0
-PSP_AUDIO_DIAGNOSTICS ?= 0
-PSP_GFX_DIAGNOSTICS ?= 0
-PSP_FAST_SQRT ?= 1
-PSP_OOTDEBUG ?= 0
-PSP_AUDIO_ME_OPT_CFLAGS ?= -O3 -finline-functions
-PSP_AUDIO_CPU_OPT_CFLAGS ?= -O3 -finline-functions
-PSP_GFX_HOT_OPT_CFLAGS ?= -O3 -finline-functions
-PSP_PORT_AUDIO_ME_VARIANT :=
-PSP_PORT_AUDIO_MIXER_VARIANT :=
-PSP_PORT_AUDIO_SRC_VARIANT :=
-PSP_PORT_AUDIO_DIAGNOSTICS_VARIANT :=
-ifeq ($(PSP_AUDIO_MEDIA_ENGINE),0)
-PSP_PORT_AUDIO_ME_VARIANT := -no-me
-endif
-ifeq ($(PSP_AUDIO_HARDWARE_SRC),0)
-PSP_PORT_AUDIO_SRC_VARIANT := -soft-src
-endif
-ifeq ($(PSP_AUDIO_MIXER_VME),0)
-PSP_PORT_AUDIO_MIXER_VARIANT := -mixer-cpu
-endif
-ifeq ($(PSP_AUDIO_MIXER_FAST),0)
-PSP_PORT_AUDIO_MIXER_VARIANT := -mixer-ref
-endif
-ifneq ($(PSP_AUDIO_MIXER_VERIFY),0)
-ifeq ($(PSP_AUDIO_MIXER_VME),0)
-PSP_PORT_AUDIO_MIXER_VARIANT := -mixer-cpu-verify
-else
-PSP_PORT_AUDIO_MIXER_VARIANT := -mixer-vme-verify
-endif
-endif
-PSP_PORT_GPROF_ENABLED := $(filter 1 ON on TRUE true YES yes,$(PSP_ENABLE_GPROF))
-PSP_PORT_OOTDEBUG_ENABLED := $(filter 1 ON on TRUE true YES yes,$(PSP_OOTDEBUG))
-PSP_PORT_AUDIO_DIAGNOSTICS_ENABLED := $(filter 1 ON on TRUE true YES yes,$(PSP_AUDIO_DIAGNOSTICS))
-ifneq ($(PSP_PORT_AUDIO_DIAGNOSTICS_ENABLED),)
-PSP_PORT_AUDIO_DIAGNOSTICS_VARIANT := -audio-diag
-endif
-ifneq ($(PSP_PORT_OOTDEBUG_ENABLED),)
-PSP_PORT_OOTDEBUG_VARIANT := -ootdebug
-endif
-ifneq ($(PSP_PORT_GPROF_ENABLED),)
-PSP_PORT_DEFAULT_BUILD_DIR := build/psp-port-gprof$(PSP_PORT_AUDIO_ME_VARIANT)$(PSP_PORT_AUDIO_MIXER_VARIANT)$(PSP_PORT_AUDIO_SRC_VARIANT)$(PSP_PORT_AUDIO_DIAGNOSTICS_VARIANT)$(PSP_PORT_OOTDEBUG_VARIANT)/$(VERSION)
-else
-PSP_PORT_DEFAULT_BUILD_DIR := build/psp-port$(PSP_PORT_AUDIO_ME_VARIANT)$(PSP_PORT_AUDIO_MIXER_VARIANT)$(PSP_PORT_AUDIO_SRC_VARIANT)$(PSP_PORT_AUDIO_DIAGNOSTICS_VARIANT)$(PSP_PORT_OOTDEBUG_VARIANT)/$(VERSION)
-endif
-PSP_PORT_BUILD_DIR ?= $(PSP_PORT_DEFAULT_BUILD_DIR)
-PSP_PORT_PSPSDK := $(shell psp-config -p 2>/dev/null)
-PSP_PORT_PREFIX := $(shell psp-config -P 2>/dev/null)
-PSP_PORT_CC := psp-gcc
-PSP_PORT_AR := psp-ar
-PSP_PORT_INTRAFONT_LIB := $(firstword $(wildcard $(PSP_PORT_PREFIX)/lib/libintrafont.a))
-PSP_PORT_GPROF_LINKER_SOURCE := $(PSP_PORT_PREFIX)/lib/ldscripts/elf_mipsallegrexel_psp.x
-PSP_PORT_GPROF_LINKER_SCRIPT := $(PSP_PORT_BUILD_DIR)/linkfile.gprof
-
-PSP_PORT_ACTOR_SOURCES := $(sort $(filter-out %.inc.c,$(wildcard src/overlays/actors/*/*.c)))
-PSP_PORT_EFFECT_SOURCES := $(sort $(filter-out %.inc.c,$(wildcard src/overlays/effects/*/*.c)))
-PSP_PORT_KALEIDO_SOURCES := $(sort $(filter-out %.inc.c,$(wildcard src/overlays/misc/ovl_kaleido_scope/*.c)))
-PSP_PORT_RUNTIME_ASM_SOURCES := \
-	src/code/kanread.s \
-	src/port/psp/gfx/gfx_clip_vfpu.s \
-	src/port/psp/gfx/gfx_transform_vfpu.s \
-	src/port/psp/oot_psp_asset_transform.s \
-	src/port/psp/oot_psp_me_kcall.s \
-	src/port/psp/oot_psp_dve_user.s \
-	src/port/psp/oot_psp_ucode_assets.s
-PSP_PORT_ROOT_ASSET_SOURCES := $(sort $(filter-out %.inc.c,$(wildcard assets/objects/*/*.c)))
-PSP_PORT_ROOT_TEXTURE_SOURCES := \
-	assets/textures/do_action_static/do_action_static.c \
-	assets/textures/icon_item_24_static/icon_item_24_static.c \
-	assets/textures/icon_item_jpn_static/icon_item_jpn_static.c \
-	assets/textures/icon_item_nes_static/icon_item_nes_static.c
-PSP_PORT_TEXT_ASSET_SOURCES := $(sort $(filter-out %.inc.c,$(wildcard assets/text/*message_data_static.c)))
-PSP_PORT_EXTRACTED_OBJECT_SOURCES := $(sort $(filter-out %.inc.c,$(wildcard extracted/$(VERSION)/assets/objects/*/*.c)))
-PSP_PORT_EXTRACTED_SCENE_SOURCES := $(sort $(filter-out %.inc.c,$(wildcard extracted/$(VERSION)/assets/scenes/*/*/*.c)))
-PSP_PORT_EXTRACTED_TEXTURE_SOURCES := $(sort $(filter-out %.inc.c,$(wildcard extracted/$(VERSION)/assets/textures/*/*.c)))
-PSP_PORT_EXTRACTED_MISC_SOURCES := $(sort $(filter-out %.inc.c,$(wildcard extracted/$(VERSION)/assets/misc/*/*.c)))
-
-PSP_PORT_RUNTIME_SOURCES := \
+ifeq ($(PS2_PORT_ONLY),1)
+PS2_PORT_ACTOR_SOURCES := $(sort $(filter-out %.inc.c,$(wildcard src/overlays/actors/*/*.c)))
+PS2_PORT_EFFECT_SOURCES := $(sort $(filter-out %.inc.c,$(wildcard src/overlays/effects/*/*.c)))
+PS2_PORT_KALEIDO_SOURCES := $(sort $(filter-out %.inc.c,$(wildcard src/overlays/misc/ovl_kaleido_scope/*.c)))
+PS2_PORT_RUNTIME_SOURCES := \
 	src/buffers/audio_heap.c \
 	src/buffers/gfxbuffers.c \
 	src/buffers/zbuffer.c \
@@ -1421,9 +1327,9 @@ PSP_PORT_RUNTIME_SOURCES := \
 	src/libultra/libc/xldtob.c \
 	src/libultra/libc/xlitob.c \
 	src/libultra/libc/xprintf.c \
-	$(PSP_PORT_ACTOR_SOURCES) \
-	$(PSP_PORT_EFFECT_SOURCES) \
-	$(PSP_PORT_KALEIDO_SOURCES) \
+	$(PS2_PORT_ACTOR_SOURCES) \
+	$(PS2_PORT_EFFECT_SOURCES) \
+	$(PS2_PORT_KALEIDO_SOURCES) \
 	src/overlays/gamestates/ovl_file_choose/z_file_choose.c \
 	src/overlays/gamestates/ovl_file_choose/z_file_copy_erase.c \
 	src/overlays/gamestates/ovl_file_choose/z_file_nameset.c \
@@ -1432,33 +1338,6 @@ PSP_PORT_RUNTIME_SOURCES := \
 	src/overlays/gamestates/ovl_select/z_select.c \
 	src/overlays/gamestates/ovl_title/z_title.c \
 	src/overlays/misc/ovl_map_mark_data/z_map_mark_data.c \
-	src/port/psp/gfx/gfx_cc.c \
-	src/port/psp/gfx/gfx_fast3d.c \
-	src/port/psp/gfx/gfx_scegu.c \
-	src/port/psp/gfx/gfx_window_psp.c \
-	src/port/psp/gfx/psp_texture_manager.c \
-	src/port/psp/oot_psp_asset_builder.c \
-	src/port/psp/oot_psp_asset_loader.c \
-	src/port/psp/oot_psp_audio_backend.c \
-	src/port/psp/oot_psp_audiomgr.c \
-	src/port/psp/oot_psp_controls.c \
-	src/port/psp/oot_psp_dve.c \
-	src/port/psp/oot_psp_game.c \
-	src/port/psp/oot_psp_home_menu.c \
-	src/port/psp/oot_psp_memory.c \
-	src/port/psp/oot_psp_mixer.c \
-	src/port/psp/oot_psp_performance.c \
-	src/port/psp/oot_psp_renderer.c \
-	src/port/psp/oot_psp_runtime_patch.c \
-	src/port/psp/oot_psp_video.c \
-	src/port/psp/sys_ucode_psp.c \
-	src/port/psp/libultra_psp.c \
-	src/port/psp/sched_psp.c
-
-ifeq ($(PS2_PORT_ONLY),1)
-PS2_PORT_BASE_RUNTIME_SOURCES := $(filter-out src/port/psp/%,$(PSP_PORT_RUNTIME_SOURCES))
-PS2_PORT_RUNTIME_SOURCES := \
-	$(PS2_PORT_BASE_RUNTIME_SOURCES) \
 	src/port/ps2/gfx/gfx_cc.c \
 	src/port/ps2/gfx/gfx_fast3d.c \
 	src/port/ps2/gfx/gfx_ps2_rapi.c \
@@ -1481,224 +1360,7 @@ PS2_PORT_RUNTIME_SOURCES := \
 	src/port/ps2/sched_ps2.c \
 	src/port/ps2/oot_ps2_video.c \
 	
-endif
 
-PSP_PORT_ASSET_SOURCES := \
-	$(PSP_PORT_ROOT_ASSET_SOURCES) \
-	$(PSP_PORT_ROOT_TEXTURE_SOURCES) \
-	$(PSP_PORT_TEXT_ASSET_SOURCES) \
-	$(PSP_PORT_EXTRACTED_OBJECT_SOURCES) \
-	$(PSP_PORT_EXTRACTED_SCENE_SOURCES) \
-	$(PSP_PORT_EXTRACTED_TEXTURE_SOURCES) \
-	$(PSP_PORT_EXTRACTED_MISC_SOURCES)
-
-PSP_PORT_LINKED_ASSET_SOURCES := \
-	$(EMPTY)
-
-PSP_PORT_PROBE_SOURCE := src/port/psp/oot_psp_probe.c
-
-PSP_PORT_SETUP_STAMP := $(PSP_PORT_BUILD_DIR)/setup.stamp
-PSP_PORT_ASSET_SNAPSHOT := assets/psp/ntsc-1.0/generated.zip
-PSP_PORT_ASSET_TRANSFORM := assets/psp/ntsc-1.0/asset_transform.z
-PSP_PORT_RUNTIME_PATCH_MANIFEST := assets/psp/ntsc-1.0/runtime_patches.z
-PSP_PORT_ROMINFO_SOURCE := $(PSP_PORT_BUILD_DIR)/oot_psp_rominfo.c
-PSP_PORT_ROMINFO_OBJECT := $(PSP_PORT_BUILD_DIR)/oot_psp_rominfo.o
-PSP_PORT_ASSET_TABLE_SOURCE := $(PSP_PORT_BUILD_DIR)/oot_psp_asset_tables.c
-PSP_PORT_ASSET_TABLE_OBJECT := $(PSP_PORT_BUILD_DIR)/oot_psp_asset_tables.o
-PSP_PORT_AUDIO_TABLE_SOURCE := $(PSP_PORT_BUILD_DIR)/oot_psp_audio_tables.c
-PSP_PORT_AUDIO_TABLE_OBJECT := $(PSP_PORT_BUILD_DIR)/oot_psp_audio_tables.o
-PSP_PORT_ASSET_SEGMENT_SOURCE := $(PSP_PORT_BUILD_DIR)/oot_psp_asset_segments.S
-PSP_PORT_ASSET_SEGMENT_TABLE_SOURCE := $(PSP_PORT_BUILD_DIR)/oot_psp_asset_segments.c
-PSP_PORT_ASSET_SEGMENT_STAMP := $(PSP_PORT_BUILD_DIR)/oot_psp_asset_segments.stamp
-PSP_PORT_ASSET_SEGMENT_DATA_DIR := $(PSP_PORT_BUILD_DIR)/data/segments
-PSP_PORT_ASSET_SEGMENT_DATA_STAMP := $(PSP_PORT_ASSET_SEGMENT_DATA_DIR)/.stamp
-PSP_PORT_ASSET_SEGMENT_OBJECT := $(PSP_PORT_BUILD_DIR)/oot_psp_asset_segments.o
-PSP_PORT_ASSET_SEGMENT_TABLE_OBJECT := $(PSP_PORT_BUILD_DIR)/oot_psp_asset_segments_table.o
-PSP_PORT_RUNTIME_OBJECTS := $(patsubst %.c,$(PSP_PORT_BUILD_DIR)/%.o,$(PSP_PORT_RUNTIME_SOURCES))
-PSP_PORT_RUNTIME_ASM_OBJECTS := $(patsubst %.s,$(PSP_PORT_BUILD_DIR)/%.o,$(PSP_PORT_RUNTIME_ASM_SOURCES))
-PSP_PORT_ASSET_OBJECTS := $(patsubst %.c,$(PSP_PORT_BUILD_DIR)/%.o,$(PSP_PORT_LINKED_ASSET_SOURCES))
-PSP_PORT_NATIVE_SEGMENT_OBJECTS := $(patsubst %.c,$(PSP_PORT_BUILD_DIR)/%.o,$(PSP_PORT_ASSET_SOURCES))
-PSP_PORT_PROBE_OBJECT := $(PSP_PORT_BUILD_DIR)/$(PSP_PORT_PROBE_SOURCE:.c=.o)
-PSP_PORT_LIBRARY := $(PSP_PORT_BUILD_DIR)/liboot_psp_platform.a
-PSP_PORT_ELF := $(PSP_PORT_BUILD_DIR)/oot-psp-port.elf
-PSP_PORT_BASE_ELF := $(PSP_PORT_BUILD_DIR)/oot-psp-port.base.elf
-PSP_PORT_RUNTIME_PATCH_BLOB := $(PSP_PORT_BUILD_DIR)/oot_psp_runtime_patches.bin
-PSP_PORT_RUNTIME_PATCH_ASM := $(PSP_PORT_BUILD_DIR)/oot_psp_runtime_patches.S
-PSP_PORT_RUNTIME_PATCH_OBJECT := $(PSP_PORT_BUILD_DIR)/oot_psp_runtime_patches.o
-PSP_PORT_PRX_ELF := $(PSP_PORT_BUILD_DIR)/oot-psp-port.prx.elf
-PSP_PORT_STRIPPED_ELF := $(PSP_PORT_BUILD_DIR)/oot-psp-port.stripped.elf
-PSP_PORT_PRX := $(PSP_PORT_BUILD_DIR)/oot-psp-port.prx
-PSP_PORT_PBP := $(PSP_PORT_BUILD_DIR)/EBOOT.PBP
-PSP_PORT_DVEMGR_SOURCE_DIR := src/port/psp/dvemgr
-PSP_PORT_DVEMGR_BUILD_DIR := $(PSP_PORT_BUILD_DIR)/dvemgr
-PSP_PORT_DVEMGR_OBJECTS := \
-	$(PSP_PORT_DVEMGR_BUILD_DIR)/main.o \
-	$(PSP_PORT_DVEMGR_BUILD_DIR)/exports.o \
-	$(PSP_PORT_DVEMGR_BUILD_DIR)/imports.o
-PSP_PORT_DVEMGR_ELF := $(PSP_PORT_DVEMGR_BUILD_DIR)/dvemgr.elf
-PSP_PORT_DVEMGR_PRX := $(PSP_PORT_BUILD_DIR)/Plugins/dvemgr.prx
-PSP_PORT_BUILD_MODE := $(if $(filter 1,$(PSP_PORT_NO_ASSET_REGEN)),no-asset-regen,full-assets)
-PSP_PORT_BUILD_MODE_STAMP := $(PSP_PORT_BUILD_DIR)/.build-mode
-PSP_PORT_DEP_FILES := $(PSP_PORT_RUNTIME_OBJECTS:.o=.d) $(PSP_PORT_RUNTIME_ASM_OBJECTS:.o=.d) \
-	$(PSP_PORT_ASSET_OBJECTS:.o=.d) \
-	$(PSP_PORT_ROMINFO_OBJECT:.o=.d) $(PSP_PORT_ASSET_TABLE_OBJECT:.o=.d) \
-	$(PSP_PORT_AUDIO_TABLE_OBJECT:.o=.d) \
-	$(PSP_PORT_ASSET_SEGMENT_OBJECT:.o=.d) $(PSP_PORT_ASSET_SEGMENT_TABLE_OBJECT:.o=.d) \
-	$(PSP_PORT_PROBE_OBJECT:.o=.d)
-PSP_PORT_DEP_FILES += $(PSP_PORT_DVEMGR_OBJECTS:.o=.d)
-ifneq ($(PSP_PORT_NO_ASSET_REGEN),1)
-PSP_PORT_DEP_FILES += $(PSP_PORT_NATIVE_SEGMENT_OBJECTS:.o=.d)
-endif
-
-$(PSP_PORT_BUILD_DIR)/assets/text/jpn_message_data_static.o: $(BUILD_DIR)/assets/text/message_data.enc.jpn.h
-$(PSP_PORT_BUILD_DIR)/assets/text/nes_message_data_static.o: $(BUILD_DIR)/assets/text/message_data.enc.nes.h
-$(PSP_PORT_BUILD_DIR)/assets/text/ger_message_data_static.o: $(BUILD_DIR)/assets/text/message_data.enc.nes.h
-$(PSP_PORT_BUILD_DIR)/assets/text/fra_message_data_static.o: $(BUILD_DIR)/assets/text/message_data.enc.nes.h
-$(PSP_PORT_BUILD_DIR)/assets/text/staff_message_data_static.o: $(BUILD_DIR)/assets/text/message_data_staff.enc.nes.h
-
-PSP_PORT_EXTRACTED_ASSET_FILES := \
-	$(EXTRACTED_DIR)/assets/objects/object_timeblock/gSongOfTimeBlockDL.inc.c \
-	$(EXTRACTED_DIR)/assets/objects/object_timeblock/gSongOfTimeBlockVtx.inc.c \
-	$(EXTRACTED_DIR)/assets/objects/object_timeblock/gSongOfTimeBlockTex.i4.png \
-	$(EXTRACTED_DIR)/assets/textures/nintendo_rogo_static/nintendo_rogo_static.c \
-	$(EXTRACTED_DIR)/assets/textures/nintendo_rogo_static/nintendo_rogo_static.h \
-	$(EXTRACTED_DIR)/assets/textures/nintendo_rogo_static/gNintendo64LogoDL.inc.c \
-	$(EXTRACTED_DIR)/assets/textures/nintendo_rogo_static/gNintendo64LogoVtx.inc.c \
-	$(EXTRACTED_DIR)/assets/textures/nintendo_rogo_static/nintendo_rogo_static_Tex_000000.i8.png \
-	$(EXTRACTED_DIR)/assets/textures/nintendo_rogo_static/nintendo_rogo_static_Tex_001800.i8.png
-
-PSP_PORT_GENERATED_ASSET_FILES := \
-	$(BUILD_DIR)/assets/objects/gameplay_dangeon_keep/gameplay_dangeon_keep_000000_Tex.i8.inc.c \
-	$(BUILD_DIR)/assets/objects/gameplay_dangeon_keep/gameplay_dangeon_keep_000200_Tex.i8.inc.c \
-	$(BUILD_DIR)/assets/objects/gameplay_dangeon_keep/gameplay_dangeon_keep_0005C0_Tex.rgba16.inc.c \
-	$(BUILD_DIR)/assets/objects/gameplay_dangeon_keep/gameplay_dangeon_keep_001280_Tex.rgba16.inc.c \
-	$(BUILD_DIR)/assets/objects/gameplay_dangeon_keep/gDoorChainTex.rgba16.inc.c \
-	$(BUILD_DIR)/assets/objects/gameplay_dangeon_keep/gPushBlockBaseTex.i4.inc.c \
-	$(BUILD_DIR)/assets/objects/gameplay_dangeon_keep/gPushBlockGrayTex.i4.inc.c \
-	$(BUILD_DIR)/assets/objects/gameplay_dangeon_keep/gPushBlockSilverTex.i4.inc.c \
-	$(BUILD_DIR)/assets/objects/gameplay_dangeon_keep/gUnusedGoldLockTex.rgba16.inc.c \
-	$(BUILD_DIR)/assets/objects/gameplay_dangeon_keep/gUnusedStoneTex.rgba16.inc.c \
-	$(BUILD_DIR)/assets/objects/object_bdoor/gBossDoorDefaultTex.rgba16.inc.c \
-	$(BUILD_DIR)/assets/objects/object_bdoor/gBossDoorFireTex.rgba16.inc.c \
-	$(BUILD_DIR)/assets/objects/object_bdoor/gBossDoorForestTex.rgba16.inc.c \
-	$(BUILD_DIR)/assets/objects/object_bdoor/gBossDoorGanonsCastleTex.rgba16.inc.c \
-	$(BUILD_DIR)/assets/objects/object_bdoor/gBossDoorShadowTex.rgba16.inc.c \
-	$(BUILD_DIR)/assets/objects/object_bdoor/gBossDoorSpiritTex.rgba16.inc.c \
-	$(BUILD_DIR)/assets/objects/object_bdoor/gBossDoorWaterTex.rgba16.inc.c \
-	$(BUILD_DIR)/assets/objects/object_timeblock/gSongOfTimeBlockTex.i4.inc.c \
-	$(BUILD_DIR)/assets/textures/nintendo_rogo_static/nintendo_rogo_static_Tex_000000.i8.inc.c \
-	$(BUILD_DIR)/assets/textures/nintendo_rogo_static/nintendo_rogo_static_Tex_001800.i8.inc.c
-
-PSP_PORT_RUNTIME_GENERATED_ASSET_DIRS := \
-	assets/code \
-	assets/n64dd \
-	assets/overlays \
-	$(EXTRACTED_DIR)/assets/code \
-	$(EXTRACTED_DIR)/assets/n64dd \
-	$(EXTRACTED_DIR)/assets/overlays
-PSP_PORT_NATIVE_GENERATED_ASSET_DIRS := \
-	assets/objects \
-	assets/scenes \
-	assets/textures \
-	assets/misc \
-	$(EXTRACTED_DIR)/assets/objects \
-	$(EXTRACTED_DIR)/assets/scenes \
-	$(EXTRACTED_DIR)/assets/textures \
-	$(EXTRACTED_DIR)/assets/misc
-
-PSP_PORT_RUNTIME_GENERATED_ASSET_STAMP := $(BUILD_DIR)/assets/psp_generated_runtime_assets.stamp
-PSP_PORT_NATIVE_GENERATED_ASSET_STAMP := $(BUILD_DIR)/assets/psp_generated_native_assets.stamp
-
-PSP_PORT_DEFINES := \
-	-D_LANGUAGE_C \
-	-DNON_MATCHING \
-	-DAVOID_UB \
-	-DDEBUG_FEATURES=$(DEBUG_FEATURES) \
-	-DOOT_VERSION=$(VERSION_MACRO) \
-	-DOOT_REVISION=$(REVISION) \
-	-DOOT_REGION=REGION_$(REGION) \
-	-DLIBULTRA_VERSION=LIBULTRA_VERSION_L \
-	-DLIBULTRA_PATCH=0 \
-	-DPLATFORM_PSP=1 \
-	-DPLATFORM_N64=0 \
-	-DPLATFORM_GC=0 \
-	-DPLATFORM_IQUE=0 \
-	-DF3DEX_GBI_2 \
-	-DF3DEX_GBI_PL \
-	-DGBI_DOWHILE \
-	-DTARGET_PSP=1 \
-	-DOOT_PSP_AUDIO_SOURCE_FREQUENCY=$(PSP_AUDIO_SOURCE_FREQUENCY) \
-	-DOOT_PSP_AUDIO_HARDWARE_SRC=$(PSP_AUDIO_HARDWARE_SRC) \
-	-DOOT_PSP_AUDIO_MEDIA_ENGINE=$(PSP_AUDIO_MEDIA_ENGINE) \
-	-DOOT_PSP_AUDIO_MIXER_VME=$(PSP_AUDIO_MIXER_VME) \
-	-DOOT_PSP_AUDIO_MIXER_FAST=$(PSP_AUDIO_MIXER_FAST) \
-	-DOOT_PSP_AUDIO_MIXER_VERIFY=$(PSP_AUDIO_MIXER_VERIFY) \
-	-DOOT_PSP_AUDIO_DIAGNOSTICS=$(if $(PSP_PORT_AUDIO_DIAGNOSTICS_ENABLED),1,0) \
-	-DOOT_PSP_GFX_DIAGNOSTICS=$(PSP_GFX_DIAGNOSTICS) \
-	-DOOT_PSP_FAST_SQRT=$(PSP_FAST_SQRT) \
-	-D_PSP_FW_VERSION=500
-ifneq ($(PSP_PORT_GPROF_ENABLED),)
-PSP_PORT_DEFINES += -DOOT_PSP_GPROF=1
-endif
-ifneq ($(PSP_PORT_OOTDEBUG_ENABLED),)
-PSP_PORT_DEFINES += -DOOTDEBUG=1
-endif
-ifneq ($(PSP_PORT_INTRAFONT_LIB),)
-PSP_PORT_DEFINES += -DOOT_PSP_USE_INTRAFONT=1
-else
-PSP_PORT_DEFINES += -DOOT_PSP_USE_INTRAFONT=0
-endif
-PSP_PORT_ASM_DEFINES := $(filter-out -D_LANGUAGE_C,$(PSP_PORT_DEFINES))
-
-PSP_PORT_INCLUDES := \
-	-Iinclude \
-	-Iinclude/libc \
-	-Isrc \
-	-isystem $(BUILD_DIR) \
-	-I. \
-	-I$(EXTRACTED_DIR) \
-	-Isrc/port/psp \
-	-Isrc/port/psp/gfx \
-	-I$(PSP_PORT_PSPSDK)/include \
-	-I$(PSP_PORT_PREFIX)/include
-
-PSP_PORT_CFLAGS := -G0 -O2 -g3 -Wall -Wextra -Wno-format-security -Wno-unused-parameter -Wno-unused-variable \
-	-Wno-missing-braces \
-	-Wno-int-to-pointer-cast -Wno-pointer-to-int-cast -fno-strict-aliasing -fwrapv -fno-common -fsigned-char \
-	-ffunction-sections -fdata-sections \
-	-fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-ident \
-	-include src/port/psp/oot_psp_compat.h \
-	$(PSP_PORT_DEFINES) $(PSP_PORT_INCLUDES)
-
-ifneq ($(PSP_PORT_GPROF_ENABLED),)
-PSP_PORT_CFLAGS += -pg -g -fno-omit-frame-pointer -fno-optimize-sibling-calls
-endif
-PSP_PORT_AUDIO_ME_CFLAGS := $(filter-out -pg,$(PSP_PORT_CFLAGS)) $(PSP_AUDIO_ME_OPT_CFLAGS)
-PSP_PORT_AUDIO_CPU_CFLAGS := $(PSP_PORT_CFLAGS) $(PSP_AUDIO_CPU_OPT_CFLAGS)
-PSP_PORT_GFX_HOT_CFLAGS := $(PSP_PORT_CFLAGS) $(PSP_GFX_HOT_OPT_CFLAGS)
-
-PSP_PORT_LIBS := -L$(PSP_PORT_PSPSDK)/lib -L$(PSP_PORT_PREFIX)/lib -lme-core -lpspdmac -lpspgu -lpspgum -ljpeg -lz \
-	-lpspdisplay -lpspge -lpspfpu -lpspctrl -lpsppower -lpspaudio -lpspdebug -lpspkubridge
-ifneq ($(PSP_PORT_INTRAFONT_LIB),)
-PSP_PORT_LIBS += -lintrafont
-endif
-
-ifneq ($(PSP_PORT_GPROF_ENABLED),)
-PSP_PORT_LINKER_DEPS := $(PSP_PORT_GPROF_LINKER_SCRIPT)
-PSP_PORT_EXTRA_LINK_OBJECTS := $(PSP_PORT_ASSET_SEGMENT_OBJECT)
-PSP_PORT_LDFLAGS := -pg -g -Wl,-T$(PSP_PORT_GPROF_LINKER_SCRIPT) -Wl,-q -Wl,-zmax-page-size=128 -Wl,--gc-sections \
-	-Wl,-u,module_info -Wl,-u,sceKernelChangeThreadPriority -Wl,-u,ootPspDveImport -Wl,-u,ootPspMeKcallImport \
-	$(PSP_PORT_LIBS)
-else
-PSP_PORT_LINKER_DEPS :=
-PSP_PORT_EXTRA_LINK_OBJECTS :=
-PSP_PORT_LDFLAGS := -specs=$(PSP_PORT_PSPSDK)/lib/prxspecs -Wl,-q,-T$(PSP_PORT_PSPSDK)/lib/linkfile.prx \
-	-Wl,-zmax-page-size=128 -Wl,--gc-sections -Wl,-u,module_info -Wl,-u,sceKernelChangeThreadPriority \
-	-Wl,-u,ootPspDveImport -Wl,-u,ootPspMeKcallImport \
-	$(PSP_PORT_PSPSDK)/lib/prxexports.o $(PSP_PORT_LIBS)
-endif
-
-ifeq ($(PS2_PORT_ONLY),1)
 PS2DEV ?= /usr/local/ps2dev
 PS2SDK ?= $(PS2DEV)/ps2sdk
 GSKIT ?= $(PS2DEV)/gsKit
@@ -1716,7 +1378,7 @@ PS2_PORT_RUNTIME_ASM_SOURCES := \
 PS2_PORT_ASSET_SNAPSHOT := assets/ps2/$(VERSION)/generated.zip
 PS2_PORT_ASSET_TRANSFORM := assets/ps2/$(VERSION)/asset_transform.z
 PS2_PORT_RUNTIME_PATCH_MANIFEST := assets/ps2/$(VERSION)/runtime_patches.z
-PS2_PORT_SNAPSHOT_TOOL := tools/psp_port_asset_snapshot.py
+PS2_PORT_SNAPSHOT_TOOL := tools/port_asset_snapshot.py
 PS2_PORT_RUNTIME_PATCH_TOOL := tools/ps2_port_runtime_patches.py
 PS2_PORT_SETUP_STAMP := $(PS2_PORT_BUILD_DIR)/setup.stamp
 PS2_PORT_INCLUDE_DIR := $(PS2_PORT_BUILD_DIR)/include
@@ -1821,11 +1483,6 @@ $(PS2_PORT_SETUP_STAMP): $(PS2_PORT_ASSET_SNAPSHOT) $(PS2_PORT_SNAPSHOT_TOOL) Ma
 	@mkdir -p $(PS2_PORT_INCLUDE_DIR)
 	cp -R include/. $(PS2_PORT_INCLUDE_DIR)
 	$(PS2_PORT_PYTHON) $(PS2_PORT_SNAPSHOT_TOOL) restore $(PS2_PORT_ASSET_SNAPSHOT) $(PS2_PORT_BUILD_DIR)
-	mv -f $(PS2_PORT_BUILD_DIR)/oot_psp_rominfo.c $(PS2_PORT_ROMINFO_SOURCE)
-	mv -f $(PS2_PORT_BUILD_DIR)/oot_psp_asset_tables.c $(PS2_PORT_ASSET_TABLE_SOURCE)
-	mv -f $(PS2_PORT_BUILD_DIR)/oot_psp_audio_tables.c $(PS2_PORT_AUDIO_TABLE_SOURCE)
-	mv -f $(PS2_PORT_BUILD_DIR)/oot_psp_asset_segments.S $(PS2_PORT_ASSET_SEGMENT_SOURCE)
-	mv -f $(PS2_PORT_BUILD_DIR)/oot_psp_asset_segments.c $(PS2_PORT_ASSET_SEGMENT_TABLE_SOURCE)
 	@touch $@
 
 $(PS2_PORT_ROMINFO_SOURCE) $(PS2_PORT_ASSET_TABLE_SOURCE) $(PS2_PORT_AUDIO_TABLE_SOURCE) \
@@ -1892,203 +1549,13 @@ $(PS2_PORT_ELF): $(PS2_PORT_ENTRY_OBJECT) $(PS2_PORT_LIBRARY) $(PS2_PORT_RUNTIME
 
 ps2-port-clean:
 	$(RM) -r $(PS2_PORT_BUILD_DIR)
-
 endif
 
-psp-port: $(PSP_PORT_PBP) $(PSP_PORT_DVEMGR_PRX)
-	@echo "PSP port is up to date: $(PSP_PORT_PBP) and $(PSP_PORT_DVEMGR_PRX)"
-
-psp-port-eboot:
-	$(MAKE) PSP_PORT_NO_ASSET_REGEN=1 $(PSP_PORT_PBP) $(PSP_PORT_DVEMGR_PRX)
-
-$(PSP_PORT_DVEMGR_BUILD_DIR)/%.o: $(PSP_PORT_DVEMGR_SOURCE_DIR)/%.c
-	@mkdir -p $(dir $@)
-	$(PSP_PORT_CC) -MMD -MP -MF $(@:.o=.d) -MT $@ -c -Os -G0 -Wall -fshort-wchar -fno-pic \
-		-mno-check-zero-division -D_PSP_FW_VERSION=500 -I$(PSP_PORT_PSPSDK)/include -I$(PSP_PORT_PREFIX)/include \
-		-o $@ $<
-
-$(PSP_PORT_DVEMGR_BUILD_DIR)/%.o: $(PSP_PORT_DVEMGR_SOURCE_DIR)/%.s
-	@mkdir -p $(dir $@)
-	$(PSP_PORT_CC) -MMD -MP -MF $(@:.o=.d) -MT $@ -c -x assembler-with-cpp -D_PSP_FW_VERSION=500 \
-		-I$(PSP_PORT_PSPSDK)/include -I$(PSP_PORT_PREFIX)/include -o $@ $<
-
-$(PSP_PORT_DVEMGR_ELF): $(PSP_PORT_DVEMGR_OBJECTS)
-	$(PSP_PORT_CC) -L$(PSP_PORT_PREFIX)/lib -L$(PSP_PORT_PSPSDK)/lib \
-		-specs=$(PSP_PORT_PSPSDK)/lib/prxspecs -Wl,-q,-T$(PSP_PORT_PSPSDK)/lib/linkfile.prx \
-		-nostartfiles -Wl,-zmax-page-size=128 $^ -nostdlib -lpspdebug -lpspdisplay_driver -lpspctrl_driver \
-		-lpspmodinfo -lpspsdk -lpspkernel -o $@
-	psp-fixup-imports $@
-
-$(PSP_PORT_DVEMGR_PRX): $(PSP_PORT_DVEMGR_ELF)
-	@mkdir -p $(dir $@)
-	psp-prxgen $< $@
-
-$(PSP_PORT_BUILD_DIR)/%.o: %.c
-	@mkdir -p $(dir $@)
-	$(PSP_PORT_CC) -MMD -MP -MF $(@:.o=.d) -MT $@ -c $(PSP_PORT_CFLAGS) -o $@ $<
-
-$(PSP_PORT_BUILD_DIR)/%.o: %.s
-	@mkdir -p $(dir $@)
-	$(PSP_PORT_CC) -MMD -MP -MF $(@:.o=.d) -MT $@ -c -x assembler-with-cpp $(PSP_PORT_ASM_DEFINES) $(PSP_PORT_INCLUDES) -Wa,-I$(EXTRACTED_DIR) -o $@ $<
-
-$(PSP_PORT_RUNTIME_OBJECTS) $(PSP_PORT_NATIVE_SEGMENT_OBJECTS): include/command_macros_base.h include/cutscene_commands.h include/scene.h
-
-$(PSP_PORT_SETUP_STAMP): $(PSP_PORT_ASSET_SNAPSHOT) tools/psp_port_asset_snapshot.py
-	@mkdir -p $(dir $@)
-	$(PYTHON) tools/psp_port_asset_snapshot.py restore $(PSP_PORT_ASSET_SNAPSHOT) $(PSP_PORT_BUILD_DIR)
-	@touch $@
-
-$(PSP_PORT_ROMINFO_SOURCE) $(PSP_PORT_ASSET_TABLE_SOURCE) $(PSP_PORT_AUDIO_TABLE_SOURCE): $(PSP_PORT_SETUP_STAMP)
-	@test -f $@
-
-$(PSP_PORT_ROMINFO_OBJECT): $(PSP_PORT_ROMINFO_SOURCE)
-	@mkdir -p $(dir $@)
-	$(PSP_PORT_CC) -MMD -MP -MF $(@:.o=.d) -MT $@ -c $(PSP_PORT_CFLAGS) -o $@ $<
-
-$(PSP_PORT_ASSET_TABLE_OBJECT): $(PSP_PORT_ASSET_TABLE_SOURCE)
-	@mkdir -p $(dir $@)
-	$(PSP_PORT_CC) -MMD -MP -MF $(@:.o=.d) -MT $@ -c $(PSP_PORT_CFLAGS) -o $@ $<
-
-$(PSP_PORT_AUDIO_TABLE_OBJECT): $(PSP_PORT_AUDIO_TABLE_SOURCE)
-	@mkdir -p $(dir $@)
-	$(PSP_PORT_CC) -MMD -MP -MF $(@:.o=.d) -MT $@ -c $(PSP_PORT_CFLAGS) -o $@ $<
-
-$(PSP_PORT_ASSET_SEGMENT_STAMP): $(PSP_PORT_SETUP_STAMP)
-	@touch $@
-
-$(PSP_PORT_ASSET_SEGMENT_SOURCE) $(PSP_PORT_ASSET_SEGMENT_TABLE_SOURCE): $(PSP_PORT_ASSET_SEGMENT_STAMP)
-	@:
-
-$(PSP_PORT_ASSET_SEGMENT_OBJECT): $(PSP_PORT_ASSET_SEGMENT_SOURCE)
-	@mkdir -p $(dir $@)
-	$(PSP_PORT_CC) -MMD -MP -MF $(@:.o=.d) -MT $@ -c -x assembler-with-cpp $(PSP_PORT_DEFINES) $(PSP_PORT_INCLUDES) -o $@ $<
-
-$(PSP_PORT_BUILD_DIR)/src/port/psp/oot_psp_asset_transform.o: $(PSP_PORT_ASSET_TRANSFORM)
-
-$(PSP_PORT_ASSET_SEGMENT_TABLE_OBJECT): $(PSP_PORT_ASSET_SEGMENT_TABLE_SOURCE)
-	@mkdir -p $(dir $@)
-	$(PSP_PORT_CC) -MMD -MP -MF $(@:.o=.d) -MT $@ -c $(PSP_PORT_CFLAGS) -o $@ $<
-
-$(PSP_PORT_EXTRACTED_ASSET_FILES): $(PSP_PORT_SETUP_STAMP)
-	@test -f $@
-
-$(PSP_PORT_RUNTIME_GENERATED_ASSET_STAMP): $(PSP_PORT_SETUP_STAMP)
-	@mkdir -p $(dir $@)
-	@touch $@
-
-$(PSP_PORT_NATIVE_GENERATED_ASSET_STAMP): $(PSP_PORT_SETUP_STAMP)
-	@mkdir -p $(dir $@)
-	@{ for dir in $(PSP_PORT_NATIVE_GENERATED_ASSET_DIRS); do \
-		if test -d "$$dir"; then \
-			find "$$dir" -type f \( -name '*.png' -o -name '*.bin' -o -name '*.jpg' \); \
-		fi; \
-	done; } | sed \
-		-e 's#^assets/#$(BUILD_DIR)/assets/#' \
-		-e 's#^$(EXTRACTED_DIR)/assets/#$(BUILD_DIR)/assets/#' \
-		-e 's#\.png$$#.inc.c#' \
-		-e 's#\.bin$$#.bin.inc.c#' \
-		-e 's#\.jpg$$#.jpg.inc.c#' | xargs -r $(MAKE)
-	@touch $@
-
-$(PSP_PORT_RUNTIME_OBJECTS): $(PSP_PORT_SETUP_STAMP) $(PSP_PORT_RUNTIME_GENERATED_ASSET_STAMP)
-
-$(PSP_PORT_BUILD_DIR)/src/audio/internal/playback.o \
-$(PSP_PORT_BUILD_DIR)/src/audio/internal/seqplayer.o \
-$(PSP_PORT_BUILD_DIR)/src/audio/internal/synthesis.o \
-$(PSP_PORT_BUILD_DIR)/src/audio/internal/thread.o: PSP_PORT_CFLAGS := $(PSP_PORT_AUDIO_CPU_CFLAGS)
-$(PSP_PORT_BUILD_DIR)/src/audio/internal/seqplayer.o: PSP_PORT_CFLAGS += -DMML_VERSION=MML_VERSION_OOT
-$(PSP_PORT_BUILD_DIR)/src/port/psp/gfx/gfx_fast3d.o: PSP_PORT_CFLAGS := $(PSP_PORT_GFX_HOT_CFLAGS)
-$(PSP_PORT_BUILD_DIR)/src/port/psp/oot_psp_audio_backend.o: PSP_PORT_CFLAGS := $(PSP_PORT_AUDIO_ME_CFLAGS)
-$(PSP_PORT_BUILD_DIR)/src/port/psp/oot_psp_mixer.o: PSP_PORT_CFLAGS := $(PSP_PORT_AUDIO_ME_CFLAGS)
-
-
-$(PSP_PORT_BUILD_MODE_STAMP): FORCE
-	@mkdir -p $(dir $@)
-	@mode='$(PSP_PORT_BUILD_MODE)'; \
-	if test ! -f $@ || test "$$(cat $@)" != "$$mode"; then \
-		printf '%s\n' "$$mode" > $@; \
-	fi
-
-$(PSP_PORT_LIBRARY): $(PSP_PORT_BUILD_MODE_STAMP) $(PSP_PORT_RUNTIME_OBJECTS) $(PSP_PORT_RUNTIME_ASM_OBJECTS) $(PSP_PORT_ASSET_OBJECTS) $(PSP_PORT_ROMINFO_OBJECT) $(PSP_PORT_ASSET_TABLE_OBJECT) $(PSP_PORT_AUDIO_TABLE_OBJECT) $(PSP_PORT_ASSET_SEGMENT_OBJECT) $(PSP_PORT_ASSET_SEGMENT_TABLE_OBJECT)
-	@mkdir -p $(dir $@)
-	$(file >$@.rsp,$(filter-out $(PSP_PORT_BUILD_MODE_STAMP),$^))
-	$(RM) $@
-	$(PSP_PORT_AR) rcs $@ @$@.rsp
-
-$(PSP_PORT_GPROF_LINKER_SCRIPT): $(PSP_PORT_GPROF_LINKER_SOURCE)
-	@mkdir -p $(dir $@)
-	sed 's#^\([[:space:]]*\.rodata\.sceNid[[:space:]]*: {\)[[:space:]]*\*(\.rodata\.sceNid)[[:space:]]*}#\1 KEEP (*(.rodata.sceNid)) }#' $< > $@
-
-$(PSP_PORT_BASE_ELF): $(PSP_PORT_LIBRARY) $(PSP_PORT_PROBE_OBJECT) $(PSP_PORT_LINKER_DEPS) $(PSP_PORT_EXTRA_LINK_OBJECTS)
-	@mkdir -p $(dir $@)
-ifneq ($(PSP_PORT_EXTRA_LINK_OBJECTS),)
-	$(file >$@.extra.rsp,$(PSP_PORT_EXTRA_LINK_OBJECTS))
-endif
-	$(PSP_PORT_CC) -o $@ $(PSP_PORT_PROBE_OBJECT) $(if $(PSP_PORT_EXTRA_LINK_OBJECTS),@$@.extra.rsp) \
-		-Wl,--start-group $(PSP_PORT_LIBRARY) -Wl,--end-group $(PSP_PORT_LDFLAGS)
-	psp-fixup-imports $@
-
-$(PSP_PORT_RUNTIME_PATCH_BLOB): $(PSP_PORT_BASE_ELF) $(PSP_PORT_RUNTIME_PATCH_MANIFEST) tools/psp_port_runtime_patches.py
-	$(PYTHON) tools/psp_port_runtime_patches.py resolve $< $(PSP_PORT_RUNTIME_PATCH_MANIFEST) $@ --base-elf $(PSP_PORT_BASE_ELF)
-
-$(PSP_PORT_RUNTIME_PATCH_ASM): $(PSP_PORT_RUNTIME_PATCH_BLOB)
-	@printf '%s\n' \
-		'.section .rodata' \
-		'.balign 16' \
-		'.global gOotPspRuntimePatchBlob' \
-		'gOotPspRuntimePatchBlob:' \
-		'.incbin "$(PSP_PORT_RUNTIME_PATCH_BLOB)"' \
-		'.global gOotPspRuntimePatchBlobEnd' \
-		'gOotPspRuntimePatchBlobEnd:' > $@
-
-$(PSP_PORT_RUNTIME_PATCH_OBJECT): $(PSP_PORT_RUNTIME_PATCH_ASM)
-	$(PSP_PORT_CC) -MMD -MP -MF $(@:.o=.d) -MT $@ -c -x assembler-with-cpp $(PSP_PORT_ASM_DEFINES) $(PSP_PORT_INCLUDES) -o $@ $<
-
-$(PSP_PORT_ELF): $(PSP_PORT_LIBRARY) $(PSP_PORT_PROBE_OBJECT) $(PSP_PORT_RUNTIME_PATCH_OBJECT) $(PSP_PORT_LINKER_DEPS) $(PSP_PORT_EXTRA_LINK_OBJECTS)
-	@mkdir -p $(dir $@)
-ifneq ($(PSP_PORT_EXTRA_LINK_OBJECTS),)
-	$(file >$@.extra.rsp,$(PSP_PORT_EXTRA_LINK_OBJECTS))
-endif
-	$(PSP_PORT_CC) -o $@ $(PSP_PORT_PROBE_OBJECT) $(if $(PSP_PORT_EXTRA_LINK_OBJECTS),@$@.extra.rsp) \
-		-Wl,--start-group $(PSP_PORT_LIBRARY) -Wl,--end-group $(PSP_PORT_RUNTIME_PATCH_OBJECT) $(PSP_PORT_LDFLAGS)
-	psp-fixup-imports $@
-	$(PYTHON) tools/psp_port_runtime_patches.py resolve $@ $(PSP_PORT_RUNTIME_PATCH_MANIFEST) $(PSP_PORT_RUNTIME_PATCH_BLOB) --base-elf $(PSP_PORT_BASE_ELF)
-	$(PSP_PORT_CC) -MMD -MP -MF $(PSP_PORT_RUNTIME_PATCH_OBJECT:.o=.d) -MT $(PSP_PORT_RUNTIME_PATCH_OBJECT) \
-		-c -x assembler-with-cpp $(PSP_PORT_ASM_DEFINES) $(PSP_PORT_INCLUDES) -o $(PSP_PORT_RUNTIME_PATCH_OBJECT) \
-		$(PSP_PORT_RUNTIME_PATCH_ASM)
-	$(PSP_PORT_CC) -o $@ $(PSP_PORT_PROBE_OBJECT) $(if $(PSP_PORT_EXTRA_LINK_OBJECTS),@$@.extra.rsp) \
-		-Wl,--start-group $(PSP_PORT_LIBRARY) -Wl,--end-group $(PSP_PORT_RUNTIME_PATCH_OBJECT) $(PSP_PORT_LDFLAGS)
-	psp-fixup-imports $@
-
-$(PSP_PORT_PRX_ELF): $(PSP_PORT_ELF) $(PSP_PORT_ASSET_SEGMENT_SOURCE) tools/psp_port_strip_asset_relocs.py
-	$(PYTHON) tools/psp_port_strip_asset_relocs.py $< $(PSP_PORT_ASSET_SEGMENT_SOURCE) $@
-
-$(PSP_PORT_PRX): $(PSP_PORT_PRX_ELF)
-	psp-prxgen $< $@
-
-$(PSP_PORT_STRIPPED_ELF): $(PSP_PORT_ELF)
-	psp-strip -s -o $@ $<
-
-ifneq ($(PSP_PORT_GPROF_ENABLED),)
-PSP_PORT_EBOOT_PAYLOAD := $(PSP_PORT_STRIPPED_ELF)
-else
-PSP_PORT_EBOOT_PAYLOAD := $(PSP_PORT_PRX)
-endif
-
-PSP_PORT_ICON0 := assets/psp/ICON0.PNG
-
-$(PSP_PORT_PBP): $(PSP_PORT_EBOOT_PAYLOAD) $(PSP_PORT_ICON0)
-	mksfoex -d MEMSIZE=1 "OOT PSP Port" $(PSP_PORT_BUILD_DIR)/PARAM.SFO
-	pack-pbp $@ $(PSP_PORT_BUILD_DIR)/PARAM.SFO $(PSP_PORT_ICON0) NULL NULL NULL NULL $< NULL
-
-psp-port-clean:
-	$(RM) -r $(PSP_PORT_BUILD_DIR)
-
-.PHONY: FORCE psp-port psp-port-eboot psp-port-clean ps2-port ps2-port-elf ps2-port-clean
+.PHONY: FORCE ps2-port ps2-port-elf ps2-port-clean
 
 FORCE:
 
--include $(DEP_FILES) $(PSP_PORT_DEP_FILES)
+-include $(DEP_FILES)
 ifeq ($(PS2_PORT_ONLY),1)
 -include $(PS2_PORT_DEP_FILES)
 endif

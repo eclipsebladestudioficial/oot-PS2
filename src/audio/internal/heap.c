@@ -5,17 +5,10 @@
 #include "ultra64.h"
 #include "versions.h"
 #include "audio.h"
-#if defined(TARGET_PSP)
-#include "oot_psp_audio_commands.h"
-#define OotPortAudioSynth_InvalidateMeCaches OotPspAudioSynth_InvalidateMeCaches
-#define OotPortAudioSynth_PublishMeAssetRange OotPspAudioSynth_PublishMeAssetRange
-#elif defined(TARGET_PS2)
+#if defined(TARGET_PS2)
 #include "oot_port_audio_commands.h"
 #endif
 
-#if defined(TARGET_PSP) && !defined(OOT_PSP_AUDIO_SOURCE_FREQUENCY)
-#define OOT_PSP_AUDIO_SOURCE_FREQUENCY 22050
-#endif
 
 void AudioHeap_InitSampleCaches(u32 persistentSampleCacheSize, u32 temporarySampleCacheSize);
 SampleCacheEntry* AudioHeap_AllocTemporarySampleCacheEntry(u32 size);
@@ -986,13 +979,7 @@ void AudioHeap_Init(void) {
 
     gAudioCtx.sampleDmaCount = 0;
 
-#if defined(TARGET_PSP)
-    if (samplingFrequency > OOT_PSP_AUDIO_SOURCE_FREQUENCY) {
-        samplingFrequency = OOT_PSP_AUDIO_SOURCE_FREQUENCY;
-    }
-    persistentSampleBankCacheSize = 0;
-    temporarySampleBankCacheSize = 0;
-#elif defined(TARGET_PS2)
+#if defined(TARGET_PS2)
     persistentSampleBankCacheSize = 0;
     temporarySampleBankCacheSize = 0;
 #endif
@@ -1024,7 +1011,7 @@ void AudioHeap_Init(void) {
     // SampleDma buffer size
     gAudioCtx.sampleDmaBufSize1 = spec->sampleDmaBufSize1;
     gAudioCtx.sampleDmaBufSize2 = spec->sampleDmaBufSize2;
-#if defined(TARGET_PSP) || defined(TARGET_PS2)
+#if defined(TARGET_PS2)
     if (gAudioCtx.sampleDmaBufSize1 < 0x1000) {
         gAudioCtx.sampleDmaBufSize1 = 0x1000;
     }
@@ -1218,9 +1205,6 @@ void AudioHeap_Init(void) {
     intMask = osSetIntMask(OS_IM_NONE);
     osWritebackDCacheAll();
     osSetIntMask(intMask);
-#if defined(TARGET_PSP)
-    OotPortAudioSynth_InvalidateMeCaches();
-#endif
 #endif
 }
 
@@ -1466,9 +1450,6 @@ void AudioHeap_UnapplySampleCache(SampleCacheEntry* entry, Sample* sample) {
         if (sample->sampleAddr == entry->allocatedAddr) {
             sample->sampleAddr = entry->sampleAddr;
             sample->medium = entry->origMedium;
-#if defined(TARGET_PSP)
-            OotPortAudioSynth_PublishMeAssetRange(sample, sizeof(*sample));
-#endif
         }
     }
 }
@@ -1556,9 +1537,6 @@ void AudioHeap_ChangeStorage(StorageChange* change, Sample* sample) {
         if (((u32)sample->sampleAddr >= startAddr) && ((u32)sample->sampleAddr < endAddr)) {
             sample->sampleAddr += -startAddr + change->newAddr;
             sample->medium = change->newMedium;
-#if defined(TARGET_PSP)
-            OotPortAudioSynth_PublishMeAssetRange(sample, sizeof(*sample));
-#endif
         }
     }
 }

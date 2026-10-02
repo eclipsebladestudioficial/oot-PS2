@@ -51,7 +51,7 @@ static MapMarkDataOverlay sMapMarkDataOvl = {
 static MapMarkData** sLoadedMarkDataTable;
 
 void MapMark_Init(PlayState* play) {
-#if PLATFORM_PSP || defined(TARGET_PS2)
+#if defined(TARGET_PS2)
     sMapMarkDataOvl.loadedRamAddr = NULL;
     sLoadedMarkDataTable = gMapMarkDataTable;
 #else

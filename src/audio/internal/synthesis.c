@@ -4,13 +4,6 @@
 #include "alignment.h"
 #include "ultra64.h"
 #include "audio.h"
-#if defined(TARGET_PSP)
-#include "oot_psp_asset_loader.h"
-#include "oot_psp_audio_backend.h"
-#include "oot_psp_audio_commands.h"
-#include <me-core-mapper/me-lib.h>
-#include <pspkernel.h>
-#endif
 
 // DMEM Addresses for the RSP
 #define DMEM_TEMP 0x3C0
@@ -47,325 +40,6 @@ Acmd* AudioSynth_FinalResample(Acmd* cmd, NoteSynthesisState* synthState, s32 si
 
 u32 sEnvMixerOp = _SHIFTL(A_ENVMIXER, 24, 8);
 
-#if defined(TARGET_PSP)
-#define OOT_PSP_AUDIO_NATIVE_PTR_START 0x08000000U
-#define OOT_PSP_AUDIO_NATIVE_PTR_END   0x0C000000U
-#define OOT_PSP_AUDIO_REVERB_COUNT     4
-#define OOT_PSP_AUDIO_REVERB_FRAMES    2
-#define OOT_PSP_AUDIO_REVERB_UPDATES   5
-#define OOT_PSP_AUDIO_REVERB_DESC_SLOTS 2
-#define OOT_PSP_AUDIO_REVERB_DESC_ITEMS 0
-#define OOT_PSP_AUDIO_REVERB_DESC_ITEMS2 1
-#define OOT_PSP_AUDIO_ME_ASSET_INVALIDATE_MAX 16
-
-typedef struct OotPspAudioMeAssetInvalidateRange {
-    volatile u32 address;
-    volatile u32 size;
-} OotPspAudioMeAssetInvalidateRange;
-
-typedef struct OotPspAudioMeAssetInvalidations {
-    volatile u32 count;
-    u32 reserved;
-    OotPspAudioMeAssetInvalidateRange ranges[OOT_PSP_AUDIO_ME_ASSET_INVALIDATE_MAX];
-    /* Keep range cache maintenance from touching unrelated BSS globals. */
-    u8 cacheLinePadding[56];
-} OotPspAudioMeAssetInvalidations;
-
-typedef char OotPspAudioMeAssetInvalidationsMustFillCacheLines[
-    (sizeof(OotPspAudioMeAssetInvalidations) % 64) == 0 ? 1 : -1];
-
-typedef struct OotPspAudioMeLocalFlags {
-    u8 badSampleLogged;
-    u8 buildingOnMe;
-    /* ME stores dirty the entire cache line. Do not let that line contain
-     * Allegrex-owned globals such as the letterbox animation state. */
-    u8 cacheLinePadding[62];
-} OotPspAudioMeLocalFlags;
-
-typedef char OotPspAudioMeLocalFlagsMustFillCacheLine[
-    sizeof(OotPspAudioMeLocalFlags) == 64 ? 1 : -1];
-
-static OotPspAudioMeLocalFlags sOotPspAudioMeLocalFlags __attribute__((aligned(64)));
-static u32 sOotPspAudioMeCacheEpoch = 1;
-static OotPspAudioMeAssetInvalidations sOotPspAudioMeAssetInvalidations __attribute__((aligned(64)));
-static OotPspAudioReverbDownsampleCmd sOotPspAudioReverbDownsampleCmds[OOT_PSP_AUDIO_REVERB_COUNT]
-                                                                             [OOT_PSP_AUDIO_REVERB_FRAMES]
-                                                                             [OOT_PSP_AUDIO_REVERB_UPDATES]
-                                                                             [OOT_PSP_AUDIO_REVERB_DESC_SLOTS]
-    __attribute__((aligned(64)));
-
-static s32 OotPspAudioSynth_IsAlignedNativePtr(const void* ptr) {
-    u32 addr = (u32)ptr;
-
-    return (addr >= OOT_PSP_AUDIO_NATIVE_PTR_START) && (addr < OOT_PSP_AUDIO_NATIVE_PTR_END) && ((addr & 3) == 0);
-}
-
-static s32 OotPspAudioSynth_CanCacheSampleSpan(const void* ptr, u32 size) {
-    uintptr_t start = (uintptr_t)ptr & ~(OOT_PSP_AUDIO_SAMPLE_CACHE_PAGE_SIZE - 1);
-    uintptr_t end = ((uintptr_t)ptr + size + OOT_PSP_AUDIO_SAMPLE_CACHE_PAGE_SIZE - 1) &
-                    ~(OOT_PSP_AUDIO_SAMPLE_CACHE_PAGE_SIZE - 1);
-
-    /* The loaded-asset index is owned and updated by Allegrex. The ME uses
-     * ordinary load commands while constructing a list rather than racing
-     * that index; the mixer still executes those loads on the ME. */
-    return !sOotPspAudioMeLocalFlags.buildingOnMe &&
-           OotPsp_IsLoadedNativeExternalAssetRange((const void*)start, end - start);
-}
-
-static OotPspAudioReverbDownsampleCmd* OotPspAudioSynth_SetupReverbRingCmd(SynthesisReverb* reverb,
-                                                                            ReverbRingBufferItem* bufItem,
-                                                                            s16 updateIndex, s32 slot) {
-    s32 reverbIndex = reverb - gAudioCtx.synthesisReverbs;
-    OotPspAudioReverbDownsampleCmd* pspCmd;
-
-    if ((reverbIndex < 0) || (reverbIndex >= OOT_PSP_AUDIO_REVERB_COUNT) ||
-        (reverb->curFrame >= OOT_PSP_AUDIO_REVERB_FRAMES) ||
-        ((u32)updateIndex >= OOT_PSP_AUDIO_REVERB_UPDATES) ||
-        ((u32)slot >= OOT_PSP_AUDIO_REVERB_DESC_SLOTS)) {
-        return NULL;
-    }
-
-    pspCmd = &sOotPspAudioReverbDownsampleCmds[reverbIndex][reverb->curFrame][updateIndex][slot];
-    pspCmd->leftRingBuf = reverb->leftRingBuf;
-    pspCmd->rightRingBuf = reverb->rightRingBuf;
-    pspCmd->startPos = bufItem->startPos;
-    pspCmd->lengthA = bufItem->lengthA;
-    pspCmd->lengthB = bufItem->lengthB;
-    pspCmd->bufSizePerChan = reverb->bufSizePerChan;
-    pspCmd->downsampleRate = reverb->downsampleRate;
-    pspCmd->cacheEpoch = sOotPspAudioMeCacheEpoch;
-
-    return pspCmd;
-}
-
-static OotPspAudioReverbDownsampleCmd* OotPspAudioSynth_SetupReverbDownsampleCmd(SynthesisReverb* reverb,
-                                                                                 ReverbRingBufferItem* bufItem,
-                                                                                 s16 updateIndex) {
-    return OotPspAudioSynth_SetupReverbRingCmd(reverb, bufItem, updateIndex, OOT_PSP_AUDIO_REVERB_DESC_ITEMS);
-}
-
-void OotPspAudioSynth_InvalidateMeCaches(void) {
-    sOotPspAudioMeCacheEpoch++;
-    if (sOotPspAudioMeCacheEpoch == 0) {
-        sOotPspAudioMeCacheEpoch = 1;
-    }
-}
-
-static void OotPspAudioSynth_InvalidateRange(const void* address, u32 size) {
-    uintptr_t start;
-    uintptr_t end;
-
-    if ((address == NULL) || (size == 0)) {
-        return;
-    }
-
-    start = (uintptr_t)address & ~63U;
-    end = ((uintptr_t)address + size + 63U) & ~63U;
-    sceKernelDcacheInvalidateRange((void*)start, end - start);
-}
-
-static void OotPspAudioSynth_WritebackRange(const void* address, u32 size) {
-    uintptr_t start;
-    uintptr_t end;
-
-    if ((address == NULL) || (size == 0)) {
-        return;
-    }
-
-    start = (uintptr_t)address & ~63U;
-    end = ((uintptr_t)address + size + 63U) & ~63U;
-    sceKernelDcacheWritebackRange((void*)start, end - start);
-}
-
-static void OotPspAudioSynth_MeInvalidateRange(const void* address, u32 size) {
-    uintptr_t start;
-    uintptr_t end;
-
-    if ((address == NULL) || (size == 0)) {
-        return;
-    }
-
-    start = (uintptr_t)address & ~63U;
-    end = ((uintptr_t)address + size + 63U) & ~63U;
-    meLibDcacheInvalidateRange((u32)start, end - start);
-}
-
-static void OotPspAudioSynth_MeWritebackRange(const void* address, u32 size) {
-    uintptr_t start;
-    uintptr_t end;
-
-    if ((address == NULL) || (size == 0)) {
-        return;
-    }
-
-    start = (uintptr_t)address & ~63U;
-    end = ((uintptr_t)address + size + 63U) & ~63U;
-    meLibDcacheWritebackRange((u32)start, end - start);
-}
-
-static u32 OotPspAudioSynth_NoteSubStateSize(void) {
-    return gAudioCtx.audioBufferParameters.ticksPerUpdate * gAudioCtx.numNotes *
-           sizeof(*gAudioCtx.noteSubsEu);
-}
-
-void OotPspAudioSynth_PublishMeAssetRange(const void* address, u32 size) {
-    u32 start;
-    u32 end;
-    u32 count;
-    u32 i;
-
-    if ((address == NULL) || (size == 0)) {
-        return;
-    }
-
-    start = (u32)(uintptr_t)address & ~63U;
-    end = ((u32)(uintptr_t)address + size + 63U) & ~63U;
-    OotPspAudioSynth_WritebackRange((const void*)(uintptr_t)start, end - start);
-
-    count = sOotPspAudioMeAssetInvalidations.count;
-    if (count > OOT_PSP_AUDIO_ME_ASSET_INVALIDATE_MAX) {
-        count = OOT_PSP_AUDIO_ME_ASSET_INVALIDATE_MAX;
-        sOotPspAudioMeAssetInvalidations.count = count;
-    }
-    for (i = 0; i < count; i++) {
-        u32 rangeStart = sOotPspAudioMeAssetInvalidations.ranges[i].address;
-        u32 rangeEnd = rangeStart + sOotPspAudioMeAssetInvalidations.ranges[i].size;
-
-        if ((start <= rangeEnd) && (end >= rangeStart)) {
-            if (start > rangeStart) {
-                start = rangeStart;
-            }
-            if (end < rangeEnd) {
-                end = rangeEnd;
-            }
-            sOotPspAudioMeAssetInvalidations.ranges[i].address = start;
-            sOotPspAudioMeAssetInvalidations.ranges[i].size = end - start;
-            return;
-        }
-    }
-
-    if (count < OOT_PSP_AUDIO_ME_ASSET_INVALIDATE_MAX) {
-        sOotPspAudioMeAssetInvalidations.ranges[count].address = start;
-        sOotPspAudioMeAssetInvalidations.ranges[count].size = end - start;
-        sOotPspAudioMeAssetInvalidations.count = count + 1;
-    } else {
-        u32 bestIndex = 0;
-        u32 bestExpansion = ~0U;
-
-        /* Asset relocation is rare. If the bounded list fills during bulk
-         * startup, merge with the nearest range instead of flushing the
-         * entire ME cache and disturbing its persistent mixer state. */
-        for (i = 0; i < count; i++) {
-            u32 rangeStart = sOotPspAudioMeAssetInvalidations.ranges[i].address;
-            u32 rangeEnd = rangeStart + sOotPspAudioMeAssetInvalidations.ranges[i].size;
-            u32 mergedStart = (start < rangeStart) ? start : rangeStart;
-            u32 mergedEnd = (end > rangeEnd) ? end : rangeEnd;
-            u32 expansion = (mergedEnd - mergedStart) - (rangeEnd - rangeStart);
-
-            if (expansion < bestExpansion) {
-                bestIndex = i;
-                bestExpansion = expansion;
-            }
-        }
-        {
-            u32 rangeStart = sOotPspAudioMeAssetInvalidations.ranges[bestIndex].address;
-            u32 rangeEnd = rangeStart + sOotPspAudioMeAssetInvalidations.ranges[bestIndex].size;
-
-            if (start > rangeStart) {
-                start = rangeStart;
-            }
-            if (end < rangeEnd) {
-                end = rangeEnd;
-            }
-            sOotPspAudioMeAssetInvalidations.ranges[bestIndex].address = start;
-            sOotPspAudioMeAssetInvalidations.ranges[bestIndex].size = end - start;
-        }
-    }
-}
-
-static void OotPspAudioSynth_MeInvalidatePublishedAssets(void) {
-    u32 count;
-    u32 i;
-
-    OotPspAudioSynth_MeInvalidateRange(&sOotPspAudioMeAssetInvalidations,
-                                       sizeof(sOotPspAudioMeAssetInvalidations));
-    meLibSync();
-    count = sOotPspAudioMeAssetInvalidations.count;
-    if (count > OOT_PSP_AUDIO_ME_ASSET_INVALIDATE_MAX) {
-        count = OOT_PSP_AUDIO_ME_ASSET_INVALIDATE_MAX;
-    }
-    for (i = 0; i < count; i++) {
-        OotPspAudioSynth_MeInvalidateRange(
-            (const void*)(uintptr_t)sOotPspAudioMeAssetInvalidations.ranges[i].address,
-            sOotPspAudioMeAssetInvalidations.ranges[i].size);
-    }
-    meLibSync();
-    sOotPspAudioMeAssetInvalidations.count = 0;
-}
-
-void OotPspAudioSynth_WritebackMeState(void) {
-    OotPspAudioSynth_WritebackRange(
-        &gAudioCtx,
-        (uintptr_t)&gAudioCtx.synthesisReverbs[4] - (uintptr_t)&gAudioCtx);
-    OotPspAudioSynth_WritebackRange(
-        &gAudioCtx.audioBufferParameters,
-        (uintptr_t)&gAudioCtx.soundOutputMode + sizeof(gAudioCtx.soundOutputMode) -
-            (uintptr_t)&gAudioCtx.audioBufferParameters);
-    OotPspAudioSynth_WritebackRange(&gAudioCtx.notes, sizeof(gAudioCtx.notes));
-    OotPspAudioSynth_WritebackRange(gAudioCtx.notes, gAudioCtx.numNotes * sizeof(*gAudioCtx.notes));
-    OotPspAudioSynth_WritebackRange(gAudioCtx.noteSubsEu, OotPspAudioSynth_NoteSubStateSize());
-    OotPspAudioSynth_WritebackRange(&sOotPspAudioMeCacheEpoch, sizeof(sOotPspAudioMeCacheEpoch));
-    OotPspAudioSynth_WritebackRange(&sOotPspAudioMeAssetInvalidations,
-                                    sizeof(sOotPspAudioMeAssetInvalidations));
-}
-
-void OotPspAudioSynth_MeInvalidateState(void) {
-    OotPspAudioSynth_MeInvalidatePublishedAssets();
-    OotPspAudioSynth_MeInvalidateRange(
-        &gAudioCtx,
-        (uintptr_t)&gAudioCtx.synthesisReverbs[4] - (uintptr_t)&gAudioCtx);
-    OotPspAudioSynth_MeInvalidateRange(
-        &gAudioCtx.audioBufferParameters,
-        (uintptr_t)&gAudioCtx.soundOutputMode + sizeof(gAudioCtx.soundOutputMode) -
-            (uintptr_t)&gAudioCtx.audioBufferParameters);
-    OotPspAudioSynth_MeInvalidateRange(&gAudioCtx.notes, sizeof(gAudioCtx.notes));
-    /* The pointers and dimensions used below live in the ranges above. */
-    meLibSync();
-    OotPspAudioSynth_MeInvalidateRange(gAudioCtx.notes,
-                                       gAudioCtx.numNotes * sizeof(*gAudioCtx.notes));
-    OotPspAudioSynth_MeInvalidateRange(gAudioCtx.noteSubsEu, OotPspAudioSynth_NoteSubStateSize());
-    OotPspAudioSynth_MeInvalidateRange(&sOotPspAudioMeCacheEpoch, sizeof(sOotPspAudioMeCacheEpoch));
-}
-
-void OotPspAudioSynth_MeWritebackState(void) {
-    /* Publish only fields command construction mutates. Read-only inputs were
-     * already written back by Allegrex and must not be written back by ME. */
-    OotPspAudioSynth_MeWritebackRange(
-        &gAudioCtx.curLoadedBook,
-        (uintptr_t)&gAudioCtx.synthesisReverbs[4] - (uintptr_t)&gAudioCtx.curLoadedBook);
-    OotPspAudioSynth_MeWritebackRange(gAudioCtx.notes,
-                                      gAudioCtx.numNotes * sizeof(*gAudioCtx.notes));
-    OotPspAudioSynth_MeWritebackRange(gAudioCtx.noteSubsEu, OotPspAudioSynth_NoteSubStateSize());
-    OotPspAudioSynth_MeWritebackRange(&sOotPspAudioMeAssetInvalidations,
-                                      sizeof(sOotPspAudioMeAssetInvalidations));
-    OotPspAudioSynth_MeWritebackRange(sOotPspAudioReverbDownsampleCmds,
-                                      sizeof(sOotPspAudioReverbDownsampleCmds));
-}
-
-void OotPspAudioSynth_InvalidateMeState(void) {
-    OotPspAudioSynth_InvalidateRange(
-        &gAudioCtx.curLoadedBook,
-        (uintptr_t)&gAudioCtx.synthesisReverbs[4] - (uintptr_t)&gAudioCtx.curLoadedBook);
-    OotPspAudioSynth_InvalidateRange(gAudioCtx.notes, gAudioCtx.numNotes * sizeof(*gAudioCtx.notes));
-    OotPspAudioSynth_InvalidateRange(
-        gAudioCtx.noteSubsEu,
-        gAudioCtx.audioBufferParameters.ticksPerUpdate * gAudioCtx.numNotes * sizeof(*gAudioCtx.noteSubsEu));
-    OotPspAudioSynth_InvalidateRange(&sOotPspAudioMeAssetInvalidations,
-                                     sizeof(sOotPspAudioMeAssetInvalidations));
-    OotPspAudioSynth_InvalidateRange(sOotPspAudioReverbDownsampleCmds,
-                                     sizeof(sOotPspAudioReverbDownsampleCmds));
-}
-#endif
 
 // Store the left dry channel in a temp space to be delayed to produce the haas effect
 u32 sEnvMixerLeftHaasDmemDests =
@@ -389,30 +63,6 @@ u8 sNumSamplesPerWavePeriod[] = {
     WAVE_SAMPLE_COUNT / 8, // 8th harmonic
 };
 
-#if defined(TARGET_PSP)
-/* Audio chunks are multiples of eight samples. The normal 22.05 and 32 kHz
- * configurations produce 21-24 envelope steps, so make those divisors
- * compile-time constants and let Allegrex use multiply-high instead of its
- * high-latency integer divider. Keep the fallback for unusual audio specs. */
-static __attribute__((noinline)) s32 OotPspAudioSynth_DivideEnvelopeRamp(s32 value, s32 steps) {
-    switch (steps) {
-        case 20:
-            return value / 20;
-        case 21:
-            return value / 21;
-        case 22:
-            return value / 22;
-        case 23:
-            return value / 23;
-        case 24:
-            return value / 24;
-        case 25:
-            return value / 25;
-        default:
-            return value / steps;
-    }
-}
-#endif
 
 /**
  * original name: Nas_CpuFX
@@ -428,7 +78,6 @@ void AudioSynth_InitNextRingBuf(s32 chunkLen, s32 updateIndex, s32 reverbIndex) 
     s32 i;
     s32 j;
 
-#if !defined(TARGET_PSP)
     if (reverb->downsampleRate >= 2) {
         if (reverb->framesToIgnore == 0) {
             bufItem = &reverb->items[reverb->curFrame][updateIndex];
@@ -445,7 +94,6 @@ void AudioSynth_InitNextRingBuf(s32 chunkLen, s32 updateIndex, s32 reverbIndex) 
             }
         }
     }
-#endif
 
     bufItem = &reverb->items[reverb->curFrame][updateIndex];
     numSamples = chunkLen / reverb->downsampleRate;
@@ -567,67 +215,13 @@ Acmd* AudioSynth_BuildCommandList(Acmd* cmdStart, s32* cmdCnt, s16* aiStart, s32
     return cmdP;
 }
 
-#if defined(TARGET_PSP)
-Acmd* AudioSynth_BuildCommandListMe(Acmd* cmdStart, s32* cmdCnt, s16* aiStart, s32 aiBufLen) {
-    Acmd* cmdEnd;
-
-    sOotPspAudioMeLocalFlags.buildingOnMe = true;
-    cmdEnd = AudioSynth_BuildCommandList(cmdStart, cmdCnt, aiStart, aiBufLen);
-    sOotPspAudioMeLocalFlags.buildingOnMe = false;
-    return cmdEnd;
-}
-
-s32 AudioSynth_CanBuildCommandsOnMe(void) {
-    s32 noteSubCount = gAudioCtx.audioBufferParameters.ticksPerUpdate * gAudioCtx.numNotes;
-    s32 i;
-
-    for (i = 0; i < noteSubCount; i++) {
-        NoteSubEu* noteSubEu = &gAudioCtx.noteSubsEu[i];
-        TunedSample* tunedSample;
-        Sample* sample;
-
-        if (!noteSubEu->bitField0.enabled || noteSubEu->bitField1.isSyntheticWave) {
-            continue;
-        }
-
-        tunedSample = noteSubEu->tunedSample;
-        if ((tunedSample == NULL) || !OotPspAudioSynth_IsAlignedNativePtr(tunedSample) ||
-            (tunedSample->sample == NULL) || !OotPspAudioSynth_IsAlignedNativePtr(tunedSample->sample)) {
-            continue;
-        }
-
-        sample = tunedSample->sample;
-        if ((sample->medium != MEDIUM_RAM) && (sample->medium != MEDIUM_UNK) &&
-            (sample->codec != CODEC_S16_INMEMORY) && (sample->codec != CODEC_S16)) {
-            /* This update may call AudioLoad_DmaSampleData while constructing
-             * commands. Keep that I/O-capable path on Allegrex. */
-            return false;
-        }
-    }
-
-    return true;
-}
-#endif
 
 /**
  * original name: Nas_smzAudioFrame
  */
 Acmd* AudioSynth_Update(Acmd* cmdStart, s32* cmdCnt, s16* aiStart, s32 aiBufLen) {
-#if defined(TARGET_PSP) && (defined(OOTDEBUG) || OOT_PSP_AUDIO_DIAGNOSTICS)
-    u32 profileStartUsec = sceKernelGetSystemTimeLow();
-    u32 profileAfterSequenceUsec;
-    Acmd* cmdEnd;
-
-    AudioSynth_ProcessSequenceControl();
-    profileAfterSequenceUsec = sceKernelGetSystemTimeLow();
-    cmdEnd = AudioSynth_BuildCommandList(cmdStart, cmdCnt, aiStart, aiBufLen);
-    OotPspAudioBackend_RecordSynthesisProfile(profileAfterSequenceUsec - profileStartUsec,
-                                              sceKernelGetSystemTimeLow() - profileAfterSequenceUsec);
-    return cmdEnd;
-#else
     AudioSynth_ProcessSequenceControl();
     return AudioSynth_BuildCommandList(cmdStart, cmdCnt, aiStart, aiBufLen);
-#endif
 }
 
 /**
@@ -647,23 +241,6 @@ void func_800DB2C0(s32 updateIndex, s32 noteIndex) {
     }
 }
 
-#if defined(TARGET_PSP)
-static Acmd* OotPspAudioSynth_DropBadNote(Acmd* cmd, s32 updateIndex, s32 noteIndex, NoteSubEu* noteSubEu, Note* note,
-                                          const char* reason, TunedSample* tunedSample, Sample* sample) {
-    if (!sOotPspAudioMeLocalFlags.buildingOnMe && !sOotPspAudioMeLocalFlags.badSampleLogged) {
-        sOotPspAudioMeLocalFlags.badSampleLogged = true;
-        osSyncPrintf("oot-psp audio dropped bad synth note reason=%s note=%d tuned=%p sample=%p\n", reason, noteIndex,
-                     tunedSample, sample);
-    }
-
-    noteSubEu->bitField0.enabled = false;
-    noteSubEu->bitField0.finished = true;
-    note->noteSubEu.bitField0.enabled = false;
-    note->noteSubEu.bitField0.finished = true;
-    func_800DB2C0(updateIndex, noteIndex);
-    return cmd;
-}
-#endif
 
 /**
  * original name: Nas_LoadAux2nd
@@ -671,15 +248,6 @@ static Acmd* OotPspAudioSynth_DropBadNote(Acmd* cmd, s32 updateIndex, s32 noteIn
 Acmd* AudioSynth_LoadRingBuffer1AtTemp(Acmd* cmd, SynthesisReverb* reverb, s16 updateIndex) {
     ReverbRingBufferItem* bufItem = &reverb->items[reverb->curFrame][updateIndex];
 
-#if defined(TARGET_PSP)
-    OotPspAudioReverbDownsampleCmd* pspCmd =
-        OotPspAudioSynth_SetupReverbRingCmd(reverb, bufItem, updateIndex, OOT_PSP_AUDIO_REVERB_DESC_ITEMS);
-
-    if (pspCmd != NULL) {
-        aOotPspAudioReverbLoad(cmd++, DMEM_WET_TEMP, pspCmd);
-        return cmd;
-    }
-#endif
 
     cmd = AudioSynth_LoadRingBufferPart(cmd, DMEM_WET_TEMP, bufItem->startPos, bufItem->lengthA, reverb);
     if (bufItem->lengthB != 0) {
@@ -695,15 +263,6 @@ Acmd* AudioSynth_LoadRingBuffer1AtTemp(Acmd* cmd, SynthesisReverb* reverb, s16 u
 Acmd* AudioSynth_SaveRingBuffer1AtTemp(Acmd* cmd, SynthesisReverb* reverb, s16 updateIndex) {
     ReverbRingBufferItem* bufItem = &reverb->items[reverb->curFrame][updateIndex];
 
-#if defined(TARGET_PSP)
-    OotPspAudioReverbDownsampleCmd* pspCmd =
-        OotPspAudioSynth_SetupReverbRingCmd(reverb, bufItem, updateIndex, OOT_PSP_AUDIO_REVERB_DESC_ITEMS);
-
-    if (pspCmd != NULL) {
-        aOotPspAudioReverbSave(cmd++, DMEM_WET_TEMP, pspCmd);
-        return cmd;
-    }
-#endif
 
     cmd = AudioSynth_SaveRingBufferPart(cmd, DMEM_WET_TEMP, bufItem->startPos, bufItem->lengthA, reverb);
     if (bufItem->lengthB != 0) {
@@ -979,15 +538,6 @@ void AudioSynth_LoadFilterSize(Acmd* cmd, s32 size, void* addr) {
 Acmd* AudioSynth_LoadRingBuffer1(Acmd* cmd, s32 aiBufLen, SynthesisReverb* reverb, s16 updateIndex) {
     ReverbRingBufferItem* ringBufferItem = &reverb->items[reverb->curFrame][updateIndex];
 
-#if defined(TARGET_PSP)
-    OotPspAudioReverbDownsampleCmd* pspCmd =
-        OotPspAudioSynth_SetupReverbRingCmd(reverb, ringBufferItem, updateIndex, OOT_PSP_AUDIO_REVERB_DESC_ITEMS);
-
-    if (pspCmd != NULL) {
-        aOotPspAudioReverbLoad(cmd++, DMEM_WET_LEFT_CH, pspCmd);
-        return cmd;
-    }
-#endif
 
     cmd =
         AudioSynth_LoadRingBufferPart(cmd, DMEM_WET_LEFT_CH, ringBufferItem->startPos, ringBufferItem->lengthA, reverb);
@@ -1006,15 +556,6 @@ Acmd* AudioSynth_LoadRingBuffer1(Acmd* cmd, s32 aiBufLen, SynthesisReverb* rever
 Acmd* AudioSynth_LoadRingBuffer2(Acmd* cmd, s32 aiBufLen, SynthesisReverb* reverb, s16 updateIndex) {
     ReverbRingBufferItem* bufItem = &reverb->items2[reverb->curFrame][updateIndex];
 
-#if defined(TARGET_PSP)
-    OotPspAudioReverbDownsampleCmd* pspCmd =
-        OotPspAudioSynth_SetupReverbRingCmd(reverb, bufItem, updateIndex, OOT_PSP_AUDIO_REVERB_DESC_ITEMS2);
-
-    if (pspCmd != NULL) {
-        aOotPspAudioReverbLoad(cmd++, DMEM_WET_LEFT_CH, pspCmd);
-        return cmd;
-    }
-#endif
 
     cmd = AudioSynth_LoadRingBufferPart(cmd, DMEM_WET_LEFT_CH, bufItem->startPos, bufItem->lengthA, reverb);
     if (bufItem->lengthB != 0) {
@@ -1088,25 +629,6 @@ Acmd* AudioSynth_SaveReverbSamples(Acmd* cmd, SynthesisReverb* reverb, s16 updat
         if (reverb->unk_18 != 0) {
             cmd = func_800DB680(cmd, reverb, updateIndex);
         } else {
-#if defined(TARGET_PSP)
-            s32 lengthA = bufItem->lengthA;
-            s32 lengthB = bufItem->lengthB;
-            OotPspAudioReverbDownsampleCmd* pspCmd =
-                OotPspAudioSynth_SetupReverbDownsampleCmd(reverb, bufItem, updateIndex);
-
-            if (pspCmd != NULL) {
-                aOotPspAudioReverbSave(cmd++, DMEM_WET_LEFT_CH, pspCmd);
-            } else {
-                // Put the oldest samples in the ring buffer into the wet channels
-                aSaveBuffer(cmd++, DMEM_WET_LEFT_CH, &reverb->leftRingBuf[bufItem->startPos], lengthA);
-                aSaveBuffer(cmd++, DMEM_WET_RIGHT_CH, &reverb->rightRingBuf[bufItem->startPos], lengthA);
-                if (lengthB != 0) {
-                    // Ring buffer wrapped
-                    aSaveBuffer(cmd++, DMEM_WET_LEFT_CH + lengthA, reverb->leftRingBuf, lengthB);
-                    aSaveBuffer(cmd++, DMEM_WET_RIGHT_CH + lengthA, reverb->rightRingBuf, lengthB);
-                }
-            }
-#else
             // Put the oldest samples in the ring buffer into the wet channels
             cmd = AudioSynth_SaveRingBufferPart(cmd, DMEM_WET_LEFT_CH, bufItem->startPos, bufItem->lengthA, reverb);
             if (bufItem->lengthB != 0) {
@@ -1114,22 +636,12 @@ Acmd* AudioSynth_SaveReverbSamples(Acmd* cmd, SynthesisReverb* reverb, s16 updat
                 cmd = AudioSynth_SaveRingBufferPart(cmd, DMEM_WET_LEFT_CH + bufItem->lengthA, 0, bufItem->lengthB,
                                                     reverb);
             }
-#endif
         }
     } else {
-#if defined(TARGET_PSP)
-        OotPspAudioReverbDownsampleCmd* pspCmd = OotPspAudioSynth_SetupReverbDownsampleCmd(reverb, bufItem,
-                                                                                           updateIndex);
-
-        if ((pspCmd != NULL) && (reverb->framesToIgnore == 0)) {
-            aOotPspAudioReverbDownsample(cmd++, DMEM_WET_LEFT_CH, pspCmd);
-        }
-#else
         // Downsampling is done later by CPU when RSP is done, therefore we need to have
         // double buffering. Left and right buffers are adjacent in memory.
         AudioSynth_SaveBuffer(cmd++, DMEM_WET_LEFT_CH, DMEM_2CH_SIZE,
                               reverb->items[reverb->curFrame][updateIndex].toDownsampleLeft);
-#endif
     }
 
     reverb->resampleFlags = 0;
@@ -1142,15 +654,6 @@ Acmd* AudioSynth_SaveReverbSamples(Acmd* cmd, SynthesisReverb* reverb, s16 updat
 Acmd* AudioSynth_SaveRingBuffer2(Acmd* cmd, SynthesisReverb* reverb, s16 updateIndex) {
     ReverbRingBufferItem* bufItem = &reverb->items2[reverb->curFrame][updateIndex];
 
-#if defined(TARGET_PSP)
-    OotPspAudioReverbDownsampleCmd* pspCmd =
-        OotPspAudioSynth_SetupReverbRingCmd(reverb, bufItem, updateIndex, OOT_PSP_AUDIO_REVERB_DESC_ITEMS2);
-
-    if (pspCmd != NULL) {
-        aOotPspAudioReverbSave(cmd++, DMEM_WET_LEFT_CH, pspCmd);
-        return cmd;
-    }
-#endif
 
     cmd = AudioSynth_SaveRingBufferPart(cmd, DMEM_WET_LEFT_CH, bufItem->startPos, bufItem->lengthA, reverb);
     if (bufItem->lengthB != 0) {
@@ -1372,11 +875,7 @@ Acmd* AudioSynth_ProcessNote(s32 noteIndex, NoteSubEu* noteSubEu, NoteSynthesisS
     samplesLenFixedPoint = (resamplingRateFixedPoint * aiBufLen * 2) + synthState->samplePosFrac;
     numSamplesToLoad = samplesLenFixedPoint >> 16;
 
-#if defined(TARGET_PSP)
-    if (numSamplesToLoad == 0) {
-        skipBytes = 0;
-    }
-#elif !(OOT_VERSION < NTSC_1_1 || !PLATFORM_N64)
+#if !(OOT_VERSION < NTSC_1_1 || !PLATFORM_N64)
     if (numSamplesToLoad == 0) {
         skipBytes = false;
     }
@@ -1399,26 +898,8 @@ Acmd* AudioSynth_ProcessNote(s32 noteIndex, NoteSubEu* noteSubEu, NoteSynthesisS
         synthState->samplePosInt += numSamplesToLoad;
     } else {
         tunedSample = noteSubEu->tunedSample;
-#if defined(TARGET_PSP)
-        if ((tunedSample == NULL) || !OotPspAudioSynth_IsAlignedNativePtr(tunedSample)) {
-            return OotPspAudioSynth_DropBadNote(cmd, updateIndex, noteIndex, noteSubEu, note, "tuned", tunedSample,
-                                                NULL);
-        }
-        if ((tunedSample->sample == NULL) || !OotPspAudioSynth_IsAlignedNativePtr(tunedSample->sample)) {
-            return OotPspAudioSynth_DropBadNote(cmd, updateIndex, noteIndex, noteSubEu, note, "sample", tunedSample,
-                                                tunedSample->sample);
-        }
-#endif
         sample = tunedSample->sample;
         loopInfo = sample->loop;
-#if defined(TARGET_PSP)
-        if (!OotPspAudioSynth_IsAlignedNativePtr(loopInfo) || (sample->codec > CODEC_S16) ||
-            (((sample->codec == CODEC_ADPCM) || (sample->codec == CODEC_SMALL_ADPCM)) &&
-             !OotPspAudioSynth_IsAlignedNativePtr(sample->book))) {
-            return OotPspAudioSynth_DropBadNote(cmd, updateIndex, noteIndex, noteSubEu, note, "fields", tunedSample,
-                                                sample);
-        }
-#endif
         loopEndPos = loopInfo->header.end;
         sampleAddr = (u32)sample->sampleAddr;
         resampledTempLen = 0;
@@ -1453,16 +934,7 @@ Acmd* AudioSynth_ProcessNote(s32 noteIndex, NoteSubEu* noteSubEu, NoteSynthesisS
                     if (1) {}
                     if (1) {}
                     nEntries = SAMPLES_PER_FRAME * sample->book->header.order * sample->book->header.numPredictors;
-#if defined(TARGET_PSP)
-                    if (!sOotPspAudioMeLocalFlags.buildingOnMe &&
-                        OotPsp_IsLoadedNativeExternalAssetRange(gAudioCtx.curLoadedBook, nEntries)) {
-                        aOotPspAudioLoadAdpcmCached(cmd++, nEntries, gAudioCtx.curLoadedBook);
-                    } else {
-                        aLoadADPCM(cmd++, nEntries, gAudioCtx.curLoadedBook);
-                    }
-#else
                     aLoadADPCM(cmd++, nEntries, gAudioCtx.curLoadedBook);
-#endif
                 }
             }
 
@@ -1559,13 +1031,6 @@ Acmd* AudioSynth_ProcessNote(s32 noteIndex, NoteSubEu* noteSubEu, NoteSynthesisS
                     } else if (sample->medium == MEDIUM_UNK) {
                         return cmd;
                     } else {
-#if defined(TARGET_PSP)
-                        if (sOotPspAudioMeLocalFlags.buildingOnMe) {
-                            return OotPspAudioSynth_DropBadNote(cmd, updateIndex, noteIndex, noteSubEu,
-                                                               &gAudioCtx.notes[noteIndex], "ME nonresident sample",
-                                                               tunedSample, sample);
-                        }
-#endif
                         sampleData = AudioLoad_DmaSampleData(sampleDataStart + sampleDataOffset + sampleAddr,
                                                              ALIGN16((nFramesToDecode * frameSize) + SAMPLES_PER_FRAME),
                                                              flags, &synthState->sampleDmaIndex, sample->medium);
@@ -1578,16 +1043,7 @@ Acmd* AudioSynth_ProcessNote(s32 noteIndex, NoteSubEu* noteSubEu, NoteSynthesisS
                     sampleDataStartPad = (u32)sampleData & 0xF;
                     aligned = ALIGN16((nFramesToDecode * frameSize) + SAMPLES_PER_FRAME);
                     addr = DMEM_COMPRESSED_ADPCM_DATA - aligned;
-#if defined(TARGET_PSP)
-                    if ((sample->medium == MEDIUM_RAM) && OotPspAudioSynth_CanCacheSampleSpan(
-                                                              sampleData - sampleDataStartPad, aligned)) {
-                        aOotPspAudioLoadSampleCached(cmd++, sampleData - sampleDataStartPad, addr, aligned);
-                    } else {
-                        aLoadBuffer(cmd++, sampleData - sampleDataStartPad, addr, aligned);
-                    }
-#else
                     aLoadBuffer(cmd++, sampleData - sampleDataStartPad, addr, aligned);
-#endif
                 } else {
                     nSamplesToDecode = 0;
                     sampleDataStartPad = 0;
@@ -1816,9 +1272,6 @@ Acmd* AudioSynth_ProcessEnvelope(Acmd* cmd, NoteSubEu* noteSubEu, NoteSynthesisS
     s16 sourceReverbVol;
     u16 targetVolRight;
     s32 pad;
-#if defined(TARGET_PSP)
-    s32 rampSteps = aiBufLen >> 3;
-#endif
 
     curVolLeft = synthState->curVolLeft;
     targetVolLeft = noteSubEu->targetVolLeft;
@@ -1829,20 +1282,12 @@ Acmd* AudioSynth_ProcessEnvelope(Acmd* cmd, NoteSubEu* noteSubEu, NoteSynthesisS
     targetVolRight <<= 4;
 
     if (targetVolLeft != curVolLeft) {
-#if defined(TARGET_PSP)
-        rampLeft = OotPspAudioSynth_DivideEnvelopeRamp(targetVolLeft - curVolLeft, rampSteps);
-#else
         rampLeft = (targetVolLeft - curVolLeft) / (aiBufLen >> 3);
-#endif
     } else {
         rampLeft = 0;
     }
     if (targetVolRight != curVolRight) {
-#if defined(TARGET_PSP)
-        rampRight = OotPspAudioSynth_DivideEnvelopeRamp(targetVolRight - curVolRight, rampSteps);
-#else
         rampRight = (targetVolRight - curVolRight) / (aiBufLen >> 3);
-#endif
     } else {
         rampRight = 0;
     }
@@ -1851,23 +1296,14 @@ Acmd* AudioSynth_ProcessEnvelope(Acmd* cmd, NoteSubEu* noteSubEu, NoteSynthesisS
     phi_t1 = sourceReverbVol & 0x7F;
 
     if (sourceReverbVol != reverbVol) {
-#if defined(TARGET_PSP)
-        rampReverb = OotPspAudioSynth_DivideEnvelopeRamp(((reverbVol & 0x7F) - phi_t1) << 9, rampSteps);
-#else
         rampReverb = (((reverbVol & 0x7F) - phi_t1) << 9) / (aiBufLen >> 3);
-#endif
         synthState->reverbVol = reverbVol;
     } else {
         rampReverb = 0;
     }
 
-#if defined(TARGET_PSP)
-    synthState->curVolLeft = curVolLeft + (rampLeft * rampSteps);
-    synthState->curVolRight = curVolRight + (rampRight * rampSteps);
-#else
     synthState->curVolLeft = curVolLeft + (rampLeft * (aiBufLen >> 3));
     synthState->curVolRight = curVolRight + (rampRight * (aiBufLen >> 3));
-#endif
 
     if (noteSubEu->bitField1.useHaasEffect) {
         AudioSynth_ClearBuffer(cmd++, DMEM_HAAS_TEMP, DMEM_1CH_SIZE);

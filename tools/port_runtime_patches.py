@@ -15,8 +15,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from tools.psp_port_asset_segments import ElfObject, R_MIPS_32, SHN_UNDEF, U64_SOURCE_DECL_RE
-from tools.psp_port_asset_snapshot import permutation, word_partitions
+from tools.port_asset_segments import ElfObject, R_MIPS_32, SHN_UNDEF, U64_SOURCE_DECL_RE
+from tools.port_asset_snapshot import permutation, word_partitions
 from tools import version_config
 
 
@@ -197,7 +197,7 @@ def create_manifest(version: str, elf_path: Path, table_path: Path, extracted_di
             segment = segment_for_source(source_file, source_segments)
             resource = resources.get((segment, symbol.name)) if segment is not None else None
             if resource is None:
-                # Linked PSP ELFs do not reliably keep STT_FILE markers adjacent
+                # Linked PS2 ELFs do not reliably keep STT_FILE markers adjacent
                 # to global data symbols. Fall back to an unambiguous XML resource
                 # name rather than silently leaving the clean placeholder empty.
                 candidates = resources_by_name.get(symbol.name, [])
@@ -454,7 +454,7 @@ def resolve_manifest(elf_path: Path, manifest_path: Path, output: Path, base_elf
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Build ROM-free PSP runtime asset patch recipes")
+    parser = argparse.ArgumentParser(description="Build ROM-free PS2 runtime asset patch recipes")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     create = subparsers.add_parser("create")

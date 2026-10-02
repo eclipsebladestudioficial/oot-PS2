@@ -374,13 +374,8 @@ typedef union CsCmdLightSetting {
 
 typedef union CsCmdStartSeq {
     struct {
-#if defined(TARGET_PSP)
-        /* 0x00 */ u8 seqIdPlusOne;
-        /* 0x01 */ u8 unused0;
-#else
         /* 0x00 */ u8 unused0;
         /* 0x01 */ u8 seqIdPlusOne;
-#endif
         /* 0x02 */ u16 startFrame;
         /* 0x04 */ u16 endFrame; // unused
     };
@@ -389,13 +384,8 @@ typedef union CsCmdStartSeq {
 
 typedef union CsCmdStopSeq {
     struct {
-#if defined(TARGET_PSP)
-        /* 0x00 */ u8 seqIdPlusOne;
-        /* 0x01 */ u8 unused0;
-#else
         /* 0x00 */ u8 unused0;
         /* 0x01 */ u8 seqIdPlusOne;
-#endif
         /* 0x02 */ u16 startFrame;
         /* 0x04 */ u16 endFrame; // unused
     };

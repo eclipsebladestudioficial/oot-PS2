@@ -12,11 +12,11 @@ from pathlib import Path
 
 
 GENERATED_FILES = (
-    "oot_psp_asset_segments.S",
-    "oot_psp_asset_segments.c",
-    "oot_psp_asset_tables.c",
-    "oot_psp_audio_tables.c",
-    "oot_psp_rominfo.c",
+    "oot_port_asset_segments.S",
+    "oot_port_asset_segments.c",
+    "oot_port_asset_tables.c",
+    "oot_port_audio_tables.c",
+    "oot_port_rominfo.c",
 )
 RUNTIME_PREFIX = "runtime/"
 
@@ -68,9 +68,9 @@ def parse_entries(table_path: Path) -> list[tuple[str, int, int, int]]:
 
 
 def build_transform(build_dir: Path, extracted_dir: Path, packed_path: Path | None = None) -> bytes:
-    entries = parse_entries(build_dir / "oot_psp_asset_segments.c")
+    entries = parse_entries(build_dir / "oot_port_asset_segments.c")
     if packed_path is None:
-        packed_path = build_dir / "data/segments/oot_psp_assets.bin"
+        packed_path = build_dir / "data/segments/oot_port_assets.bin"
     permutations = [permutation(parts) for parts in word_partitions(8)]
     native_count = sum(flags != 0 for _name, _size, flags, _file_offset in entries)
     output = bytearray(b"OPZ4" + struct.pack("<II", native_count, len(permutations)))
@@ -138,7 +138,7 @@ def scrub_transform(build_dir: Path, extracted_dir: Path, old_transform: Path) -
     This migration helper is intentionally maintainer-only. New snapshots are
     created as OPZ4 directly by :func:`build_transform`.
     """
-    entries = parse_entries(build_dir / "oot_psp_asset_segments.c")
+    entries = parse_entries(build_dir / "oot_port_asset_segments.c")
     permutations = [permutation(parts) for parts in word_partitions(8)]
     data = old_transform.read_bytes()
 
@@ -239,14 +239,14 @@ def sanitize_initializer_source(data: bytes) -> bytes:
 
         def protect_brackets(match: re.Match[str]) -> str:
             protected.append(match.group(0))
-            return f"__OOT_PSP_DIM_{len(protected) - 1}__"
+            return f"__OOT_PORT_DIM_{len(protected) - 1}__"
 
         line = re.sub(r"\[[^\]\n]*\]", protect_brackets, line)
         line = STRING_RE.sub('""', line)
         line = CHAR_RE.sub("0", line)
         line = NUMBER_RE.sub("0", line)
         for index, value in enumerate(protected):
-            line = line.replace(f"__OOT_PSP_DIM_{index}__", value)
+            line = line.replace(f"__OOT_PORT_DIM_{index}__", value)
         output.append(line)
 
     return "".join(output).encode("utf-8")
@@ -254,7 +254,7 @@ def sanitize_initializer_source(data: bytes) -> bytes:
 
 def clean_runtime_data(relative: str, data: bytes) -> bytes:
     if relative.endswith(("/text/message_data.h", "/text/message_data_staff.h")):
-        return b"/* PSP message text is loaded from the user's ROM. */\n"
+        return b"/* PS2 message text is loaded from the user's ROM. */\n"
     if relative.endswith((".inc.c", ".c")):
         return sanitize_initializer_source(data)
     return data
@@ -305,15 +305,15 @@ def restore_snapshot(snapshot: Path, output_dir: Path) -> None:
     with zipfile.ZipFile(snapshot, "r") as archive:
         names = set(archive.namelist())
         if not set(GENERATED_FILES).issubset(names):
-            raise ValueError("PSP snapshot is missing generated metadata")
+            raise ValueError("PS2 snapshot is missing generated metadata")
         if any(name not in GENERATED_FILES and not name.startswith(RUNTIME_PREFIX) for name in names):
-            raise ValueError("PSP snapshot contains an unexpected member")
+            raise ValueError("PS2 snapshot contains an unexpected member")
         for name in GENERATED_FILES:
             (output_dir / name).write_bytes(archive.read(name))
         for name in sorted(names - set(GENERATED_FILES)):
             relative = Path(name[len(RUNTIME_PREFIX) :])
             if relative.is_absolute() or ".." in relative.parts:
-                raise ValueError(f"unsafe PSP snapshot member: {name}")
+                raise ValueError(f"unsafe PS2 snapshot member: {name}")
             target = root / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(archive.read(name))
@@ -326,7 +326,7 @@ def sanitize_snapshot(source: Path, output: Path, generated_dir: Path | None = N
     ) as cleaned:
         names = archive.namelist()
         if not set(GENERATED_FILES).issubset(names):
-            raise ValueError("PSP snapshot is missing generated metadata")
+            raise ValueError("PS2 snapshot is missing generated metadata")
 
         for name in names:
             if (generated_dir is not None) and (name in GENERATED_FILES):
@@ -339,7 +339,7 @@ def sanitize_snapshot(source: Path, output: Path, generated_dir: Path | None = N
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Create or restore ROM-independent PSP asset metadata")
+    parser = argparse.ArgumentParser(description="Create or restore ROM-independent PS2 asset metadata")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     create = subparsers.add_parser("create")

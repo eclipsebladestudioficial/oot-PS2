@@ -10,13 +10,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from tools import psp_port_runtime_patches as psp
+from tools import port_runtime_patches as port
 
 
 def resolve_manifest(elf_path: Path, manifest_path: Path, output: Path, base_elf_path: Path | None = None) -> None:
-    elf = psp.ElfObject(elf_path)
-    image_base = psp.linked_image_base(elf)
-    objects = psp.linked_objects_by_file(elf)
+    elf = port.ElfObject(elf_path)
+    image_base = port.linked_image_base(elf)
+    objects = port.linked_objects_by_file(elf)
     objects_by_name: dict[str, list[object]] = {}
 
     for (_source_file, name), candidate in objects.items():
@@ -63,16 +63,16 @@ def resolve_manifest(elf_path: Path, manifest_path: Path, output: Path, base_elf
 
         texture_symbols = texture_symbols_by_source.get(source_file)
         if texture_symbols is None:
-            source_path = psp.ROOT / source_file
+            source_path = port.ROOT / source_file
             source_text = source_path.read_text() if source_path.is_file() else ""
-            texture_symbols = {match.group("name") for match in psp.U64_SOURCE_DECL_RE.finditer(source_text)}
+            texture_symbols = {match.group("name") for match in port.U64_SOURCE_DECL_RE.finditer(source_text)}
             texture_symbols_by_source[source_file] = texture_symbols
-        is_texture_words = (symbol_name in texture_symbols) or (psp.TEXTURE_WORD_SYMBOL_RE.search(symbol_name) is not None)
-        patch_flags = psp.RUNTIME_PATCH_TEXTURE_WORDS if is_texture_words else 0
+        is_texture_words = (symbol_name in texture_symbols) or (port.TEXTURE_WORD_SYMBOL_RE.search(symbol_name) is not None)
+        patch_flags = port.RUNTIME_PATCH_TEXTURE_WORDS if is_texture_words else 0
 
         reference_relocations = list(struct.iter_unpack("<II", relocation_data))
         relocation_offsets = [offset for offset, _target in reference_relocations]
-        clean_symbol_data = psp.linked_symbol_bytes(elf, symbol)
+        clean_symbol_data = port.linked_symbol_bytes(elf, symbol)
         adjustments: list[int] = []
 
         for offset, reference_pointer_value in reference_relocations:
@@ -135,7 +135,7 @@ def main() -> None:
 
     args = parser.parse_args()
     if args.command == "create":
-        psp.create_manifest(args.version, args.elf, args.asset_table, args.extracted_dir, args.output)
+        port.create_manifest(args.version, args.elf, args.asset_table, args.extracted_dir, args.output)
     else:
         resolve_manifest(args.elf, args.manifest, args.output, args.base_elf)
 

@@ -32,9 +32,7 @@
 #include "player.h"
 #include "save.h"
 
-#if PLATFORM_PSP
-#include "oot_psp_renderer.h"
-#elif defined(TARGET_PS2)
+#if defined(TARGET_PS2)
 #include "oot_ps2_renderer.h"
 #endif
 
@@ -279,9 +277,7 @@ s32 Environment_ZBufValToFixedPoint(s32 zBufferVal) {
 }
 
 u16 Environment_GetPixelDepth(s32 x, s32 y) {
-#if PLATFORM_PSP
-    return OotPspRenderer_IsDepthClear(x, y) ? GPACK_ZDZ(G_MAXFBZ, 0) : 0;
-#elif defined(TARGET_PS2)
+#if defined(TARGET_PS2)
     return OotPs2Renderer_IsDepthClear(x, y) ? GPACK_ZDZ(G_MAXFBZ, 0) : 0;
 #else
     s32 pixelDepth = gZBuffer[y][x];

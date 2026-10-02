@@ -2055,13 +2055,7 @@ void FileSelect_Main(GameState* thisx) {
 #endif
 
     gSPSegment(POLY_OPA_DISP++, 0x00, NULL);
-#if PLATFORM_PSP
-    gSegments[1] = OS_K0_TO_PHYSICAL(this->staticSegment);
-    gSegments[2] = OS_K0_TO_PHYSICAL(this->parameterSegment);
-#if OOT_PAL_N64
-    gSegments[6] = OS_K0_TO_PHYSICAL(this->objectMagSegment);
-#endif
-#elif defined(TARGET_PS2)
+#if defined(TARGET_PS2)
     gSegments[1] = (uintptr_t)this->staticSegment;
     gSegments[2] = (uintptr_t)this->parameterSegment;
 #if OOT_PAL_N64

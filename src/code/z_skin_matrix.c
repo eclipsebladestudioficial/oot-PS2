@@ -6,9 +6,7 @@
 #include "translation.h"
 #include "z_lib.h"
 
-#if defined(TARGET_PSP)
-#include "port/psp/oot_psp_vfpu_matrix.h"
-#elif defined(TARGET_PS2)
+#if defined(TARGET_PS2)
 #include "port/ps2/oot_ps2_vu0_matrix.h"
 #endif
 
@@ -31,9 +29,6 @@ MtxF sMtxFClear = {
  * \f]
  */
 void SkinMatrix_Vec3fMtxFMultXYZW(MtxF* mf, Vec3f* src, Vec3f* xyzDest, f32* wDest) {
-#if defined(TARGET_PSP)
-    OotPspVfpu_MtxFMultVec3fW(mf, src, xyzDest, wDest);
-#else
 #if defined(TARGET_PS2)
     if (OotPs2Vu0_MtxFMultVec3fW(mf, src, xyzDest, wDest)) {
         return;
@@ -43,7 +38,6 @@ void SkinMatrix_Vec3fMtxFMultXYZW(MtxF* mf, Vec3f* src, Vec3f* xyzDest, f32* wDe
     xyzDest->y = mf->yw + ((src->x * mf->yx) + (src->y * mf->yy) + (src->z * mf->yz));
     xyzDest->z = mf->zw + ((src->x * mf->zx) + (src->y * mf->zy) + (src->z * mf->zz));
     *wDest = mf->ww + ((src->x * mf->wx) + (src->y * mf->wy) + (src->z * mf->wz));
-#endif
 }
 
 /**
@@ -55,9 +49,6 @@ void SkinMatrix_Vec3fMtxFMultXYZW(MtxF* mf, Vec3f* src, Vec3f* xyzDest, f32* wDe
  * \f]
  */
 void SkinMatrix_Vec3fMtxFMultXYZ(MtxF* mf, Vec3f* src, Vec3f* dest) {
-#if defined(TARGET_PSP)
-    OotPspVfpu_MtxFMultVec3f(mf, src, dest);
-#else
 #if defined(TARGET_PS2)
     if (OotPs2Vu0_MtxFMultVec3f(mf, src, dest)) {
         return;
@@ -79,7 +70,6 @@ void SkinMatrix_Vec3fMtxFMultXYZ(MtxF* mf, Vec3f* src, Vec3f* dest) {
     mz = mf->zz;
     mw = mf->zw;
     dest->z = mw + ((src->x * mx) + (src->y * my) + (src->z * mz));
-#endif
 }
 
 /**
@@ -87,9 +77,6 @@ void SkinMatrix_Vec3fMtxFMultXYZ(MtxF* mf, Vec3f* src, Vec3f* dest) {
  * mfB and dest should not be the same matrix.
  */
 void SkinMatrix_MtxFMtxFMult(MtxF* mfA, MtxF* mfB, MtxF* dest) {
-#if defined(TARGET_PSP)
-    OotPspVfpu_MtxFMult(mfA, mfB, dest);
-#else
 #if defined(TARGET_PS2)
     if (OotPs2Vu0_MtxFMult(mfA, mfB, dest)) {
         return;
@@ -219,7 +206,6 @@ void SkinMatrix_MtxFMtxFMult(MtxF* mfA, MtxF* mfB, MtxF* dest) {
     cz = mfB->zw;
     cw = mfB->ww;
     dest->ww = (rx * cx) + (ry * cy) + (rz * cz) + (rw * cw);
-#endif
 }
 
 /**
@@ -230,9 +216,6 @@ void SkinMatrix_GetClear(MtxF** mfp) {
 }
 
 void SkinMatrix_Clear(MtxF* mf) {
-#if defined(TARGET_PSP)
-    OotPspVfpu_MtxFIdentity(mf);
-#else
     mf->xx = 1.0f;
     mf->yx = 0.0f;
     mf->zx = 0.0f;
@@ -249,13 +232,9 @@ void SkinMatrix_Clear(MtxF* mf) {
     mf->yw = 0.0f;
     mf->zw = 0.0f;
     mf->ww = 1.0f;
-#endif
 }
 
 void SkinMatrix_MtxFCopy(MtxF* src, MtxF* dest) {
-#if defined(TARGET_PSP)
-    OotPspVfpu_MtxFCopy(dest, src);
-#else
     dest->xx = src->xx;
     dest->yx = src->yx;
     dest->zx = src->zx;
@@ -272,7 +251,6 @@ void SkinMatrix_MtxFCopy(MtxF* src, MtxF* dest) {
     dest->yw = src->yw;
     dest->zw = src->zw;
     dest->ww = src->ww;
-#endif
 }
 
 /**
@@ -338,9 +316,6 @@ s32 SkinMatrix_Invert(MtxF* src, MtxF* dest) {
  * Produces a matrix which scales x,y,z components of vectors or x,y,z rows of matrices (when applied on LHS)
  */
 void SkinMatrix_SetScale(MtxF* mf, f32 x, f32 y, f32 z) {
-#if defined(TARGET_PSP)
-    OotPspVfpu_MtxFSetScale(mf, x, y, z);
-#else
     mf->yx = 0.0f;
     mf->zx = 0.0f;
     mf->wx = 0.0f;
@@ -357,7 +332,6 @@ void SkinMatrix_SetScale(MtxF* mf, f32 x, f32 y, f32 z) {
     mf->xx = x;
     mf->yy = y;
     mf->zz = z;
-#endif
 }
 
 /**
@@ -493,9 +467,6 @@ void SkinMatrix_SetRotateYXZ(MtxF* mf, s16 x, s16 y, s16 z) {
  * Produces a matrix which translates a vector by amounts in the x, y and z directions
  */
 void SkinMatrix_SetTranslate(MtxF* mf, f32 x, f32 y, f32 z) {
-#if defined(TARGET_PSP)
-    OotPspVfpu_MtxFSetTranslate(mf, x, y, z);
-#else
     mf->yx = 0.0f;
     mf->zx = 0.0f;
     mf->wx = 0.0f;
@@ -512,7 +483,6 @@ void SkinMatrix_SetTranslate(MtxF* mf, f32 x, f32 y, f32 z) {
     mf->xw = x;
     mf->yw = y;
     mf->zw = z;
-#endif
 }
 
 /**
@@ -571,7 +541,7 @@ void SkinMatrix_Vec3sToVec3f(Vec3s* src, Vec3f* dest) {
 }
 
 void SkinMatrix_MtxFToMtx(MtxF* src, Mtx* dest) {
-#if PLATFORM_PSP || defined(TARGET_PS2)
+#if defined(TARGET_PS2)
     guMtxF2L(src->mf, dest);
 #else
     s32 temp;

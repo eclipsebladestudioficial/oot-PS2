@@ -17,7 +17,7 @@
 #include "save.h"
 #include "line_numbers.h"
 
-#if !PLATFORM_PSP && !defined(TARGET_PS2)
+#if !defined(TARGET_PS2)
 
 #include "assets/scenes/indoors/miharigoya/miharigoya_scene.h"
 #include "assets/scenes/indoors/souko/souko_scene.h"
@@ -99,7 +99,7 @@ void Scene_DrawConfigFishingPond(PlayState* play);
 void Scene_DrawConfigGanonsTowerCollapseInterior(PlayState* play);
 void Scene_DrawConfigInsideGanonsCastleCollapse(PlayState* play);
 
-#if !PLATFORM_PSP && !defined(TARGET_PS2)
+#if !defined(TARGET_PS2)
 
 // Entrance Table definition
 #define DEFINE_ENTRANCE(_0, sceneId, spawn, continueBgm, displayTitleCard, endTransType, startTransType) \
@@ -143,17 +143,17 @@ SceneTableEntry gSceneTable[] = {
 
 #else
 
-#define OOT_PSP_SCENE_ADDR(offset) ((void*)(uintptr_t)(0x02000000U | (offset)))
-#define OOT_PSP_ROOM_ADDR(offset) ((void*)(uintptr_t)(0x03000000U | (offset)))
+#define OOT_PORT_SCENE_ADDR(offset) ((void*)(uintptr_t)(0x02000000U | (offset)))
+#define OOT_PORT_ROOM_ADDR(offset) ((void*)(uintptr_t)(0x03000000U | (offset)))
 
 #endif
 
-#if PLATFORM_PSP || defined(TARGET_PS2)
-#define OOT_PSP_SCENE_ASSET(name, offset) OOT_PSP_SCENE_ADDR(offset)
-#define OOT_PSP_ROOM_ASSET(name, offset) ((Gfx*)OOT_PSP_ROOM_ADDR(offset))
+#if defined(TARGET_PS2)
+#define OOT_PORT_SCENE_ASSET(name, offset) OOT_PORT_SCENE_ADDR(offset)
+#define OOT_PORT_ROOM_ASSET(name, offset) ((Gfx*)OOT_PORT_ROOM_ADDR(offset))
 #else
-#define OOT_PSP_SCENE_ASSET(name, offset) (name)
-#define OOT_PSP_ROOM_ASSET(name, offset) (name)
+#define OOT_PORT_SCENE_ASSET(name, offset) (name)
+#define OOT_PORT_ROOM_ASSET(name, offset) (name)
 #endif
 
 Gfx sDefaultDisplayList[] = {
@@ -248,8 +248,8 @@ void Scene_DrawConfigDefault(PlayState* play) {
 }
 
 void* sDekuTreeEntranceTextures[] = {
-    OOT_PSP_SCENE_ASSET(gDekuTreeDayEntranceTex, 0x00BA08),
-    OOT_PSP_SCENE_ASSET(gDekuTreeNightEntranceTex, 0x00CA08),
+    OOT_PORT_SCENE_ASSET(gDekuTreeDayEntranceTex, 0x00BA08),
+    OOT_PORT_SCENE_ASSET(gDekuTreeNightEntranceTex, 0x00CA08),
 };
 
 void Scene_DrawConfigDekuTree(PlayState* play) {
@@ -288,14 +288,14 @@ void Scene_DrawConfigDekuTreeBoss(PlayState* play) {
 }
 
 void* gDCEntranceTextures[] = {
-    OOT_PSP_SCENE_ASSET(gDCDayEntranceTex, 0x012378),
-    OOT_PSP_SCENE_ASSET(gDCNightEntranceTex, 0x013378),
+    OOT_PORT_SCENE_ASSET(gDCDayEntranceTex, 0x012378),
+    OOT_PORT_SCENE_ASSET(gDCNightEntranceTex, 0x013378),
 };
 void* sDCLavaFloorTextures[] = {
-    OOT_PSP_SCENE_ASSET(gDCLavaFloor1Tex, 0x011F78), OOT_PSP_SCENE_ASSET(gDCLavaFloor2Tex, 0x014778),
-    OOT_PSP_SCENE_ASSET(gDCLavaFloor3Tex, 0x014378), OOT_PSP_SCENE_ASSET(gDCLavaFloor4Tex, 0x013F78),
-    OOT_PSP_SCENE_ASSET(gDCLavaFloor5Tex, 0x014B78), OOT_PSP_SCENE_ASSET(gDCLavaFloor6Tex, 0x013B78),
-    OOT_PSP_SCENE_ASSET(gDCLavaFloor7Tex, 0x012F78), OOT_PSP_SCENE_ASSET(gDCLavaFloor8Tex, 0x012B78),
+    OOT_PORT_SCENE_ASSET(gDCLavaFloor1Tex, 0x011F78), OOT_PORT_SCENE_ASSET(gDCLavaFloor2Tex, 0x014778),
+    OOT_PORT_SCENE_ASSET(gDCLavaFloor3Tex, 0x014378), OOT_PORT_SCENE_ASSET(gDCLavaFloor4Tex, 0x013F78),
+    OOT_PORT_SCENE_ASSET(gDCLavaFloor5Tex, 0x014B78), OOT_PORT_SCENE_ASSET(gDCLavaFloor6Tex, 0x013B78),
+    OOT_PORT_SCENE_ASSET(gDCLavaFloor7Tex, 0x012F78), OOT_PORT_SCENE_ASSET(gDCLavaFloor8Tex, 0x012B78),
 };
 
 void Scene_DrawConfigDodongosCavern(PlayState* play) {
@@ -544,8 +544,8 @@ void Scene_DrawConfigShadowTempleAndWell(PlayState* play) {
 }
 
 void* sThievesHideoutEntranceTextures[] = {
-    OOT_PSP_SCENE_ASSET(gThievesHideoutDayEntranceTex, 0x00BD20),
-    OOT_PSP_SCENE_ASSET(gThievesHideoutNightEntranceTex, 0x00B920),
+    OOT_PORT_SCENE_ASSET(gThievesHideoutDayEntranceTex, 0x00BD20),
+    OOT_PORT_SCENE_ASSET(gThievesHideoutNightEntranceTex, 0x00B920),
 };
 
 void Scene_DrawConfigThievesHideout(PlayState* play) {
@@ -563,8 +563,8 @@ void Scene_DrawConfigThievesHideout(PlayState* play) {
 }
 
 void* sWaterTempleEntranceTextures[] = {
-    OOT_PSP_SCENE_ASSET(gWaterTempleDayEntranceTex, 0x014CF0),
-    OOT_PSP_SCENE_ASSET(gWaterTempleNightEntranceTex, 0x0158F0),
+    OOT_PORT_SCENE_ASSET(gWaterTempleDayEntranceTex, 0x014CF0),
+    OOT_PORT_SCENE_ASSET(gWaterTempleNightEntranceTex, 0x0158F0),
 };
 
 void Scene_DrawConfigWaterTemple(PlayState* play) {
@@ -791,8 +791,8 @@ void Scene_DrawConfigGanonsTowerCollapseExterior(PlayState* play) {
 }
 
 void* sIceCavernEntranceTextures[] = {
-    OOT_PSP_SCENE_ASSET(gIceCavernDayEntranceTex, 0x00FA10),
-    OOT_PSP_SCENE_ASSET(gIceCavernNightEntranceTex, 0x00F810),
+    OOT_PORT_SCENE_ASSET(gIceCavernDayEntranceTex, 0x00FA10),
+    OOT_PORT_SCENE_ASSET(gIceCavernNightEntranceTex, 0x00F810),
 };
 
 void Scene_DrawConfigIceCavern(PlayState* play) {
@@ -892,8 +892,8 @@ void Scene_DrawConfigCalmWater(PlayState* play) {
 }
 
 void* sGTGEntranceTextures[] = {
-    OOT_PSP_SCENE_ASSET(gGTGDayEntranceTex, 0x00F930),
-    OOT_PSP_SCENE_ASSET(gGTGNightEntranceTex, 0x010130),
+    OOT_PORT_SCENE_ASSET(gGTGDayEntranceTex, 0x00F930),
+    OOT_PORT_SCENE_ASSET(gGTGNightEntranceTex, 0x010130),
 };
 
 void Scene_DrawConfigGerudoTrainingGround(PlayState* play) {
@@ -984,8 +984,8 @@ void Scene_DrawConfigBombchuBowlingAlley(PlayState* play) {
 }
 
 void* sLonLonHouseEntranceTextures[] = {
-    OOT_PSP_SCENE_ASSET(gLonLonHouseDayEntranceTex, 0x005210),
-    OOT_PSP_SCENE_ASSET(gLonLonHouseNightEntranceTex, 0x005010),
+    OOT_PORT_SCENE_ASSET(gLonLonHouseDayEntranceTex, 0x005210),
+    OOT_PORT_SCENE_ASSET(gLonLonHouseNightEntranceTex, 0x005010),
 };
 
 void Scene_DrawConfigLonLonBuildings(PlayState* play) {
@@ -1004,12 +1004,12 @@ void Scene_DrawConfigLonLonBuildings(PlayState* play) {
 }
 
 void* sGuardHouseView1Textures[] = {
-    OOT_PSP_SCENE_ASSET(gGuardHouseOutSideView1DayTex, 0x006550),
-    OOT_PSP_SCENE_ASSET(gGuardHouseOutSideView1NightTex, 0x003550),
+    OOT_PORT_SCENE_ASSET(gGuardHouseOutSideView1DayTex, 0x006550),
+    OOT_PORT_SCENE_ASSET(gGuardHouseOutSideView1NightTex, 0x003550),
 };
 void* sGuardHouseView2Textures[] = {
-    OOT_PSP_SCENE_ASSET(gGuardHouseOutSideView2DayTex, 0x002350),
-    OOT_PSP_SCENE_ASSET(gGuardHouseOutSideView2NightTex, 0x001350),
+    OOT_PORT_SCENE_ASSET(gGuardHouseOutSideView2DayTex, 0x002350),
+    OOT_PORT_SCENE_ASSET(gGuardHouseOutSideView2NightTex, 0x001350),
 };
 
 void Scene_DrawConfigMarketGuardHouse(PlayState* play) {
@@ -1056,8 +1056,8 @@ void Scene_DrawConfigPotionShopGranny(PlayState* play) {
 }
 
 void* sForestTempleEntranceTextures[] = {
-    OOT_PSP_SCENE_ASSET(gForestTempleDayEntranceTex, 0x014D90),
-    OOT_PSP_SCENE_ASSET(gForestTempleNightEntranceTex, 0x014590),
+    OOT_PORT_SCENE_ASSET(gForestTempleDayEntranceTex, 0x014D90),
+    OOT_PORT_SCENE_ASSET(gForestTempleNightEntranceTex, 0x014590),
 };
 
 void Scene_DrawConfigForestTemple(PlayState* play) {
@@ -1087,8 +1087,8 @@ void Scene_DrawConfigForestTemple(PlayState* play) {
 }
 
 void* sSpiritTempleEntranceTextures[] = {
-    OOT_PSP_SCENE_ASSET(gSpiritTempleDayEntranceTex, 0x018940),
-    OOT_PSP_SCENE_ASSET(gSpiritTempleNightEntranceTex, 0x018040),
+    OOT_PORT_SCENE_ASSET(gSpiritTempleDayEntranceTex, 0x018940),
+    OOT_PORT_SCENE_ASSET(gSpiritTempleNightEntranceTex, 0x018040),
 };
 
 void Scene_DrawConfigSpiritTemple(PlayState* play) {
@@ -1140,7 +1140,7 @@ void Scene_DrawConfigHyruleField(PlayState* play) {
         }
 
         gDPSetPrimColor(displayListHead++, 0, 0, 255, 255, 255, play->roomCtx.drawParams[0]);
-        gSPDisplayList(displayListHead++, OOT_PSP_ROOM_ASSET(spot00_room_0DL_012B20, 0x012B20));
+        gSPDisplayList(displayListHead++, OOT_PORT_ROOM_ASSET(spot00_room_0DL_012B20, 0x012B20));
         gSPEndDisplayList(displayListHead++);
     }
 
@@ -1148,8 +1148,8 @@ void Scene_DrawConfigHyruleField(PlayState* play) {
 }
 
 void* sKakarikoWindowTextures[] = {
-    OOT_PSP_SCENE_ASSET(gKakarikoVillageDayWindowTex, 0x015B50),
-    OOT_PSP_SCENE_ASSET(gKakarikoVillageNightWindowTex, 0x016B50),
+    OOT_PORT_SCENE_ASSET(gKakarikoVillageDayWindowTex, 0x015B50),
+    OOT_PORT_SCENE_ASSET(gKakarikoVillageNightWindowTex, 0x016B50),
 };
 
 void Scene_DrawConfigKakarikoVillage(PlayState* play) {
@@ -1279,8 +1279,8 @@ void Scene_DrawConfigLakeHylia(PlayState* play) {
 }
 
 void* sZorasDomainEntranceTextures[] = {
-    OOT_PSP_SCENE_ASSET(gZorasDomainDayEntranceTex, 0x008F98),
-    OOT_PSP_SCENE_ASSET(gZorasDomainNightEntranceTex, 0x008FD8),
+    OOT_PORT_SCENE_ASSET(gZorasDomainDayEntranceTex, 0x008F98),
+    OOT_PORT_SCENE_ASSET(gZorasDomainNightEntranceTex, 0x008FD8),
 };
 
 void Scene_DrawConfigZorasDomain(PlayState* play) {
@@ -1415,8 +1415,8 @@ void Scene_DrawConfigDesertColossus(PlayState* play) {
 }
 
 void* sGerudoFortressWallTextures[] = {
-    OOT_PSP_SCENE_ASSET(gGerudoFortressNightWallTex, 0x009678),
-    OOT_PSP_SCENE_ASSET(gGerudoFortressDayWallTex, 0x00DE78),
+    OOT_PORT_SCENE_ASSET(gGerudoFortressNightWallTex, 0x009678),
+    OOT_PORT_SCENE_ASSET(gGerudoFortressDayWallTex, 0x00DE78),
 };
 
 void Scene_DrawConfigGerudosFortress(PlayState* play) {
@@ -1496,7 +1496,7 @@ void Scene_DrawConfigDeathMountainTrail(PlayState* play) {
 
         gDPSetPrimColor(displayListHead++, 0, 0, 255, 255, 255, play->roomCtx.drawParams[0]);
         // The NTSC 1.0 room places this list at 0xA9C8 despite the symbol's legacy suffix.
-        gSPDisplayList(displayListHead++, OOT_PSP_ROOM_ASSET(spot16_room_0DL_00AA48, 0x00A9C8));
+        gSPDisplayList(displayListHead++, OOT_PORT_ROOM_ASSET(spot16_room_0DL_00AA48, 0x00A9C8));
         gSPEndDisplayList(displayListHead++);
     }
 
@@ -1534,8 +1534,8 @@ void Scene_DrawConfigDeathMountainCrater(PlayState* play) {
 }
 
 void* sGoronCityEntranceTextures[] = {
-    OOT_PSP_SCENE_ASSET(gGoronCityDayEntranceTex, 0x009808),
-    OOT_PSP_SCENE_ASSET(gGoronCityNightEntranceTex, 0x008FC8),
+    OOT_PORT_SCENE_ASSET(gGoronCityDayEntranceTex, 0x009808),
+    OOT_PORT_SCENE_ASSET(gGoronCityNightEntranceTex, 0x008FC8),
 };
 
 void Scene_DrawConfigGoronCity(PlayState* play) {
@@ -1561,8 +1561,8 @@ void Scene_DrawConfigGoronCity(PlayState* play) {
 }
 
 void* sLonLonRanchWindowTextures[] = {
-    OOT_PSP_SCENE_ASSET(gLonLonRanchDayWindowTex, 0x008180),
-    OOT_PSP_SCENE_ASSET(gLonLonRangeNightWindowsTex, 0x00FB80),
+    OOT_PORT_SCENE_ASSET(gLonLonRanchDayWindowTex, 0x008180),
+    OOT_PORT_SCENE_ASSET(gLonLonRangeNightWindowsTex, 0x00FB80),
 };
 
 void Scene_DrawConfigLonLonRanch(PlayState* play) {

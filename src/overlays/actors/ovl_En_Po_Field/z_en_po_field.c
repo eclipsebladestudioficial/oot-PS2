@@ -140,8 +140,8 @@ static DamageTable sDamageTable = {
 };
 
 static s32 sNumSpawned = 0;
-#if PLATFORM_PSP || defined(TARGET_PS2)
-// PSP actor overlays are linked permanently, so their mutable state does not reset when the last actor unloads.
+#if defined(TARGET_PS2)
+// PS2 actor overlays are linked permanently, so their mutable state does not reset when the last actor unloads.
 static s32 sNumActive = 0;
 #endif
 
@@ -173,7 +173,7 @@ void EnPoField_Init(Actor* thisx, PlayState* play) {
     EnPoField* this = (EnPoField*)thisx;
     s32 pad;
 
-#if PLATFORM_PSP || defined(TARGET_PS2)
+#if defined(TARGET_PS2)
     if (sNumActive == 0) {
         sNumSpawned = 0;
     }
@@ -190,7 +190,7 @@ void EnPoField_Init(Actor* thisx, PlayState* play) {
         Actor_Kill(&this->actor);
         return;
     }
-#if PLATFORM_PSP || defined(TARGET_PS2)
+#if defined(TARGET_PS2)
     sNumActive++;
 #endif
     Actor_ProcessInitChain(&this->actor, sInitChain);
@@ -211,7 +211,7 @@ void EnPoField_Destroy(Actor* thisx, PlayState* play) {
     EnPoField* this = (EnPoField*)thisx;
 
     if (this->actor.params != 0xFF) {
-#if PLATFORM_PSP || defined(TARGET_PS2)
+#if defined(TARGET_PS2)
         sNumActive--;
 #endif
         LightContext_RemoveLight(play, &play->lightCtx, this->lightNode);
