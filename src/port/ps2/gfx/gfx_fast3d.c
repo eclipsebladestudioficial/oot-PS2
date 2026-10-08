@@ -992,6 +992,8 @@ static uint32_t sPs2FlameDecodedI4Serial;
 #define GFX_TWO_I4_PRECOMBINE_HEIGHT 32
 #define GFX_TWO_I4_PRECOMBINE_PIXELS (GFX_TWO_I4_PRECOMBINE_WIDTH * GFX_TWO_I4_PRECOMBINE_HEIGHT)
 #define GFX_TWO_I4_PRECOMBINE_CACHE_SIZE 128
+#define GFX_TWO_I4_PRECOMBINE_BUILD_BUDGET 1
+#define GFX_TWO_I4_REPRESENTATIVE_PHASE_STEP 8
 
 typedef struct __attribute__((aligned(16))) TwoI4PrecombineCacheEntry {
     uint32_t pixels[GFX_TWO_I4_PRECOMBINE_PIXELS];
@@ -1018,6 +1020,37 @@ typedef struct __attribute__((aligned(16))) TwoI4PrecombineCacheEntry {
 
 static TwoI4PrecombineCacheEntry sTwoI4PrecombineCache[GFX_TWO_I4_PRECOMBINE_CACHE_SIZE]
     __attribute__((aligned(16)));
+static uint32_t sTwoI4PrecombineBuildFrame;
+static uint8_t sTwoI4PrecombineBuildsThisFrame;
+
+static uint32_t sPs2TwoI4RgbLut[256] __attribute__((aligned(64)));
+static int16_t sPs2TwoI4RgbAdd[256] __attribute__((aligned(64)));
+static int16_t sPs2TwoI4AlphaAdd[256] __attribute__((aligned(64)));
+static uint32_t sPs2TwoI4PairLut[16 * 16] __attribute__((aligned(64)));
+static uint32_t sPs2TwoI4ColorLutPrimRgb;
+static uint32_t sPs2TwoI4ColorLutEnvRgb;
+static uint8_t sPs2TwoI4ColorLutEnvAlpha;
+static bool sPs2TwoI4ColorLutValid;
+static bool sPs2TwoI4PairLutValid;
+
+#define GFX_TWO_I4_DECODE_CACHE_SIZE 8
+#define GFX_TWO_I4_DECODE_MAX_PIXELS (64U * 128U)
+typedef struct TwoI4DecodedCacheEntry {
+    uint8_t pixels[GFX_TWO_I4_DECODE_MAX_PIXELS];
+    const uint8_t* addr;
+    uint32_t sourceKey;
+    uint32_t width;
+    uint32_t height;
+    uint32_t rowStride;
+    uint32_t lastUsed;
+    uint8_t fmt;
+    uint8_t siz;
+    uint8_t nibble;
+    bool valid;
+} TwoI4DecodedCacheEntry;
+static TwoI4DecodedCacheEntry sPs2TwoI4DecodedCache[GFX_TWO_I4_DECODE_CACHE_SIZE]
+    __attribute__((aligned(64)));
+static uint32_t sPs2TwoI4DecodedClock;
 
 typedef enum GfxPreparedAtlasKind {
     GFX_PREPARED_ATLAS_NONE = 0,
@@ -2395,24 +2428,98 @@ static void import_texture_ci4(int tile) {
     gfx_upload_texture(tile, (const uint8_t*)rgba16_buf, width, height, PS2_TEXFMT_5551);
 }
 
+static const uint16_t* gfx_ps2_ci8_palette_lut(void) {
+    static uint16_t lut[256] __attribute__((aligned(64)));
+    static uint32_t cachedKey;
+    static const uint8_t* cachedPalette;
+    static bool valid;
+
+    if (!valid || cachedKey != rdp.palette_key || cachedPalette != rdp.palette) {
+        GfxTextureSwapState paletteSwapState =
+            gfx_texture_source_swap_state(rdp.palette, GFX_TLUT_SIZE_BYTES);
+        for (uint32_t i = 0; i < 256U; i++) {
+            const uint16_t col16 = gfx_read_texture_source_be16(rdp.palette, i * 2U, &paletteSwapState);
+            lut[i] = gfx_rgba16_to_gu5551(col16);
+        }
+        cachedKey = rdp.palette_key;
+        cachedPalette = rdp.palette;
+        valid = true;
+    }
+    return lut;
+}
+
+static inline uint8_t gfx_ps2_ci8_swapped_u8(const uint8_t* p, uintptr_t xorBase) {
+    const uintptr_t addr = (uintptr_t)p;
+    return *(const uint8_t*)(xorBase + ((addr - xorBase) ^ 7U));
+}
+
 static void import_texture_ci8(int tile) {
-    uint32_t width = gfx_texture_import_width(tile);
-    uint32_t height = gfx_texture_import_height(tile);
+    const uint32_t width = gfx_texture_import_width(tile);
+    const uint32_t height = gfx_texture_import_height(tile);
     uint16_t* rgba16_buf = (uint16_t*)gfx_ps2_texture_import_scratch((size_t)width * height * sizeof(uint16_t));
-    uint32_t rowBytes = gfx_texture_row_bytes(width, G_IM_SIZ_8b);
+    const uint32_t rowBytes = gfx_texture_row_bytes(width, G_IM_SIZ_8b);
     GfxTextureSwapState swapState =
         gfx_texture_source_swap_state(rdp.loaded_texture[tile].addr, gfx_texture_source_span_size(tile));
+    const uint16_t* paletteLut = gfx_ps2_ci8_palette_lut();
 
-    GfxTextureSwapState paletteSwapState = gfx_texture_source_swap_state(rdp.palette, GFX_TLUT_SIZE_BYTES);
+    if (swapState.mode == GFX_TEXTURE_SWAP_NONE) {
+        for (uint32_t y = 0; y < height; y++) {
+            const uint8_t* row = gfx_texture_row(tile, y, rowBytes);
+            uint16_t* dst = rgba16_buf + (size_t)y * width;
+            uint32_t x = 0;
+            for (; x + 4U <= width; x += 4U) {
+                dst[x + 0U] = paletteLut[row[x + 0U]];
+                dst[x + 1U] = paletteLut[row[x + 1U]];
+                dst[x + 2U] = paletteLut[row[x + 2U]];
+                dst[x + 3U] = paletteLut[row[x + 3U]];
+            }
+            for (; x < width; x++) dst[x] = paletteLut[row[x]];
+        }
+    } else if (swapState.mode == GFX_TEXTURE_SWAP_DIRECT ||
+               swapState.mode == GFX_TEXTURE_SWAP_MAPPED) {
+        const uintptr_t xorBase =
+            (swapState.mode == GFX_TEXTURE_SWAP_MAPPED) ? swapState.rangeStart : 0U;
 
-    for (uint32_t y = 0; y < height; y++) {
-        const uint8_t* row = gfx_texture_row(tile, y, rowBytes);
+        for (uint32_t y = 0; y < height; y++) {
+            const uint8_t* row = gfx_texture_row(tile, y, rowBytes);
+            uint16_t* dst = rgba16_buf + (size_t)y * width;
+            uint32_t x = 0;
 
-        for (uint32_t x = 0; x < width; x++) {
-            uint32_t i = y * width + x;
-            uint8_t idx = gfx_read_texture_source_u8(row, x, &swapState);
-            uint16_t col16 = gfx_read_texture_source_be16(rdp.palette, idx * 2, &paletteSwapState);
-            rgba16_buf[i] = gfx_rgba16_to_gu5551(col16);
+            if (swapState.mode == GFX_TEXTURE_SWAP_MAPPED &&
+                ((uintptr_t)row < swapState.rangeStart ||
+                 (uintptr_t)row + width > swapState.rangeEnd)) {
+                for (; x < width; x++) {
+                    dst[x] = paletteLut[gfx_read_texture_source_u8(row, x, &swapState)];
+                }
+                continue;
+            }
+
+            while (x < width && ((((uintptr_t)(row + x) - xorBase) & 7U) != 0U)) {
+                dst[x] = paletteLut[gfx_ps2_ci8_swapped_u8(row + x, xorBase)];
+                x++;
+            }
+            for (; x + 8U <= width; x += 8U) {
+                const uint8_t* src = row + x;
+                dst[x + 0U] = paletteLut[src[7]];
+                dst[x + 1U] = paletteLut[src[6]];
+                dst[x + 2U] = paletteLut[src[5]];
+                dst[x + 3U] = paletteLut[src[4]];
+                dst[x + 4U] = paletteLut[src[3]];
+                dst[x + 5U] = paletteLut[src[2]];
+                dst[x + 6U] = paletteLut[src[1]];
+                dst[x + 7U] = paletteLut[src[0]];
+            }
+            for (; x < width; x++) {
+                dst[x] = paletteLut[gfx_ps2_ci8_swapped_u8(row + x, xorBase)];
+            }
+        }
+    } else {
+        for (uint32_t y = 0; y < height; y++) {
+            const uint8_t* row = gfx_texture_row(tile, y, rowBytes);
+            uint16_t* dst = rgba16_buf + (size_t)y * width;
+            for (uint32_t x = 0; x < width; x++) {
+                dst[x] = paletteLut[gfx_read_texture_source_u8(row, x, &swapState)];
+            }
         }
     }
 
@@ -2974,7 +3081,7 @@ static bool gfx_two_i4_precombine_material_is_supported(void) {
         ((texture1->siz == G_IM_SIZ_4b) || (texture1->siz == G_IM_SIZ_8b));
 
     if (!texture0Intensity || !texture1Intensity || width0 == 0 || height0 == 0 ||
-        width1 == 0 || height1 == 0 || width0 > GFX_TWO_I4_PRECOMBINE_WIDTH ||
+        width1 == 0 || height1 == 0 || width0 > 64U ||
         width1 > GFX_TWO_I4_PRECOMBINE_WIDTH || height1 > GFX_TWO_I4_PRECOMBINE_HEIGHT ||
         height0 > 128) {
         return false;
@@ -3031,6 +3138,73 @@ static uint8_t gfx_two_i4_read_texel_255(int tile, int32_t x, int32_t y,
     return gfx_read_texture_source_u8(row, (uint32_t)x, swapState);
 }
 
+static const uint8_t* gfx_two_i4_get_decoded_source(int tile, uint32_t width, uint32_t height) {
+    const TextureTileState* texture = gfx_get_texture_tile(tile);
+    const uint8_t* addr = rdp.loaded_texture[tile].addr;
+    const uint32_t span = gfx_texture_source_span_size(tile);
+    const uint32_t serial = OotPort_GetExternalAssetRangeSerial(addr, span);
+    const bool runtime = serial == 0U && addr != sInvalidTextureBuf && addr != sInvalidPaletteBuf &&
+                         OotPort_IsRuntimeByteRange(addr, span);
+    const uint32_t sourceKey = serial != 0U ? serial :
+        (runtime ? gfx_ps2_dynamic_texture_content_key(addr, span) : 1U);
+    const uint32_t rowStride = rdp.loaded_texture[tile].row_stride_bytes;
+    const uint8_t nibble = rdp.loaded_texture[tile].source_nibble_offset;
+    TwoI4DecodedCacheEntry* victim = &sPs2TwoI4DecodedCache[0];
+
+    if (width == 0U || height == 0U || (uint64_t)width * height > GFX_TWO_I4_DECODE_MAX_PIXELS) {
+        return NULL;
+    }
+
+    for (uint32_t i = 0; i < GFX_TWO_I4_DECODE_CACHE_SIZE; i++) {
+        TwoI4DecodedCacheEntry* c = &sPs2TwoI4DecodedCache[i];
+        if (c->valid && c->addr == addr && c->sourceKey == sourceKey &&
+            c->width == width && c->height == height && c->rowStride == rowStride &&
+            c->fmt == texture->fmt && c->siz == texture->siz && c->nibble == nibble) {
+            c->lastUsed = ++sPs2TwoI4DecodedClock;
+            return c->pixels;
+        }
+        if (!c->valid || (victim->valid && c->lastUsed < victim->lastUsed)) {
+            victim = c;
+        }
+    }
+
+    GfxTextureSwapState swap = gfx_texture_source_swap_state(addr, span);
+    const uint32_t rowBytes = gfx_texture_row_bytes(width + nibble, texture->siz);
+    for (uint32_t y = 0; y < height; y++) {
+        const uint8_t* src = gfx_texture_row(tile, y, rowBytes);
+        uint8_t* dst = victim->pixels + (size_t)y * width;
+        if (texture->siz == G_IM_SIZ_8b && swap.mode == GFX_TEXTURE_SWAP_NONE && nibble == 0U) {
+            memcpy(dst, src, width);
+        } else if (texture->siz == G_IM_SIZ_4b && swap.mode == GFX_TEXTURE_SWAP_NONE) {
+            for (uint32_t x = 0; x < width; x++) {
+                const uint32_t texel = (uint32_t)nibble + x;
+                const uint8_t packed = src[texel >> 1];
+                dst[x] = (uint8_t)(((packed >> (4U - ((texel & 1U) << 2))) & 0x0fU) * 17U);
+            }
+        } else if (texture->siz == G_IM_SIZ_4b) {
+            for (uint32_t x = 0; x < width; x++) {
+                dst[x] = (uint8_t)(gfx_texture_read_4b(tile, x, src, &swap) * 17U);
+            }
+        } else {
+            for (uint32_t x = 0; x < width; x++) {
+                dst[x] = gfx_read_texture_source_u8(src, x, &swap);
+            }
+        }
+    }
+
+    victim->addr = addr;
+    victim->sourceKey = sourceKey;
+    victim->width = width;
+    victim->height = height;
+    victim->rowStride = rowStride;
+    victim->lastUsed = ++sPs2TwoI4DecodedClock;
+    victim->fmt = texture->fmt;
+    victim->siz = texture->siz;
+    victim->nibble = nibble;
+    victim->valid = true;
+    return victim->pixels;
+}
+
 static void gfx_two_i4_build_sample_maps(uint8_t sample0X[GFX_TWO_I4_PRECOMBINE_WIDTH],
                                          uint8_t sample0Y[GFX_TWO_I4_PRECOMBINE_HEIGHT],
                                          uint8_t sample1X[GFX_TWO_I4_PRECOMBINE_WIDTH],
@@ -3046,10 +3220,19 @@ static void gfx_two_i4_build_sample_maps(uint8_t sample0X[GFX_TWO_I4_PRECOMBINE_
     const float shift0T = gfx_texture_shift_scale(texture0->shiftt);
     const float shift1S = gfx_texture_shift_scale(texture1->shifts);
     const float shift1T = gfx_texture_shift_scale(texture1->shiftt);
-    const float scroll0S = (float)texture0->uls * (1.0f / 4.0f);
-    const float scroll0T = (float)texture0->ult * (1.0f / 4.0f);
-    const float scroll1S = (float)texture1->uls * (1.0f / 4.0f);
-    const float scroll1T = (float)texture1->ult * (1.0f / 4.0f);
+    const int32_t phaseHalf = GFX_TWO_I4_REPRESENTATIVE_PHASE_STEP / 2;
+    const int32_t scroll0SPixels = texture0->uls >> G_TEXTURE_IMAGE_FRAC;
+    const int32_t scroll0TPixels = texture0->ult >> G_TEXTURE_IMAGE_FRAC;
+    const int32_t scroll1SPixels = texture1->uls >> G_TEXTURE_IMAGE_FRAC;
+    const int32_t scroll1TPixels = texture1->ult >> G_TEXTURE_IMAGE_FRAC;
+    const float scroll0S = (float)((scroll0SPixels + phaseHalf) &
+                                   ~(GFX_TWO_I4_REPRESENTATIVE_PHASE_STEP - 1));
+    const float scroll0T = (float)((scroll0TPixels + phaseHalf) &
+                                   ~(GFX_TWO_I4_REPRESENTATIVE_PHASE_STEP - 1));
+    const float scroll1S = (float)((scroll1SPixels + phaseHalf) &
+                                   ~(GFX_TWO_I4_REPRESENTATIVE_PHASE_STEP - 1));
+    const float scroll1T = (float)((scroll1TPixels + phaseHalf) &
+                                   ~(GFX_TWO_I4_REPRESENTATIVE_PHASE_STEP - 1));
 
     for (uint32_t x = 0; x < outputWidth; x++) {
         const float incomingS = ((float)x + scroll1S) / shift1S;
@@ -3089,6 +3272,25 @@ static bool gfx_two_i4_precombine_key_matches(const TwoI4PrecombineCacheEntry* e
            memcmp(entry->sample1Y, sample1Y, outputHeight) == 0;
 }
 
+static bool gfx_two_i4_precombine_material_matches(const TwoI4PrecombineCacheEntry* entry,
+                                                    uint32_t primRgb, uint32_t envRgb,
+                                                    uint32_t outputWidth, uint32_t outputHeight) {
+    return entry->textureValid &&
+           entry->texture0Addr == rdp.loaded_texture[0].addr &&
+           entry->texture1Addr == rdp.loaded_texture[1].addr &&
+           entry->primRgb == primRgb && entry->envRgb == envRgb &&
+           entry->envAlpha == rdp.env_color.a &&
+           entry->outputWidth == outputWidth && entry->outputHeight == outputHeight &&
+           entry->importWidth0 == gfx_texture_import_width(0) &&
+           entry->importHeight0 == gfx_texture_import_height(0) &&
+           entry->importWidth1 == gfx_texture_import_width(1) &&
+           entry->importHeight1 == gfx_texture_import_height(1) &&
+           entry->fmt0 == gfx_get_texture_tile(0)->fmt && entry->siz0 == gfx_get_texture_tile(0)->siz &&
+           entry->fmt1 == gfx_get_texture_tile(1)->fmt && entry->siz1 == gfx_get_texture_tile(1)->siz &&
+           entry->nibble0 == rdp.loaded_texture[0].source_nibble_offset &&
+           entry->nibble1 == rdp.loaded_texture[1].source_nibble_offset;
+}
+
 static void gfx_build_two_i4_precombine_pixels(TwoI4PrecombineCacheEntry* entry) {
     const TextureTileState* texture0 = gfx_get_texture_tile(0);
     const TextureTileState* texture1 = gfx_get_texture_tile(1);
@@ -3107,28 +3309,82 @@ static void gfx_build_two_i4_precombine_pixels(TwoI4PrecombineCacheEntry* entry)
     const int32_t eg = (int32_t)((entry->envRgb >> 8) & 0xffU);
     const int32_t eb = (int32_t)((entry->envRgb >> 16) & 0xffU);
     const int32_t envA = entry->envAlpha;
+    const bool bothI4 = texture0->siz == G_IM_SIZ_4b && texture1->siz == G_IM_SIZ_4b;
+    const uint8_t* decoded0 = gfx_two_i4_get_decoded_source(0, width0, height0);
+    const uint8_t* decoded1 = gfx_two_i4_get_decoded_source(1, width1, height1);
     GfxTextureSwapState swap0 =
         gfx_texture_source_swap_state(rdp.loaded_texture[0].addr, gfx_texture_source_span_size(0));
     GfxTextureSwapState swap1 =
         gfx_texture_source_swap_state(rdp.loaded_texture[1].addr, gfx_texture_source_span_size(1));
 
+    if (!sPs2TwoI4ColorLutValid || sPs2TwoI4ColorLutPrimRgb != entry->primRgb ||
+        sPs2TwoI4ColorLutEnvRgb != entry->envRgb ||
+        sPs2TwoI4ColorLutEnvAlpha != entry->envAlpha) {
+        for (uint32_t t0 = 0; t0 < 256U; t0++) {
+            sPs2TwoI4RgbAdd[t0] =
+                (int16_t)gfx_ps2_div256_round_signed((int32_t)t0 * envA);
+            sPs2TwoI4AlphaAdd[t0] =
+                (int16_t)gfx_ps2_div256_round_signed(((int32_t)t0 - 255) * envA);
+        }
+        for (uint32_t mix = 0; mix < 256U; mix++) {
+            const uint8_t r =
+                gfx_ps2_clamp_u8_i32(er + gfx_ps2_div255_round((pr - er) * (int32_t)mix));
+            const uint8_t g =
+                gfx_ps2_clamp_u8_i32(eg + gfx_ps2_div255_round((pg - eg) * (int32_t)mix));
+            const uint8_t b =
+                gfx_ps2_clamp_u8_i32(eb + gfx_ps2_div255_round((pb - eb) * (int32_t)mix));
+            sPs2TwoI4RgbLut[mix] =
+                (uint32_t)r | ((uint32_t)g << 8) | ((uint32_t)b << 16);
+        }
+        sPs2TwoI4ColorLutPrimRgb = entry->primRgb;
+        sPs2TwoI4ColorLutEnvRgb = entry->envRgb;
+        sPs2TwoI4ColorLutEnvAlpha = entry->envAlpha;
+        sPs2TwoI4ColorLutValid = true;
+        sPs2TwoI4PairLutValid = false;
+    }
+
+    if (bothI4 && !sPs2TwoI4PairLutValid) {
+        for (uint32_t n0 = 0; n0 < 16U; n0++) {
+            const uint8_t t0 = (uint8_t)(n0 * 17U);
+            for (uint32_t n1 = 0; n1 < 16U; n1++) {
+                const uint8_t t1 = (uint8_t)(n1 * 17U);
+                const uint8_t rgbMix =
+                    gfx_ps2_clamp_u8_i32((int32_t)t1 + sPs2TwoI4RgbAdd[t0]);
+                const uint8_t alphaMix =
+                    gfx_ps2_clamp_u8_i32((int32_t)t1 + sPs2TwoI4AlphaAdd[t0]);
+                sPs2TwoI4PairLut[(n0 << 4) | n1] =
+                    sPs2TwoI4RgbLut[rgbMix] | ((uint32_t)alphaMix << 24);
+            }
+        }
+        sPs2TwoI4PairLutValid = true;
+    }
+
     const uint32_t outputWidth = entry->outputWidth;
     const uint32_t outputHeight = entry->outputHeight;
     for (uint32_t y = 0; y < outputHeight; y++) {
+        const uint32_t row0 = (uint32_t)sample0Y[y] * width0;
+        const uint32_t row1 = (uint32_t)sample1Y[y] * width1;
         for (uint32_t x = 0; x < outputWidth; x++) {
+            const uint32_t sx0 = sample0X[x];
+            const uint32_t sx1 = sample1X[x];
+            const uint8_t t0 = decoded0 != NULL
+                ? decoded0[row0 + sx0]
+                : gfx_two_i4_read_texel_255(0, (int32_t)sx0, (int32_t)sample0Y[y], width0, height0, &swap0);
+            const uint8_t t1 = decoded1 != NULL
+                ? decoded1[row1 + sx1]
+                : gfx_two_i4_read_texel_255(1, (int32_t)sx1, (int32_t)sample1Y[y], width1, height1, &swap1);
 
-            const uint8_t t0 = gfx_two_i4_read_texel_255(0, sample0X[x], sample0Y[y], width0, height0, &swap0);
-            const uint8_t t1 = gfx_two_i4_read_texel_255(1, sample1X[x], sample1Y[y], width1, height1, &swap1);
-
-            const int32_t rgbMix = gfx_ps2_clamp_u8_i32((int32_t)t1 +
-                gfx_ps2_div256_round_signed((int32_t)t0 * envA));
-            const int32_t alphaMix = gfx_ps2_clamp_u8_i32((int32_t)t1 +
-                gfx_ps2_div256_round_signed(((int32_t)t0 - 255) * envA));
-            const uint8_t r = gfx_ps2_clamp_u8_i32(er + gfx_ps2_div255_round((pr - er) * rgbMix));
-            const uint8_t g = gfx_ps2_clamp_u8_i32(eg + gfx_ps2_div255_round((pg - eg) * rgbMix));
-            const uint8_t b = gfx_ps2_clamp_u8_i32(eb + gfx_ps2_div255_round((pb - eb) * rgbMix));
-            entry->pixels[y * outputWidth + x] =
-                (uint32_t)r | ((uint32_t)g << 8) | ((uint32_t)b << 16) | ((uint32_t)alphaMix << 24);
+            if (bothI4) {
+                entry->pixels[y * outputWidth + x] =
+                    sPs2TwoI4PairLut[((uint32_t)(t0 >> 4) << 4) | (uint32_t)(t1 >> 4)];
+            } else {
+                const uint8_t rgbMix =
+                    gfx_ps2_clamp_u8_i32((int32_t)t1 + sPs2TwoI4RgbAdd[t0]);
+                const uint8_t alphaMix =
+                    gfx_ps2_clamp_u8_i32((int32_t)t1 + sPs2TwoI4AlphaAdd[t0]);
+                entry->pixels[y * outputWidth + x] =
+                    sPs2TwoI4RgbLut[rgbMix] | ((uint32_t)alphaMix << 24);
+            }
         }
     }
 }
@@ -3140,7 +3396,9 @@ static bool gfx_prepare_two_i4_precombine(void) {
                             ((uint32_t)rdp.env_color.b << 16);
     TwoI4PrecombineCacheEntry* entry = NULL;
     TwoI4PrecombineCacheEntry* victim = NULL;
+    TwoI4PrecombineCacheEntry* phaseFallback = NULL;
     uint32_t oldestFrame = UINT32_MAX;
+    uint32_t newestFallbackFrame = 0;
     bool needsUpload = false;
     bool overwriteResident = false;
     uint8_t sample0X[GFX_TWO_I4_PRECOMBINE_WIDTH] = { 0 };
@@ -3156,6 +3414,10 @@ static bool gfx_prepare_two_i4_precombine(void) {
         return false;
     }
 
+    if (sTwoI4PrecombineBuildFrame != sTextureCacheFrameSerial) {
+        sTwoI4PrecombineBuildFrame = sTextureCacheFrameSerial;
+        sTwoI4PrecombineBuildsThisFrame = 0;
+    }
     outputWidth = gfx_texture_tile_width(1);
     outputHeight = gfx_texture_tile_height(1);
     gfx_two_i4_build_sample_maps(sample0X, sample0Y, sample1X, sample1Y, outputWidth, outputHeight);
@@ -3166,6 +3428,12 @@ static bool gfx_prepare_two_i4_precombine(void) {
                                                sample1X, sample1Y, outputWidth, outputHeight)) {
             entry = candidate;
             break;
+        }
+        if (gfx_two_i4_precombine_material_matches(candidate, primRgb, envRgb,
+                                                    outputWidth, outputHeight) &&
+            (phaseFallback == NULL || candidate->lastUsedFrame >= newestFallbackFrame)) {
+            phaseFallback = candidate;
+            newestFallbackFrame = candidate->lastUsedFrame;
         }
         if (!candidate->textureValid) {
 
@@ -3178,7 +3446,14 @@ static bool gfx_prepare_two_i4_precombine(void) {
         }
     }
 
+    if (entry == NULL &&
+        sTwoI4PrecombineBuildsThisFrame >= GFX_TWO_I4_PRECOMBINE_BUILD_BUDGET &&
+        phaseFallback != NULL) {
+        entry = phaseFallback;
+    }
+
     if (entry == NULL) {
+        sTwoI4PrecombineBuildsThisFrame++;
         if (victim == NULL) {
 
             gfx_texture_cache_clear();
@@ -3442,11 +3717,6 @@ static inline __attribute__((always_inline)) void gfx_ps2_ndc_to_screen(
 static void gfx_prepare_tri_pipeline_state(void) {
     if (!rendering_state.tri_pipeline_dirty) {
         return;
-    }
-
-    if ((buf_vbo_len > 0) &&
-        (rdp.combine_two_intensity_env_prim_precombine || rdp.combine_flame_texture_atlas)) {
-        gfx_flush();
     }
 
     bool two_i4_precombine = false;
@@ -5919,12 +6189,17 @@ static void gfx_dp_set_prim_color(uint8_t lod_frac, uint8_t r, uint8_t g, uint8_
         return;
     }
 
+    const bool pipelineChanged = (rdp.prim_color.r != r) || (rdp.prim_color.g != g) ||
+                                 (rdp.prim_color.b != b) || (rdp.prim_lod_frac != lod_frac);
+
     rdp.prim_lod_frac = lod_frac;
     rdp.prim_color.r = r;
     rdp.prim_color.g = g;
     rdp.prim_color.b = b;
     rdp.prim_color.a = a;
-    gfx_mark_tri_pipeline_dirty();
+    if (pipelineChanged) {
+        gfx_mark_tri_pipeline_dirty();
+    }
 }
 
 static void gfx_dp_set_fog_color(uint8_t r, uint8_t g, uint8_t b, uint8_t a) {

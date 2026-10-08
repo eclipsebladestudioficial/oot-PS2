@@ -293,7 +293,6 @@ static struct ShaderProgram* ps2_create_shader(uint32_t id){
         } else {
             switch (id) {
                 case 0x0000038DU:
-                case 0x01045A00U:
                 case 0x01200A00U:
                     p->texture_mode = PS2_TEXTURE_MODE_DECAL;
                     break;
@@ -1485,6 +1484,41 @@ static void ps2_draw(float*raw,size_t len,size_t tris){
     struct Texture *draw_tex=last_tex;
     bool textured=draw_tex!=NULL && cur_shader && (cur_shader->texture_used[0]||cur_shader->texture_used[1]);
 
+    const bool batch_01045 = textured && !depth_only && cur_shader != NULL &&
+        (cur_shader->shader_id == 0x01045A00U || cur_shader->shader_id == 0x03045A00U) &&
+        cur_shader->texture_alpha && !cur_shader->alpha_test && do_blend;
+    if (__builtin_expect(batch_01045, 0)) {
+        const bool useFog = cur_shader->cc.opt_fog;
+        ps2_bind_texture(&draw_tex->tex);
+        clamp_tex(draw_tex, false, false);
+        if (useFog) {
+            set_fog_color(v[0].fog_color);
+            sPs2SkipNextFogPass = true;
+        }
+        size_t done = 0;
+        while (done < tris) {
+            const size_t wanted = ((tris - done) > GS_GIF_BLOCKSIZE) ? GS_GIF_BLOCKSIZE : (tris - done);
+            const size_t batch = tri_tex_batch_safe_count(wanted, useFog);
+            u64* packet = tri_tex_batch_begin(draw_tex, batch, useFog);
+            for (size_t i = 0; i < batch; i++) {
+                const Ps2Fast* t = &v[(done + i) * 3U];
+                const uint32_t c0 = 0x00ffffffU | (t[0].rgba & 0xff000000U);
+                const uint32_t c1 = 0x00ffffffU | (t[1].rgba & 0xff000000U);
+                const uint32_t c2 = 0x00ffffffU | (t[2].rgba & 0xff000000U);
+                tri_tex_emit_reserved_known(&packet, draw_tex,
+                    t[0].x, t[0].y, (int)t[0].z, t[0].u, t[0].v, t[0].real_u, t[0].real_v,
+                    colorq_from_rgba(c0, t[0].q, true),
+                    t[1].x, t[1].y, (int)t[1].z, t[1].u, t[1].v, t[1].real_u, t[1].real_v,
+                    colorq_from_rgba(c1, t[1].q, true),
+                    t[2].x, t[2].y, (int)t[2].z, t[2].u, t[2].v, t[2].real_u, t[2].real_v,
+                    colorq_from_rgba(c2, t[2].q, true),
+                    useFog, (uint8_t)t[0].fog, (uint8_t)t[1].fog, (uint8_t)t[2].fog);
+            }
+            done += batch;
+        }
+        goto draw_complete;
+    }
+
     bool blend_single_pass=false;
     bool blend_fallback_target=false;
     if(textured && !depth_only && cur_shader!=NULL &&
@@ -1572,7 +1606,11 @@ static void ps2_draw(float*raw,size_t len,size_t tris){
     const bool has_fog = cur_shader != NULL && cur_shader->cc.opt_fog;
 
     const bool native_fog_alpha_safe = cur_shader != NULL &&
-                                       (!cur_shader->texture_alpha || cur_shader->alpha_test);
+                                       (!cur_shader->texture_alpha || cur_shader->alpha_test ||
+                                        cur_shader->shader_id == 0x03045A00U ||
+                                        cur_shader->shader_id == 0x13551551U ||
+                                        cur_shader->shader_id == 0x03A00045U ||
+                                        cur_shader->shader_id == 0x03045045U);
     const bool native_fog_two_texture_safe = !sTwoTextureBlendActive || !sTwoTextureAlphaBlendActive;
     const bool prefer_native_fog = has_fog && !depth_only && cur_shader != NULL &&
                                    native_fog_alpha_safe && native_fog_two_texture_safe && !reverse_tint &&
@@ -1746,13 +1784,20 @@ static void ps2_draw_fog(float*raw,size_t len,size_t tris,bool texture_alpha,boo
             clamp_tex(mask,false,false);
             sLastTex0Reg=~0ULL;
 
-            for(size_t i=0;i<tris;i++){
-                Ps2FogTextured* q=&v[i*3U];
-                tri_tex(mask,
-                    q[0].x,q[0].y,(int)q[0].z,q[0].u,q[0].v,colorq_from_rgba(q[0].rgba,q[0].q,true),
-                    q[1].x,q[1].y,(int)q[1].z,q[1].u,q[1].v,colorq_from_rgba(q[1].rgba,q[1].q,true),
-                    q[2].x,q[2].y,(int)q[2].z,q[2].u,q[2].v,colorq_from_rgba(q[2].rgba,q[2].q,true),
-                    false,255,255,255);
+            size_t done=0;
+            while(done<tris){
+                const size_t wanted=tris-done;
+                const size_t batch=tri_tex_batch_safe_count(wanted,false);
+                u64* packet=tri_tex_batch_begin(mask,batch,false);
+                for(size_t j=0;j<batch;j++){
+                    Ps2FogTextured* q=&v[(done+j)*3U];
+                    tri_tex_emit_reserved(&packet,mask,
+                        q[0].x,q[0].y,(int)q[0].z,q[0].u,q[0].v,colorq_from_rgba(q[0].rgba,q[0].q,true),
+                        q[1].x,q[1].y,(int)q[1].z,q[1].u,q[1].v,colorq_from_rgba(q[1].rgba,q[1].q,true),
+                        q[2].x,q[2].y,(int)q[2].z,q[2].u,q[2].v,colorq_from_rgba(q[2].rgba,q[2].q,true),
+                        false,255,255,255);
+                }
+                done+=batch;
             }
         }
     }else{
@@ -2141,56 +2186,6 @@ static void ps2_fps_overlay(void){
     update_test();
     set_blend(old_blend);
 }
-static const uint8_t* ps2_build_glyph(char c){
-    static const uint8_t lower_v[7]={0,0,17,17,17,10,4};
-    static const uint8_t lower_u[7]={0,0,17,17,17,19,13};
-    static const uint8_t lower_i[7]={4,0,12,4,4,4,14};
-    static const uint8_t lower_l[7]={12,4,4,4,4,4,14};
-    static const uint8_t lower_d[7]={1,1,15,17,17,19,13};
-    if(c=='v')return lower_v;
-    if(c=='u')return lower_u;
-    if(c=='i')return lower_i;
-    if(c=='l')return lower_l;
-    if(c=='d')return lower_d;
-    return ps2_fps_glyph(c);
-}
-static void ps2_build_char(float x,float y,char c,float scale,u64 color){
-    const uint8_t*rows;
-    if(c=='B'){
-        static const uint8_t upper_b[7]={30,17,17,30,17,17,30};
-        rows=upper_b;
-    }else{
-        rows=ps2_build_glyph(c);
-    }
-    for(int row=0;row<7;row++){
-        const uint8_t bits=rows[row];
-        for(int col=0;col<5;col++){
-            if(bits&(1u<<(4-col)))
-                gsKit_prim_sprite(gs_global,x+col*scale,y+row*scale,x+(col+1)*scale,y+(row+1)*scale,0,color);
-        }
-    }
-}
-static void ps2_build_overlay(void){
-    static const char text[]="v 0.03.5 Build";
-    const float scale=2.5f;
-    const float advance=6.0f*scale;
-    const float width=(float)(sizeof(text)-1)*advance;
-    const float x0=(float)gs_global->Width-width-8.0f;
-    const float y=(float)gs_global->Height-(7.0f*scale)-8.0f;
-    const bool old_test=z_test,old_blend=do_blend;
-    const struct Clip old_clip=r_clip;
-    z_test=false;
-    set_blend(false);
-    update_test();
-    set_scissor_raw(0,0,gs_global->Width-1,gs_global->Height-1);
-    const u64 white=GS_SETREG_RGBAQ(0x60,0x60,0x60,0x80,0);
-    float x=x0;
-    for(const char*q=text;*q;q++,x+=advance)ps2_build_char(x,y,*q,scale,white);
-    set_scissor_raw(old_clip.x0,old_clip.y0,old_clip.x1,old_clip.y1);
-    z_test=old_test;
-    update_test();
-    set_blend(old_blend);
-}
 static void ps2_menu_rect(float x0,float y0,float x1,float y1,u64 color){
     gsKit_prim_sprite(gs_global,x0,y0,x1,y1,0,color);
 }
@@ -2418,7 +2413,6 @@ static void ps2_end(void){
     }else if(sFpsOverlayEnabled){
         ps2_fps_overlay();
     }
-    ps2_build_overlay();
 }
 static void ps2_finish(void){}
 
