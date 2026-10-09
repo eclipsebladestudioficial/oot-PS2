@@ -298,25 +298,10 @@ void GameState_ReqPadData(GameState* gameState) {
 
 void GameState_Update(GameState* gameState) {
     GraphicsContext* gfxCtx = gameState->gfxCtx;
-#if defined(TARGET_PS2)
-    static u32 sPs2GameTrace;
-    s32 ps2Trace = sPs2GameTrace++ < 3;
-
-    if (ps2Trace) OotPs2Trace_Log("game update framebuffer begin");
-#endif
 
     GameState_SetFrameBuffer(gfxCtx);
 
-#if defined(TARGET_PS2)
-    if (ps2Trace) OotPs2Trace_Log("game update framebuffer end");
-    if (ps2Trace) OotPs2Trace_Log("game update main begin main=%p", gameState->main);
-#endif
-
     gameState->main(gameState);
-
-#if defined(TARGET_PS2)
-    if (ps2Trace) OotPs2Trace_Log("game update main end");
-#endif
 
 #if PLATFORM_N64
     if (D_80121212 != 0) {
@@ -327,13 +312,7 @@ void GameState_Update(GameState* gameState) {
     }
 #endif
 
-#if defined(TARGET_PS2)
-    if (ps2Trace) OotPs2Trace_Log("game post begin");
-#endif
     func_800C4344(gameState);
-#if defined(TARGET_PS2)
-    if (ps2Trace) OotPs2Trace_Log("game post end");
-#endif
 
 #if OOT_VERSION < PAL_1_0
     if (R_VI_MODE_EDIT_STATE != VI_MODE_EDIT_STATE_INACTIVE) {

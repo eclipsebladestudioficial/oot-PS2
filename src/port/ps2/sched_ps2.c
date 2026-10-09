@@ -104,9 +104,7 @@ void Sched_Init(Scheduler* sc, void* stack, OSPri priority, u8 viModeType, UNK_T
         return;
     }
 
-    OotPs2Trace_Log("sched clear begin");
     memset(sc, 0, sizeof(*sc));
-    OotPs2Trace_Log("sched clear done");
 
     osCreateMesgQueue(&sc->interruptQueue, sc->interruptMsgBuf, ARRAY_COUNT(sc->interruptMsgBuf));
     osCreateMesgQueue(&sc->cmdQueue, sc->cmdMsgBuf, ARRAY_COUNT(sc->cmdMsgBuf));

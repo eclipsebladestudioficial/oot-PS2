@@ -86,11 +86,6 @@ s32 OotPs2File_Rename(const char* from, const char* to);
 void OotPs2Platform_SetDiscBoot(s32 discBoot);
 s32 OotPs2Platform_IsDiscBoot(void);
 
-void OotPs2Trace_Init(void);
-void OotPs2Trace_Log(const char* format, ...);
-void OotPs2Trace_EnableScreen(void);
-const char* OotPs2Trace_Path(void);
-
 void OotPs2Cache_WritebackInvalidateAll(void);
 void OotPs2Cache_WritebackRange(const void* address, size_t size);
 void OotPs2Cache_InvalidateRange(void* address, size_t size);

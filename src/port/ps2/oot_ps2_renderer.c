@@ -40,9 +40,7 @@ void OotPs2Renderer_Init(void) {
     }
 
     OotPs2Crash_SetStage("RENDERER_GFX_INIT");
-    OotPs2Trace_Log("gfx_init begin");
     gfx_init(&gfx_ps2_wapi, &gfx_ps2_rapi, "oot-ps2", false);
-    OotPs2Trace_Log("gfx_init done");
     sInitialized = true;
 }
 

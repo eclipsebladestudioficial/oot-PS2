@@ -179,7 +179,6 @@ AudioTask* AudioThread_UpdateImpl(void) {
     }
 
 #if defined(TARGET_PS2)
-    OotPortAudioBackend_SetDiagnosticProducerState(OOT_PORT_AUDIO_PRODUCER_STATE_SEQUENCE);
     AudioSynth_ProcessSequenceControl();
     abiCmdCnt = 0;
 #else
@@ -187,7 +186,6 @@ AudioTask* AudioThread_UpdateImpl(void) {
         AudioSynth_Update(gAudioCtx.curAbiCmdBuf, &abiCmdCnt, curAiBuffer, gAudioCtx.aiBufLengths[index]);
 #endif
 #if defined(TARGET_PS2)
-    OotPortAudioBackend_SetDiagnosticProducerState(OOT_PORT_AUDIO_PRODUCER_STATE_SUBMIT);
     OotPortAudioBackend_SubmitSynthesis(gAudioCtx.abiCmdBufs[gAudioCtx.rspTaskIndex], curAiBuffer,
                                       gAudioCtx.aiBufLengths[index]);
 #endif

@@ -23,18 +23,6 @@
 #define TEXCACHE_SIZE (4 * 1024 * 1024)
 #define ALIGN(v,a) (((v)+((a)-1))&~((a)-1))
 #define BMODE_BLEND GS_SETREG_ALPHA(0,1,0,1,128)
-#if !defined(OOT_PS2_RAPI_PROFILE)
-#define OOT_PS2_RAPI_PROFILE 0
-#endif
-#if OOT_PS2_RAPI_PROFILE
-static inline uint32_t ps2_prof_count(void){ uint32_t v; __asm__ volatile("mfc0 %0, $9" : "=r"(v)); return v; }
-static uint64_t sProfDrawCycles=0,sProfTexCycles=0,sProfUntexCycles=0,sProfExactCycles=0,sProfFogCycles=0;
-static uint64_t sProfUploadCycles=0,sProfBindCycles=0;
-static uint32_t sProfDrawCalls=0,sProfExactCalls=0,sProfFogCalls=0,sProfUploadCalls=0,sProfBindCalls=0,sProfBindTransfers=0,sProfFrames=0;
-static uint64_t sProfFrameDrawCycles=0,sProfFrameTexCycles=0,sProfFrameUntexCycles=0,sProfFrameExactCycles=0,sProfFrameFogCycles=0;
-static uint64_t sProfFrameUploadCycles=0,sProfFrameBindCycles=0;
-static uint32_t sProfFrameDrawCalls=0,sProfFrameExactCalls=0,sProfFrameFogCalls=0,sProfFrameUploadCalls=0,sProfFrameBindCalls=0,sProfFrameBindTransfers=0;
-#endif
 
 #define PS2_SETREG_FOGCOL(R,G,B) ((u64)((R)&0xff) | ((u64)((G)&0xff)<<8) | ((u64)((B)&0xff)<<16))
 
@@ -422,9 +410,6 @@ static void ps2_init_intensity_t8_clut(void){
 
 static void ps2_upload_texture(const uint8_t*buf,int w,int h,unsigned type){
     if(!last_tex||w<=0||h<=0)return;
-#if OOT_PS2_RAPI_PROFILE
-    const uint32_t profUploadStart=ps2_prof_count();
-#endif
     struct Texture *pt=last_tex;
     if(sPrerenderFallback.texture==pt)sPrerenderFallback.valid=false;
     GSTEXTURE*t=&pt->tex;
@@ -483,15 +468,6 @@ static void ps2_upload_texture(const uint8_t*buf,int w,int h,unsigned type){
         pt->content_hash=hval;
     }
     SyncDCache(t->Mem,(u8*)t->Mem+n);
-#if OOT_PS2_RAPI_PROFILE
-    {
-        const uint32_t d = (uint32_t)(ps2_prof_count()-profUploadStart);
-        sProfUploadCycles += d;
-        sProfFrameUploadCycles += d;
-    }
-    sProfUploadCalls++;
-    sProfFrameUploadCalls++;
-#endif
 }
 
 float identity_matrix[4][4] __attribute__((aligned(16))) = {
@@ -546,20 +522,7 @@ static inline void ps2_bind_texture(GSTEXTURE*t){
     }
     const u32 oldVram=t->Vram;
 
-#if OOT_PS2_RAPI_PROFILE
-    const uint32_t profBindStart=ps2_prof_count();
-#endif
     const unsigned transferred=gsKit_TexManager_bind(gs_global,t);
-#if OOT_PS2_RAPI_PROFILE
-    {
-        const uint32_t d = (uint32_t)(ps2_prof_count()-profBindStart);
-        sProfBindCycles += d;
-        sProfFrameBindCycles += d;
-    }
-    sProfBindCalls++;
-    sProfFrameBindCalls++;
-    if(transferred) { sProfBindTransfers++; sProfFrameBindTransfers++; }
-#endif
     if(transferred || t->Vram!=oldVram || sLastBoundGsTex!=t){
         sLastTex0Reg=~0ULL;
         sLastTexFilter=-1;
@@ -1467,10 +1430,6 @@ static void ps2_set_alpha_packet(uint64_t alpha, bool enable){
 
 static void ps2_draw(float*raw,size_t len,size_t tris){
     (void)len;if(!raw||!tris)return;
-#if OOT_PS2_RAPI_PROFILE
-    const uint32_t profStart=ps2_prof_count();
-    int profPath=0;
-#endif
     const bool restorePrerenderAfterDraw=!sPrerender3dStarted;
     if(!sPrerender3dStarted)sPrerender3dStarted=true;
     const bool depth_only=cur_shader&&cur_shader->depth_only;
@@ -1545,18 +1504,12 @@ static void ps2_draw(float*raw,size_t len,size_t tris){
         if(cur_shader->texture_mode==PS2_TEXTURE_MODE_BLEND && sTextureBlendPrecolor && !blend_single_pass &&
            !sTextureBlendReverse && !sDinFireTint && !sTwoTextureEnvPrimTint){
             if(ps2_draw_ps2_blend_exact(v,tris,draw_tex)){
-#if OOT_PS2_RAPI_PROFILE
-                profPath=1;
-#endif
                 goto draw_complete;
             }
             blend_fallback_target=true;
         }
         if(cur_shader->texture_mode==PS2_TEXTURE_MODE_DECAL && cur_shader->texture_alpha &&
            ps2_draw_ps2_decal_rgba_exact(v,tris,draw_tex)){
-#if OOT_PS2_RAPI_PROFILE
-            profPath=1;
-#endif
             goto draw_complete;
         }
     }
@@ -1705,16 +1658,6 @@ draw_complete:
         if(!sPrerenderDepthOnlyPass)ps2_set_frame_write_mask(0);
     }
     if(restorePrerenderAfterDraw)ps2_restore_prerender_fallback();
-#if OOT_PS2_RAPI_PROFILE
-    {
-        const uint32_t d=ps2_prof_count()-profStart;
-        sProfDrawCycles+=d; sProfDrawCalls++;
-        sProfFrameDrawCycles+=d; sProfFrameDrawCalls++;
-        if(profPath){ sProfExactCycles+=d; sProfExactCalls++; sProfFrameExactCycles+=d; sProfFrameExactCalls++; }
-        else if(textured){ sProfTexCycles+=d; sProfFrameTexCycles+=d; }
-        else { sProfUntexCycles+=d; sProfFrameUntexCycles+=d; }
-    }
-#endif
 }
 static void ps2_restore_fog_pass_state(bool emit_state){
     if(!sFogPass.active)return;
@@ -1750,9 +1693,6 @@ static void ps2_draw_fog(float*raw,size_t len,size_t tris,bool texture_alpha,boo
         if(restore)ps2_restore_fog_pass_state(true);
         return;
     }
-#if OOT_PS2_RAPI_PROFILE
-    const uint32_t profFogStart=ps2_prof_count();
-#endif
 
     if(!sFogPass.active){
         sFogPass.active=true;
@@ -1824,13 +1764,6 @@ static void ps2_draw_fog(float*raw,size_t len,size_t tris,bool texture_alpha,boo
 fog_restore:
 
     if(malformed || restore)ps2_restore_fog_pass_state(true);
-#if OOT_PS2_RAPI_PROFILE
-    {
-        const uint32_t d = (uint32_t)(ps2_prof_count()-profFogStart);
-        sProfFogCycles += d; sProfFogCalls++;
-        sProfFrameFogCycles += d; sProfFrameFogCalls++;
-    }
-#endif
 }
 
 void gfx_ps2_draw_triangles_2d(float *raw,size_t unused,size_t count){
@@ -2006,38 +1939,24 @@ static void ps2_init(void) {
     sLastZbufReg=~0ULL;
     sLastAlphaReg=~0ULL;
 
-    OotPs2Trace_Log("rapi mode switch begin");
     gsKit_mode_switch(gs_global, GS_ONESHOT);
-    OotPs2Trace_Log("rapi mode switch done");
     gs_global->Test->ZTST = 2;
-    OotPs2Trace_Log("rapi heap alloc begin");
     p = gsKit_heap_alloc(gs_global, 1, 16, GIF_AD);
-    OotPs2Trace_Log("rapi heap alloc done ptr=%p", p);
     *p++ = GIF_TAG_AD(1);
     *p++ = GIF_AD;
     *p++ = GS_SETREG_TEXA(0, 0, 0x80);
     *p++ = GS_TEXA;
-    OotPs2Trace_Log("rapi initial queue exec begin");
     gsKit_queue_exec(gs_global);
-    OotPs2Trace_Log("rapi initial queue exec done");
-    OotPs2Trace_Log("rapi initial queue reset begin");
     gsKit_queue_reset(gs_global->Os_Queue);
-    OotPs2Trace_Log("rapi initial queue reset done");
-    OotPs2Trace_Log("rapi texture cache alloc begin size=%u", (unsigned)TEXCACHE_SIZE);
     tex_cache = memalign(128, TEXCACHE_SIZE);
-    OotPs2Trace_Log("rapi texture cache alloc done ptr=%p", tex_cache);
     if (!tex_cache) {
         printf("oot-ps2: texture cache alloc failed\n");
         abort();
     }
     tex_ptr = tex_cache;
     tex_end = tex_cache + TEXCACHE_SIZE;
-    OotPs2Trace_Log("rapi viewport begin");
     ps2_viewport(0, 0, gs_global->Width, gs_global->Height);
-    OotPs2Trace_Log("rapi viewport done");
-    OotPs2Trace_Log("rapi scissor begin");
     ps2_scissor(0, 0, gs_global->Width, gs_global->Height);
-    OotPs2Trace_Log("rapi scissor done");
 
     gfx_ps2_apply_video_mode();
 }
@@ -2066,12 +1985,6 @@ static void ps2_restore_prerender_fallback(void){
 }
 static void ps2_resize(void){}
 static void ps2_start(void){
-#if OOT_PS2_RAPI_PROFILE
-    sProfFrameDrawCycles=sProfFrameTexCycles=sProfFrameUntexCycles=sProfFrameExactCycles=sProfFrameFogCycles=0;
-    sProfFrameUploadCycles=sProfFrameBindCycles=0;
-    sProfFrameDrawCalls=sProfFrameExactCalls=sProfFrameFogCalls=sProfFrameUploadCalls=sProfFrameBindCalls=sProfFrameBindTransfers=0;
-#endif
-
     ps2_restore_fog_pass_state(false);
 
     sTextureBlendReverse=false;
@@ -2395,19 +2308,6 @@ void gfx_ps2_render_menu(const char*title,const char*const*lines,int lineCount,i
 }
 
 static void ps2_end(void){
-#if OOT_PS2_RAPI_PROFILE
-    if(++sProfFrames>=20){
-        printf("PS2RAPI draw=%llu tex=%llu untex=%llu exact=%llu fog=%llu upload=%llu bind=%llu calls=%u exact_calls=%u fog_calls=%u upload_calls=%u bind_calls=%u bind_xfer=%u\n",
-            (unsigned long long)sProfDrawCycles,(unsigned long long)sProfTexCycles,
-            (unsigned long long)sProfUntexCycles,(unsigned long long)sProfExactCycles,
-            (unsigned long long)sProfFogCycles,(unsigned long long)sProfUploadCycles,(unsigned long long)sProfBindCycles,
-            (unsigned)sProfDrawCalls,(unsigned)sProfExactCalls,(unsigned)sProfFogCalls,(unsigned)sProfUploadCalls,
-            (unsigned)sProfBindCalls,(unsigned)sProfBindTransfers);
-        sProfDrawCycles=sProfTexCycles=sProfUntexCycles=sProfExactCycles=sProfFogCycles=0;
-        sProfUploadCycles=sProfBindCycles=0;
-        sProfDrawCalls=sProfExactCalls=sProfFogCalls=sProfUploadCalls=sProfBindCalls=sProfBindTransfers=0;sProfFrames=0;
-    }
-#endif
     if(sSuppressFpsOverlay){
         sSuppressFpsOverlay=false;
     }else if(sFpsOverlayEnabled){

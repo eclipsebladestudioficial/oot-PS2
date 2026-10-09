@@ -33,19 +33,7 @@
 
 #define SUPPORT_CHECK(x) assert(x)
 
-#if !defined(OOT_PS2_PERF_BENCH)
-#define OOT_PS2_PERF_BENCH 0
-#endif
-
-#if !defined(OOT_PS2_DEEP_PROFILE)
-#define OOT_PS2_DEEP_PROFILE 0
-#endif
-
 #define GFX_DL_HANDLER
-
-#if !defined(OOT_PS2_GFX_DIAGNOSTICS)
-#define OOT_PS2_GFX_DIAGNOSTICS 0
-#endif
 
 #define SCALE_5_8(VAL_) (((VAL_) * 0xFF) / 0x1F)
 #define SCALE_8_5(VAL_) ((((VAL_) + 4) * 0x1F) / 0xFF)
@@ -94,12 +82,6 @@ extern void gfx_ps2_set_two_texture_blend_active(bool enabled);
 extern void gfx_ps2_set_two_texture_alpha_blend_active(bool enabled);
 extern void gfx_ps2_set_two_texture_env_prim_tint(bool enabled);
 extern void gfx_ps2_set_skip_content_hash(bool enabled);
-
-struct GfxCmdSnapshot {
-    uintptr_t addr;
-    uint32_t w0;
-    uint32_t w1;
-};
 
 struct RGBA {
     uint8_t r, g, b, a;
@@ -286,8 +268,6 @@ static struct RSP {
     } texture_scaling_factor;
 
     void *segments[NUM_SEGMENTS];
-    struct GfxCmdSnapshot segment_cmd[NUM_SEGMENTS];
-
     struct VertexColor loaded_vertices_2D[4];
     struct LoadedVertex loaded_vertices[MAX_VERTICES];
 } rsp  __attribute__((aligned(16)));
@@ -301,7 +281,6 @@ static struct RDP {
         uint8_t siz;
         uint32_t width;
         uint8_t tile_number;
-        struct GfxCmdSnapshot image_cmd;
     } texture_to_load;
     struct {
         const uint8_t *addr;
@@ -311,8 +290,6 @@ static struct RDP {
 
         uint32_t load_row_bytes;
         uint8_t source_nibble_offset;
-        struct GfxCmdSnapshot image_cmd;
-        struct GfxCmdSnapshot load_cmd;
     } loaded_texture[2];
     TextureTileState texture_tile[2];
     bool textures_changed[2];
@@ -404,7 +381,6 @@ static float sPs2ScreenZOffset;
 
 static uint8_t sInvalidTextureBuf[256] __attribute__((aligned(16))) = { 0xff, 0xff, 0xff, 0xff };
 static uint8_t sInvalidPaletteBuf[512] __attribute__((aligned(16))) = { 0xff, 0xff };
-static struct GfxCmdSnapshot sCurrentCmd;
 #define GFX_VALIDATED_DL_CURSOR_CACHE_SIZE 1024
 #define GFX_VALIDATED_READ_CACHE_SIZE 1024
 #define GFX_SEGMENT_ADDRESS_CACHE_SIZE 1024
@@ -421,11 +397,6 @@ typedef struct GfxSegmentAddressCacheEntry {
 static uintptr_t sValidatedDlCursorCache[GFX_VALIDATED_DL_CURSOR_CACHE_SIZE];
 static GfxValidatedReadCacheEntry sValidatedReadCache[GFX_VALIDATED_READ_CACHE_SIZE];
 static GfxSegmentAddressCacheEntry sSegmentAddressCache[GFX_SEGMENT_ADDRESS_CACHE_SIZE];
-#if OOT_PS2_GFX_DIAGNOSTICS
-#define GFX_CAPTURE_CMD(dst, src) ((dst) = (src))
-#else
-#define GFX_CAPTURE_CMD(dst, src) ((void)0)
-#endif
 extern u8 __bss_start[];
 
 static inline bool gfx_addr_is_native(uintptr_t addr) {
@@ -614,29 +585,18 @@ static void gfx_log_bad_data_source(const char* context, const void* addr, size_
     static s32 sBadDataSourceLogCount = 0;
     uintptr_t value = (uintptr_t)addr;
     uint8_t segment = value >> 24;
-    const struct GfxCmdSnapshot emptyCmd = { 0 };
-    const struct GfxCmdSnapshot* segmentCmd = &emptyCmd;
-
-    if (segment < NUM_SEGMENTS) {
-        segmentCmd = &rsp.segment_cmd[segment];
-    }
 
     if (sBadDataSourceLogCount < 32) {
-        printf("oot-port gfx bad data source context=%s addr=%08lx size=%lu cur=%08lx/%08lx/%08lx "
-               "seg=%u segbase=%08lx segcmd=%08lx/%08lx/%08lx "
+        printf("oot-port gfx bad data source context=%s addr=%08lx size=%lu seg=%u segbase=%08lx "
                "seg1=%08lx seg2=%08lx seg3=%08lx seg4=%08lx seg6=%08lx seg8=%08lx seg9=%08lx sega=%08lx "
-               "segc=%08lx segd=%08lx segacmd=%08lx/%08lx/%08lx\n",
-               context, (unsigned long)value, (unsigned long)sizeBytes, (unsigned long)sCurrentCmd.addr,
-               (unsigned long)sCurrentCmd.w0, (unsigned long)sCurrentCmd.w1, segment,
+               "segc=%08lx segd=%08lx\n",
+               context, (unsigned long)value, (unsigned long)sizeBytes, segment,
                (segment < NUM_SEGMENTS) ? (unsigned long)(uintptr_t)rsp.segments[segment] : 0,
-               (unsigned long)segmentCmd->addr, (unsigned long)segmentCmd->w0, (unsigned long)segmentCmd->w1,
                (unsigned long)(uintptr_t)rsp.segments[1], (unsigned long)(uintptr_t)rsp.segments[2],
                (unsigned long)(uintptr_t)rsp.segments[3], (unsigned long)(uintptr_t)rsp.segments[4],
                (unsigned long)(uintptr_t)rsp.segments[6], (unsigned long)(uintptr_t)rsp.segments[8],
                (unsigned long)(uintptr_t)rsp.segments[9], (unsigned long)(uintptr_t)rsp.segments[10],
-               (unsigned long)(uintptr_t)rsp.segments[12], (unsigned long)(uintptr_t)rsp.segments[13],
-               (unsigned long)rsp.segment_cmd[10].addr, (unsigned long)rsp.segment_cmd[10].w0,
-               (unsigned long)rsp.segment_cmd[10].w1);
+               (unsigned long)(uintptr_t)rsp.segments[12], (unsigned long)(uintptr_t)rsp.segments[13]);
     } else if (sBadDataSourceLogCount == 32) {
         printf("oot-port gfx bad data source logs suppressed\n");
     }
@@ -648,33 +608,15 @@ static void gfx_log_bad_texture_source(int tile, const char* context, const uint
     static s32 sBadTextureSourceLogCount = 0;
 
     if (sBadTextureSourceLogCount < 16) {
-        const struct GfxCmdSnapshot emptyCmd = { 0 };
-        const struct GfxCmdSnapshot* imageCmd = &rdp.texture_to_load.image_cmd;
-        const struct GfxCmdSnapshot* loadCmd = &emptyCmd;
-
-        if (tile >= 0 && tile < 2) {
-            imageCmd = &rdp.loaded_texture[tile].image_cmd;
-            loadCmd = &rdp.loaded_texture[tile].load_cmd;
-        }
-
-        printf("oot-port gfx bad texture source context=%s tile=%d addr=%08lx size=%lu cur=%08lx/%08lx/%08lx "
-               "setimg=%08lx/%08lx/%08lx load=%08lx/%08lx/%08lx tex=%08lx fmt=%u siz=%u width=%lu "
-               "loadslot=%u seg1=%08lx seg4=%08lx seg8=%08lx seg9=%08lx sega=%08lx segd=%08lx "
-               "seg8cmd=%08lx/%08lx/%08lx seg9cmd=%08lx/%08lx/%08lx segacmd=%08lx/%08lx/%08lx\n",
+        printf("oot-port gfx bad texture source context=%s tile=%d addr=%08lx size=%lu "
+               "tex=%08lx fmt=%u siz=%u width=%lu loadslot=%u "
+               "seg1=%08lx seg4=%08lx seg8=%08lx seg9=%08lx sega=%08lx segd=%08lx\n",
                context, tile, (unsigned long)(uintptr_t)addr, (unsigned long)sizeBytes,
-               (unsigned long)sCurrentCmd.addr, (unsigned long)sCurrentCmd.w0, (unsigned long)sCurrentCmd.w1,
-               (unsigned long)imageCmd->addr, (unsigned long)imageCmd->w0, (unsigned long)imageCmd->w1,
-               (unsigned long)loadCmd->addr, (unsigned long)loadCmd->w0, (unsigned long)loadCmd->w1,
                (unsigned long)(uintptr_t)rdp.texture_to_load.addr, rdp.texture_to_load.fmt, rdp.texture_to_load.siz,
                (unsigned long)rdp.texture_to_load.width, rdp.texture_to_load.tile_number,
                (unsigned long)(uintptr_t)rsp.segments[1], (unsigned long)(uintptr_t)rsp.segments[4],
                (unsigned long)(uintptr_t)rsp.segments[8], (unsigned long)(uintptr_t)rsp.segments[9],
-               (unsigned long)(uintptr_t)rsp.segments[10], (unsigned long)(uintptr_t)rsp.segments[13],
-               (unsigned long)rsp.segment_cmd[8].addr, (unsigned long)rsp.segment_cmd[8].w0,
-               (unsigned long)rsp.segment_cmd[8].w1, (unsigned long)rsp.segment_cmd[9].addr,
-               (unsigned long)rsp.segment_cmd[9].w0, (unsigned long)rsp.segment_cmd[9].w1,
-               (unsigned long)rsp.segment_cmd[10].addr, (unsigned long)rsp.segment_cmd[10].w0,
-               (unsigned long)rsp.segment_cmd[10].w1);
+               (unsigned long)(uintptr_t)rsp.segments[10], (unsigned long)(uintptr_t)rsp.segments[13]);
     } else if (sBadTextureSourceLogCount == 16) {
         printf("oot-port gfx bad texture source logs suppressed\n");
     }
@@ -914,34 +856,6 @@ static inline __attribute__((always_inline)) void gfx_two_texture_blend_pass_alp
     uint8_t surfaceAlpha, uint8_t mixAlpha, bool blendTextureAlpha,
     bool uncompensatedTextureAlpha, uint8_t* baseAlpha, uint8_t* overlayAlpha);
 
-#if OOT_PS2_PERF_BENCH
-static uint32_t sPerformanceCommandCount;
-static uint32_t sPerformanceInputTriangleCount;
-static uint32_t sPerformanceOutputTriangleCount;
-static uint32_t sPerformanceFlushCount;
-static uint32_t sPerformanceDrawCallCount;
-static uint32_t sPerformanceOpaqueDrawCallCount;
-static uint32_t sPerformanceOpaqueTriangleCount;
-static uint32_t sPerformanceTranslucentDrawCallCount;
-static uint32_t sPerformanceTranslucentTriangleCount;
-static uint32_t sPerformanceMaxBatchTriangles;
-static uint32_t sPerformanceTextureUploadCount;
-static uint32_t sPerformanceTextureSameFlushCount;
-static uint32_t sPerformanceTextureChangeCount;
-#if OOT_PS2_PERF_BENCH
-static uint32_t sPs2OpcodeCounts[256];
-#if OOT_PS2_DEEP_PROFILE
-static uint32_t sPs2DeepVtxCycles;
-static uint32_t sPs2DeepTriCycles;
-static uint32_t sPs2DeepFlushCycles;
-static inline __attribute__((always_inline)) uint32_t gfx_ps2_read_count(void) {
-    uint32_t v;
-    __asm__ volatile("mfc0 %0, $9" : "=r"(v));
-    return v;
-}
-#endif
-#endif
-#endif
 static size_t buf_vbo_len;
 static size_t buf_num_vert;
 static size_t buf_vbo_num_tris;
@@ -1200,14 +1114,6 @@ static inline void gfx_upload_texture(int tile, const uint8_t* buf, uint32_t wid
     gfx_rapi->upload_texture(sPs2UploadScratch, uploadWidth, uploadHeight, type);
 }
 
-#include <time.h>
-__attribute__((unused))
-static unsigned long get_time(void) {
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (unsigned long)ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
-}
-
 #define Z_NEG  (0x01)
 #define Z_POS  (0x02)
 #define Y_NEG  (0x04)
@@ -1455,9 +1361,6 @@ void gfx_clip_single_vert(struct LoadedVertex* p_p_vertices, size_t* p_num_verti
 }
 
 static void gfx_flush(void) {
-#if OOT_PS2_DEEP_PROFILE
-    const uint32_t ps2DeepStart = gfx_ps2_read_count();
-#endif
     if (buf_vbo_len > 0) {
 
         const bool twoTextureBlend = rendering_state.tri_pipeline.two_texture_blend &&
@@ -1482,21 +1385,6 @@ static void gfx_flush(void) {
                 }
             }
         }
-
-#if defined(OOTDEBUG) || OOT_PS2_PERF_BENCH
-        sPerformanceFlushCount++;
-        sPerformanceDrawCallCount += (twoTextureBlend ? 2 : 1) + (useFog ? (twoTextureAlphaFog ? 2 : 1) : 0);
-        if (rendering_state.alpha_blend || twoTextureBlend) {
-            sPerformanceTranslucentDrawCallCount += twoTextureBlend ? 2 : 1;
-            sPerformanceTranslucentTriangleCount += buf_vbo_num_tris * (twoTextureBlend ? 2 : 1);
-        } else {
-            sPerformanceOpaqueDrawCallCount++;
-            sPerformanceOpaqueTriangleCount += buf_vbo_num_tris;
-        }
-        if (buf_vbo_num_tris > sPerformanceMaxBatchTriangles) {
-            sPerformanceMaxBatchTriangles = buf_vbo_num_tris;
-        }
-#endif
 
         if (twoTextureBlend) {
             gfx_rapi->set_use_alpha(true);
@@ -1527,10 +1415,6 @@ static void gfx_flush(void) {
             rendering_state.bound_texture_tile = 0;
         }
         if (useFog) {
-#if defined(OOTDEBUG) || OOT_PS2_PERF_BENCH
-            sPerformanceTranslucentDrawCallCount += twoTextureAlphaFog ? 2 : 1;
-            sPerformanceTranslucentTriangleCount += buf_vbo_num_tris * (twoTextureAlphaFog ? 2 : 1);
-#endif
             float* fogBuffer = fogUsesTextureAlpha ? (float*)buf_vbo_fog.textured
                                                    : (float*)buf_vbo_fog.color;
             const size_t fogBufferLen =
@@ -1568,11 +1452,7 @@ static void gfx_flush(void) {
         buf_vbo_len = 0;
         buf_num_vert = 0;
         buf_vbo_num_tris = 0;
-
     }
-#if OOT_PS2_DEEP_PROFILE
-    sPs2DeepFlushCycles += gfx_ps2_read_count() - ps2DeepStart;
-#endif
 }
 
 static struct ShaderProgram *gfx_lookup_or_create_shader_program(uint32_t shader_id) {
@@ -3909,18 +3789,8 @@ static void gfx_prepare_tri_pipeline_state(void) {
             }
 
             if (rdp.textures_changed[i]) {
-#if OOT_PS2_PERF_BENCH
-                struct TextureHashmapNode* ps2PrevTexture = rendering_state.textures[i];
-                const uint32_t ps2PrevUploads = sPerformanceTextureUploadCount;
-                sPerformanceTextureChangeCount++;
-#endif
                 gfx_flush();
                 import_texture(i);
-#if OOT_PS2_PERF_BENCH
-                if (ps2PrevTexture == rendering_state.textures[i] && ps2PrevUploads == sPerformanceTextureUploadCount) {
-                    sPerformanceTextureSameFlushCount++;
-                }
-#endif
                 rdp.textures_changed[i] = false;
             }
             if (backend_state_dirty ||
@@ -4436,9 +4306,6 @@ struct ShaderProgram {
 };
 
 static bool gfx_sp_vertex(size_t n_vertices, size_t dest_index, const Vtx *vertices) {
-#if OOT_PS2_DEEP_PROFILE
-    const uint32_t ps2DeepStart = gfx_ps2_read_count();
-#endif
     float tempVec[4] __attribute__((aligned(16)));
     float normalVec[4] __attribute__((aligned(16)));
     const float hudAnchorOffsetNdc = sHudViewportFullscreen ? sHudAnchorOffsetNdc : 0.0f;
@@ -4586,9 +4453,6 @@ static bool gfx_sp_vertex(size_t n_vertices, size_t dest_index, const Vtx *verti
         d->color.a = v->cn[3];
     }
 
-#if OOT_PS2_DEEP_PROFILE
-    sPs2DeepVtxCycles += gfx_ps2_read_count() - ps2DeepStart;
-#endif
     return true;
 }
 
@@ -4704,13 +4568,6 @@ static inline __attribute__((always_inline)) float gfx_triangle_cross_homogeneou
 
 static void gfx_sp_triangles_run(uint32_t packed0, uint32_t packed1, uint8_t triangleCount,
                                  bool* ps2RunPipelinePrepared, uint32_t ps2RunCullMode) {
-#if OOT_PS2_DEEP_PROFILE
-    const uint32_t ps2DeepStart = gfx_ps2_read_count();
-#endif
-
-#if OOT_PS2_PERF_BENCH
-    sPerformanceInputTriangleCount += triangleCount;
-#endif
     for (uint8_t triangle = 0; triangle < triangleCount; triangle++) {
         const uint32_t packed = triangle == 0 ? packed0 : packed1;
         const uint8_t vtx1_idx = ((packed >> 16) & 0xFF) / GFX_TRI_INDEX_DIVISOR;
@@ -4898,10 +4755,6 @@ static void gfx_sp_triangles_run(uint32_t packed0, uint32_t packed1, uint8_t tri
         continue;
     }
 
-#if OOT_PS2_PERF_BENCH
-    sPerformanceOutputTriangleCount += new_tri_count;
-#endif
-
     if ((buf_num_vert + clipped_vertices_num) > (sizeof(buf_vbo) / sizeof(buf_vbo[0]))) {
         gfx_flush();
     }
@@ -5048,9 +4901,6 @@ static void gfx_sp_triangles_run(uint32_t packed0, uint32_t packed1, uint8_t tri
         gfx_flush();
     }
     }
-#if OOT_PS2_DEEP_PROFILE
-    sPs2DeepTriCycles += gfx_ps2_read_count() - ps2DeepStart;
-#endif
 }
 
 static inline void gfx_sp_triangles(uint32_t packed0, uint32_t packed1, uint8_t triangleCount) {
@@ -5375,7 +5225,6 @@ static void gfx_sp_moveword(uint8_t index, uint16_t offset, uint32_t data) {
                     base = normalized;
                 }
                 rsp.segments[segment] = (void*)base;
-                GFX_CAPTURE_CMD(rsp.segment_cmd[segment], sCurrentCmd);
             }
             break;
         }
@@ -6575,47 +6424,19 @@ static void gfx_log_unmapped_segment(uintptr_t addr) {
     sUnmappedSegmentLogCount++;
 }
 
-static void gfx_log_segment_translation(uintptr_t addr, void* base, void* translated) {
-#if OOT_PS2_GFX_DIAGNOSTICS
-    static s32 sSegmentTranslateLogCount = 0;
-    uint8_t segment = addr >> 24;
-
-    if ((segment != 0x0C) && (segment != 0x0D)) {
-        return;
-    }
-
-    if (sSegmentTranslateLogCount < 32) {
-        printf("oot-port gfx segment translate addr=%08lx segment=%u offset=%06lx base=%08lx out=%08lx\n",
-               (unsigned long)addr, segment, (unsigned long)(addr & 0x00FFFFFFU), (unsigned long)(uintptr_t)base,
-               (unsigned long)(uintptr_t)translated);
-    } else if (sSegmentTranslateLogCount == 32) {
-        printf("oot-port gfx segment translate logs suppressed\n");
-    }
-
-    sSegmentTranslateLogCount++;
-#else
-    _UNUSED(addr);
-    _UNUSED(base);
-    _UNUSED(translated);
-#endif
-}
-
 static void gfx_log_bad_dl_cursor(const char* reason, uintptr_t raw, uintptr_t translated) {
     static s32 sBadDlCursorLogCount = 0;
 
     if (sBadDlCursorLogCount < 32) {
-        printf("oot-port gfx bad dl cursor reason=%s raw=%08lx translated=%08lx cur=%08lx/%08lx/%08lx "
+        printf("oot-port gfx bad dl cursor reason=%s raw=%08lx translated=%08lx "
                "seg1=%08lx seg2=%08lx seg3=%08lx seg4=%08lx seg6=%08lx seg8=%08lx seg9=%08lx sega=%08lx "
-               "segc=%08lx segd=%08lx segacmd=%08lx/%08lx/%08lx\n",
-               reason, (unsigned long)raw, (unsigned long)translated, (unsigned long)sCurrentCmd.addr,
-               (unsigned long)sCurrentCmd.w0, (unsigned long)sCurrentCmd.w1,
+               "segc=%08lx segd=%08lx\n",
+               reason, (unsigned long)raw, (unsigned long)translated,
                (unsigned long)(uintptr_t)rsp.segments[1], (unsigned long)(uintptr_t)rsp.segments[2],
                (unsigned long)(uintptr_t)rsp.segments[3], (unsigned long)(uintptr_t)rsp.segments[4],
                (unsigned long)(uintptr_t)rsp.segments[6], (unsigned long)(uintptr_t)rsp.segments[8],
                (unsigned long)(uintptr_t)rsp.segments[9], (unsigned long)(uintptr_t)rsp.segments[10],
-               (unsigned long)(uintptr_t)rsp.segments[12], (unsigned long)(uintptr_t)rsp.segments[13],
-               (unsigned long)rsp.segment_cmd[10].addr, (unsigned long)rsp.segment_cmd[10].w0,
-               (unsigned long)rsp.segment_cmd[10].w1);
+               (unsigned long)(uintptr_t)rsp.segments[12], (unsigned long)(uintptr_t)rsp.segments[13]);
     } else if (sBadDlCursorLogCount == 32) {
         printf("oot-port gfx bad dl cursor logs suppressed\n");
     }
@@ -6689,7 +6510,6 @@ static __attribute__((noinline)) void *gfx_resolve_segmented_address_slow(uintpt
                 (translatedValue != w1)) {
                 translated = gfx_resolve_segmented_address_slow(translatedValue);
                 if (translated != (void*)translatedValue) {
-                    gfx_log_segment_translation(w1, rsp.segments[segment], translated);
                     return translated;
                 }
             }
@@ -6700,7 +6520,6 @@ static __attribute__((noinline)) void *gfx_resolve_segmented_address_slow(uintpt
 
             translated = (void*)translatedValue;
 
-            gfx_log_segment_translation(w1, rsp.segments[segment], translated);
             return translated;
         }
 
@@ -6713,7 +6532,6 @@ static __attribute__((noinline)) void *gfx_resolve_segmented_address_slow(uintpt
                 translatedValue = normalized;
             }
             translated = (void*)translatedValue;
-            gfx_log_segment_translation(w1, (void*)(uintptr_t)gSegments[segment], translated);
             return translated;
         }
 
@@ -6895,7 +6713,6 @@ static bool gfx_s2dex_bg_prepare_texture(const uint8_t* source, uint32_t width, 
     rdp.texture_to_load.siz = siz;
     rdp.texture_to_load.width = width;
     rdp.texture_to_load.tile_number = tile;
-    GFX_CAPTURE_CMD(rdp.texture_to_load.image_cmd, sCurrentCmd);
 
     rdp.loaded_texture[tile].addr = source;
     rdp.loaded_texture[tile].size_bytes = sourceSpan;
@@ -6903,8 +6720,6 @@ static bool gfx_s2dex_bg_prepare_texture(const uint8_t* source, uint32_t width, 
     rdp.loaded_texture[tile].row_stride_bytes = rowBytes;
     rdp.loaded_texture[tile].load_row_bytes = rowBytes;
     rdp.loaded_texture[tile].source_nibble_offset = 0;
-    GFX_CAPTURE_CMD(rdp.loaded_texture[tile].image_cmd, sCurrentCmd);
-    GFX_CAPTURE_CMD(rdp.loaded_texture[tile].load_cmd, sCurrentCmd);
 
     TextureTileState* tileState = gfx_get_texture_tile(tile);
 
@@ -7173,15 +6988,6 @@ static inline __attribute__((always_inline)) bool gfx_ps2_try_texture_block_fast
                              (w1 >> 12) & 0xFFFU, w1 & 0xFFFU);
     }
 
-#if OOT_PS2_PERF_BENCH
-
-    sPerformanceCommandCount += 6;
-    sPs2OpcodeCounts[G_SETTILE] += 2;
-    sPs2OpcodeCounts[G_RDPLOADSYNC]++;
-    sPs2OpcodeCounts[G_LOADBLOCK]++;
-    sPs2OpcodeCounts[G_RDPPIPESYNC]++;
-    sPs2OpcodeCounts[G_SETTILESIZE]++;
-#endif
     *cmdP = c + 6;
     return true;
 }
@@ -7197,12 +7003,6 @@ static void gfx_run_dl(Gfx* cmd) {
 
     for (;;) {
         uint32_t opcode = cmd->words.w0 >> 24;
-#if OOT_PS2_PERF_BENCH
-        sPerformanceCommandCount++;
-#if OOT_PS2_PERF_BENCH
-        sPs2OpcodeCounts[opcode]++;
-#endif
-#endif
         if (__builtin_expect(opcode == G_SETTIMG, 0) && gfx_ps2_try_texture_block_fastpath(&cmd)) {
             ++cmd;
             continue;
@@ -7389,10 +7189,6 @@ static void gfx_run_dl(Gfx* cmd) {
                         break;
                     }
                     ++cmd;
-#if OOT_PS2_PERF_BENCH
-                    sPerformanceCommandCount++;
-                    sPs2OpcodeCounts[(uint8_t)G_TRI2]++;
-#endif
                 }
                 break;
 #endif
@@ -7563,12 +7359,6 @@ void gfx_set_dimensions(uint32_t width, uint32_t height) {
     gfx_rapi->on_resize();
 }
 
-float times[30];
-float time_avg;
-float time_first_200;
-int total_frame_counter;
-int frame_counter;
-
 void gfx_init(struct GfxWindowManagerAPI *wapi, struct GfxRenderingAPI *rapi, const char *game_name, bool start_in_fullscreen) {
     gfx_wapi = wapi;
     gfx_rapi = rapi;
@@ -7577,15 +7367,6 @@ void gfx_init(struct GfxWindowManagerAPI *wapi, struct GfxRenderingAPI *rapi, co
     rendering_state.color_combiner_valid = false;
     rendering_state.tri_pipeline_dirty = true;
     rendering_state.backend_state_dirty = true;
-
-    int i;
-    for(i=0;i<30;i++){
-        times[i] = 0.0f;
-    }
-    frame_counter = 0;
-    time_avg = 0.0f;
-    time_first_200 = 0;
-    total_frame_counter = 0;
 
     static uint32_t precomp_shaders[] = {
         0x01200200,
@@ -7641,41 +7422,12 @@ void gfx_start_frame(void) {
     if (sTextureCacheFrameSerial == 0) {
         sTextureCacheFrameSerial = 1;
     }
-#if defined(OOTDEBUG) || OOT_PS2_PERF_BENCH
-    sPerformanceCommandCount = 0;
-    sPerformanceInputTriangleCount = 0;
-    sPerformanceOutputTriangleCount = 0;
-    sPerformanceFlushCount = 0;
-    sPerformanceDrawCallCount = 0;
-    sPerformanceOpaqueDrawCallCount = 0;
-    sPerformanceOpaqueTriangleCount = 0;
-    sPerformanceTranslucentDrawCallCount = 0;
-    sPerformanceTranslucentTriangleCount = 0;
-    sPerformanceMaxBatchTriangles = 0;
-    sPerformanceTextureUploadCount = 0;
-    sPerformanceTextureSameFlushCount = 0;
-    sPerformanceTextureChangeCount = 0;
-#if OOT_PS2_PERF_BENCH
-    memset(sPs2OpcodeCounts, 0, sizeof(sPs2OpcodeCounts));
-#if OOT_PS2_DEEP_PROFILE
-    sPs2DeepVtxCycles = 0;
-    sPs2DeepTriCycles = 0;
-    sPs2DeepFlushCycles = 0;
-#endif
-#endif
-#endif
     memset(sValidatedDlCursorCache, 0, sizeof(sValidatedDlCursorCache));
     memset(sValidatedReadCache, 0, sizeof(sValidatedReadCache));
     gfx_wapi->handle_events();
 }
 
 void gfx_run(Gfx *commands) {
-#if OOT_PS2_PERF_BENCH
-    uint64_t displayListStartUsec;
-    uint64_t displayListEndUsec;
-    uint64_t submitEndUsec;
-#endif
-
     gfx_sp_reset();
     sPs2MvpDirty = true;
 
@@ -7690,98 +7442,10 @@ void gfx_run(Gfx *commands) {
     rendering_state.bound_texture_tile = -1;
     gfx_mark_tri_pipeline_dirty();
     sUploadedProjectionValid = false;
-#if OOT_PS2_PERF_BENCH
-    displayListStartUsec = (uint64_t)(gfx_wapi->get_time() * 1000000.0);
-#endif
-#if OOT_PS2_STAGE_DIAG
-    double ps2DiagDlBegin = gfx_wapi->get_time();
-#endif
     gfx_run_dl(commands);
     gfx_flush();
-#if OOT_PS2_STAGE_DIAG
-    double ps2DiagDlEnd = gfx_wapi->get_time();
-#endif
-#if OOT_PS2_PERF_BENCH
-    displayListEndUsec = (uint64_t)(gfx_wapi->get_time() * 1000000.0);
-#endif
     gfx_rapi->end_frame();
     gfx_wapi->swap_buffers_begin();
-#if OOT_PS2_STAGE_DIAG
-    double ps2DiagSubmitEnd = gfx_wapi->get_time();
-    {
-        static unsigned ps2DiagFrames;
-        static double ps2DiagDlAccum;
-        static double ps2DiagSubmitAccum;
-        ps2DiagFrames++;
-        ps2DiagDlAccum += ps2DiagDlEnd - ps2DiagDlBegin;
-        ps2DiagSubmitAccum += ps2DiagSubmitEnd - ps2DiagDlEnd;
-        if (ps2DiagFrames >= 30U) {
-            printf("PS2STAGE dl_us=%u submit_us=%u\n",
-                   (unsigned)(ps2DiagDlAccum * 1000000.0 / ps2DiagFrames),
-                   (unsigned)(ps2DiagSubmitAccum * 1000000.0 / ps2DiagFrames));
-            ps2DiagFrames = 0;
-            ps2DiagDlAccum = 0.0;
-            ps2DiagSubmitAccum = 0.0;
-        }
-    }
-#endif
-#if OOT_PS2_PERF_BENCH
-    submitEndUsec = (uint64_t)(gfx_wapi->get_time() * 1000000.0);
-    {
-        static uint32_t benchFrame;
-        static uint64_t dlAccum, submitAccum;
-        static uint32_t cmdAccum, inTriAccum, outTriAccum, flushAccum, drawAccum, uploadAccum, texSameAccum, texChangeAccum;
-        static uint32_t maxBatch;
-#if OOT_PS2_DEEP_PROFILE
-        static uint64_t deepVtxAccum, deepTriAccum, deepFlushAccum;
-        deepVtxAccum += sPs2DeepVtxCycles;
-        deepTriAccum += sPs2DeepTriCycles;
-        deepFlushAccum += sPs2DeepFlushCycles;
-#endif
-        dlAccum += displayListEndUsec - displayListStartUsec;
-        submitAccum += submitEndUsec - displayListEndUsec;
-        cmdAccum += sPerformanceCommandCount;
-        inTriAccum += sPerformanceInputTriangleCount;
-        outTriAccum += sPerformanceOutputTriangleCount;
-        flushAccum += sPerformanceFlushCount;
-        drawAccum += sPerformanceDrawCallCount;
-        uploadAccum += sPerformanceTextureUploadCount;
-        texSameAccum += sPerformanceTextureSameFlushCount;
-        texChangeAccum += sPerformanceTextureChangeCount;
-        if (sPerformanceMaxBatchTriangles > maxBatch) maxBatch = sPerformanceMaxBatchTriangles;
-        {
-            static uint32_t opAccum[256];
-            for (unsigned oi=0; oi<256; oi++) opAccum[oi] += sPs2OpcodeCounts[oi];
-            if (benchFrame + 1 >= 20) {
-                for (int rank=0; rank<10; rank++) {
-                    unsigned best=0; uint32_t bestv=0;
-                    for (unsigned oi=0; oi<256; oi++) if (opAccum[oi]>bestv) { bestv=opAccum[oi]; best=oi; }
-                    if(bestv==0)break;
-                    printf("PS2OP rank=%d op=%02x count=%lu\n",rank,(unsigned)best,(unsigned long)(bestv/20U));
-                    opAccum[best]=0;
-                }
-                memset(opAccum,0,sizeof(opAccum));
-            }
-        }
-        benchFrame++;
-        if (benchFrame >= 20) {
-#if OOT_PS2_DEEP_PROFILE
-            printf("PS2DEEP vtx_count=%llu tri_count=%llu flush_count=%llu\n",
-                   (unsigned long long)(deepVtxAccum/benchFrame),
-                   (unsigned long long)(deepTriAccum/benchFrame),
-                   (unsigned long long)(deepFlushAccum/benchFrame));
-            deepVtxAccum = deepTriAccum = deepFlushAccum = 0;
-#endif
-            printf("PS2GFX dl_us=%llu submit_us=%llu cmd=%u in=%u out=%u flush=%u draw=%u upload=%u texchg=%u texsame=%u maxbatch=%u\n",
-                   (unsigned long long)(dlAccum/benchFrame), (unsigned long long)(submitAccum/benchFrame),
-                   cmdAccum/benchFrame, inTriAccum/benchFrame, outTriAccum/benchFrame,
-                   flushAccum/benchFrame, drawAccum/benchFrame, uploadAccum/benchFrame,
-                   texChangeAccum/benchFrame, texSameAccum/benchFrame, maxBatch);
-            benchFrame=0; dlAccum=submitAccum=0; cmdAccum=inTriAccum=outTriAccum=flushAccum=drawAccum=uploadAccum=texSameAccum=texChangeAccum=0; maxBatch=0;
-        }
-    }
-#endif
-
 }
 
 void gfx_end_frame(void) {

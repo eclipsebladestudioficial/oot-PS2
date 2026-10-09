@@ -2,7 +2,6 @@
 
 #include <delaythread.h>
 #include <ee_regs.h>
-#include <stdarg.h>
 #include <fcntl.h>
 #include <kernel.h>
 #include <libpad.h>
@@ -35,10 +34,6 @@ static u8 sPadBuffer[256] __attribute__((aligned(64)));
 static struct padButtonStatus sPadStatus __attribute__((aligned(64)));
 static volatile s32 sPadRightX;
 static volatile s32 sPadRightY;
-static u32 sOotPs2TraceSequence;
-static char sOotPs2TraceMessage[384] __attribute__((aligned(64)));
-static char sOotPs2TraceLine[448] __attribute__((aligned(64)));
-static s32 sOotPs2TraceScreenReady;
 static s32 sOotPs2DiscBootEarly;
 
 void OotPs2Platform_SetDiscBoot(s32 discBoot) {
@@ -47,20 +42,6 @@ void OotPs2Platform_SetDiscBoot(s32 discBoot) {
 
 s32 OotPs2Platform_IsDiscBoot(void) {
     return sOotPs2DiscBootEarly;
-}
-
-void OotPs2Trace_Init(void) {
-}
-
-void OotPs2Trace_EnableScreen(void) {
-}
-
-void OotPs2Trace_Log(const char* format, ...) {
-    (void)format;
-}
-
-const char* OotPs2Trace_Path(void) {
-    return "off";
 }
 
 static OotPs2ThreadSlot* OotPs2Thread_FindSlot(s32 id) {

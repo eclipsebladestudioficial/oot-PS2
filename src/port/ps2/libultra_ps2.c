@@ -407,35 +407,22 @@ void isPrintfInit(void) {
 void __osInitialize_common(void) {
     s32 i;
 
-    OotPs2Trace_Log("os common stop timer service begin");
     OotPort_StopTimerService();
-    OotPs2Trace_Log("os common stop timer service done");
-    OotPs2Trace_Log("os common stop queue lock begin");
     OotPort_StopMesgQueueLock();
-    OotPs2Trace_Log("os common stop queue lock done");
 
-    OotPs2Trace_Log("os common clear runtime state begin");
     memset(sThreadSlots, 0, sizeof(sThreadSlots));
     memset(sTimerSlots, 0, sizeof(sTimerSlots));
     memset(sControllerPads, 0, sizeof(sControllerPads));
     memset(sControllerStatus, 0, sizeof(sControllerStatus));
     memset(&sCurrentViContext, 0, sizeof(sCurrentViContext));
-    OotPs2Trace_Log("os common clear runtime state done");
 
     for (i = 0; i < OOT_PS2_MAX_THREADS; i++) {
         sThreadSlots[i].ps2ThreadId = OOT_PS2_INVALID_HANDLE;
     }
-    OotPs2Trace_Log("os common thread slots initialized count=%d", OOT_PS2_MAX_THREADS);
-
     osMemSize = 0x02000000;
     osClockRate = OS_CLOCK_RATE;
-    OotPs2Trace_Log("os common globals mem=%u clock=%llu", (unsigned)osMemSize, (unsigned long long)osClockRate);
-    OotPs2Trace_Log("os common pad init begin");
     OotPs2Pad_Init();
-    OotPs2Trace_Log("os common pad init done");
-    OotPs2Trace_Log("os common queue lock ensure begin");
     OotPort_EnsureMesgQueueLock();
-    OotPs2Trace_Log("os common queue lock ensure done sema=%d", (int)sMesgQueueLockSema);
 }
 
 void __osInitialize_autodetect(void) {

@@ -1350,7 +1350,6 @@ PS2_PORT_RUNTIME_SOURCES := \
 	src/port/ps2/oot_ps2_controls.c \
 	src/port/ps2/oot_ps2_game.c \
 	src/port/ps2/oot_ps2_home_menu.c \
-	src/port/ps2/oot_ps2_lag_diag.c \
 	src/port/ps2/oot_ps2_memory.c \
 	src/port/ps2/oot_ps2_platform.c \
 	src/port/ps2/oot_ps2_renderer.c \
