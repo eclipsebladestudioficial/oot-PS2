@@ -14,7 +14,11 @@ typedef struct Color_RGBA8 {
 // only use when necessary for alignment purposes
 typedef union Color_RGBA8_u32 {
     struct {
+#if defined(TARGET_PS2) && TARGET_PS2
+        u8 a, b, g, r;
+#else
         u8 r, g, b, a;
+#endif
     };
     u32 rgba;
 } Color_RGBA8_u32;
