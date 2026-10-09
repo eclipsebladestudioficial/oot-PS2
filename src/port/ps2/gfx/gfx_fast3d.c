@@ -225,6 +225,7 @@ struct TriPipelineState {
     bool flame_texture_atlas;
     bool texture_tint_colors_corrected;
     bool two_texture_uncompensated_alpha;
+    struct RGBA texture_tint_prim_color;
     struct RGBA texture_tint_env_color;
     bool color_mul_env;
     bool color_mul_prim;
@@ -3538,35 +3539,13 @@ static void gfx_prepare_flame_atlas_coord_state(struct TriPipelineState* state) 
         GFX_FLAME_ATLAS_HEIGHT;
 }
 
-static bool gfx_ps2_env_alpha_two_texture_pair_is_real(void) {
-    const TextureTileState* tile0 = gfx_get_texture_tile(0);
-    const TextureTileState* tile1 = gfx_get_texture_tile(1);
-    const uint32_t w0 = gfx_texture_import_width(0);
-    const uint32_t h0 = gfx_texture_import_height(0);
-    const uint32_t w1 = gfx_texture_import_width(1);
-    const uint32_t h1 = gfx_texture_import_height(1);
-    const bool i0 = tile0->fmt == G_IM_FMT_I &&
-                    (tile0->siz == G_IM_SIZ_4b || tile0->siz == G_IM_SIZ_8b);
-    const bool i1 = tile1->fmt == G_IM_FMT_I &&
-                    (tile1->siz == G_IM_SIZ_4b || tile1->siz == G_IM_SIZ_8b);
-
-    if (rdp.loaded_texture[0].addr == NULL || rdp.loaded_texture[1].addr == NULL ||
-        !i0 || !i1 || w0 == 0 || h0 == 0 || w1 == 0 || h1 == 0) {
+static bool gfx_ps2_env_alpha_two_texture_pair_is_supported(void) {
+    if (rdp.loaded_texture[0].addr == NULL || rdp.loaded_texture[1].addr == NULL) {
         return false;
     }
 
-    if (w0 <= 32 && w1 <= 32 && h0 <= 128 && h1 <= 128) {
-        return true;
-    }
-
-    if (w0 == 64 && w1 == 64 && h0 == h1 && h0 <= 32 &&
-        (tile0->cms & G_TX_CLAMP) && (tile0->cmt & G_TX_CLAMP) &&
-        (tile1->cms & G_TX_CLAMP) && (tile1->cmt & G_TX_CLAMP) &&
-        rdp.loaded_texture[0].addr != rdp.loaded_texture[1].addr) {
-        return true;
-    }
-
-    return false;
+    return gfx_ps2_validate_texture_import_dimensions(0) &&
+           gfx_ps2_validate_texture_import_dimensions(1);
 }
 
 static inline void gfx_ps2_refresh_screen_transform(void) {
@@ -3616,7 +3595,7 @@ static void gfx_prepare_tri_pipeline_state(void) {
     }
     bool prepared_two_texture_blend = rdp.combine_two_texture_blend && !two_i4_precombine;
     if (prepared_two_texture_blend && rdp.combine_texture_tint_uses_env_alpha &&
-        !gfx_ps2_env_alpha_two_texture_pair_is_real()) {
+        !gfx_ps2_env_alpha_two_texture_pair_is_supported()) {
         prepared_two_texture_blend = false;
     }
     const bool prepared_two_texture_blend_uses_prim_lod =
@@ -3624,7 +3603,8 @@ static void gfx_prepare_tri_pipeline_state(void) {
     const bool prepared_two_texture_alpha_blend =
         prepared_two_texture_blend && rdp.combine_two_texture_alpha_blend;
     const bool prepared_two_texture_env_prim_tint =
-        prepared_two_texture_blend && rdp.combine_texture_tint_uses_prim_lod;
+        prepared_two_texture_blend &&
+        (rdp.combine_texture_tint_uses_prim_lod || rdp.combine_texture_tint_uses_env_alpha);
 
     if (flame_texture_atlas != rendering_state.tri_pipeline.flame_texture_atlas) {
         gfx_flush();
@@ -3760,7 +3740,7 @@ static void gfx_prepare_tri_pipeline_state(void) {
     }
     struct RGBA backendTextureEnvColor = textureTintPrimColor;
     if (prepared_two_texture_env_prim_tint) {
-        backendTextureEnvColor = rdp.env_color;
+        backendTextureEnvColor = textureTintEnvColor;
     }
     if (comb->texture_blend &&
         (backend_state_dirty || !rendering_state.texture_env_color_valid ||
@@ -3874,6 +3854,7 @@ static void gfx_prepare_tri_pipeline_state(void) {
     state->flame_texture_atlas = flame_texture_atlas;
     state->texture_tint_colors_corrected = textureTintColorsCorrected;
     state->two_texture_uncompensated_alpha = twoTextureUncompensatedAlpha;
+    state->texture_tint_prim_color = textureTintPrimColor;
     state->texture_tint_env_color = textureTintEnvColor;
     state->color_mul_env = !two_i4_precombine && rdp.combine_color_mul_env;
     state->color_mul_prim = !two_i4_precombine && rdp.combine_color_mul_prim;
@@ -4824,9 +4805,12 @@ static void gfx_sp_triangles_run(uint32_t packed0, uint32_t packed1, uint8_t tri
             out->color = gfx_get_vertex_rgba(comb, use_alpha, &vertex->color, vertex->_w, true);
         }
         if (state->texture_tint_colors_corrected) {
-            out->color.r = state->texture_tint_env_color.r;
-            out->color.g = state->texture_tint_env_color.g;
-            out->color.b = state->texture_tint_env_color.b;
+            const struct RGBA* tintColor = state->two_texture_env_prim_tint
+                                               ? &state->texture_tint_prim_color
+                                               : &state->texture_tint_env_color;
+            out->color.r = tintColor->r;
+            out->color.g = tintColor->g;
+            out->color.b = tintColor->b;
         }
         if (state->color_mul_env) {
             gfx_color_mul_env(&out->color);
@@ -5001,9 +4985,12 @@ static void gfx_sp_tri1_2d(uint8_t vtx1_idx, uint8_t vtx2_idx, UNUSED uint8_t vt
 
         tri_buf[tri_num_vert].color = gfx_get_vertex_rgba(comb, use_alpha, &v_arr[i]->color, 0.0f, false);
         if (state->texture_tint_colors_corrected) {
-            tri_buf[tri_num_vert].color.r = state->texture_tint_env_color.r;
-            tri_buf[tri_num_vert].color.g = state->texture_tint_env_color.g;
-            tri_buf[tri_num_vert].color.b = state->texture_tint_env_color.b;
+            const struct RGBA* tintColor = state->two_texture_env_prim_tint
+                                               ? &state->texture_tint_prim_color
+                                               : &state->texture_tint_env_color;
+            tri_buf[tri_num_vert].color.r = tintColor->r;
+            tri_buf[tri_num_vert].color.g = tintColor->g;
+            tri_buf[tri_num_vert].color.b = tintColor->b;
         }
         if (state->color_mul_env) {
             gfx_color_mul_env(&tri_buf[tri_num_vert].color);
@@ -5892,6 +5879,7 @@ static GFX_DL_HANDLER void gfx_dp_set_combine(uint32_t w0, uint32_t w1) {
         twoTextureBlend = true;
         twoTextureBlendUsesPrimLod = true;
         twoTextureAlphaBlend = true;
+        textureTintUsesPrimLod = true;
 
     }
     if (gfx_cc_is_two_cycle_texture_tint(rgbA0, rgbB0, rgbC0, rgbD0, rgbA1, rgbB1, rgbC1, rgbD1)) {

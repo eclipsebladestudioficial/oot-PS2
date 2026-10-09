@@ -1126,11 +1126,6 @@ static struct Texture* ps2_decal_texture(struct Texture* source, uint32_t base){
     return ps2_derived_texture(source,base,0,PS2_DERIVED_DECAL);
 }
 
-static inline bool ps2_is_deku_warp_portal_tint(const struct Texture* tex, uint32_t rgba){
-    return cur_shader!=NULL && cur_shader->shader_id==0x11045045U && tex!=NULL &&
-           tex->tex.PSM==GS_PSM_CT32 && tex->tex.Width==256 && tex->tex.Height==128 &&
-           (rgba&0x00ffffffU)==0x00ff0000U;
-}
 static inline bool ps2_is_pause_name_tint(const struct Texture* tex, uint32_t rgba){
     return cur_shader!=NULL && cur_shader->shader_id==0x11045551U && tex!=NULL && do_blend &&
            tex->tex.Width==128 && tex->tex.Height==16 && (rgba&0x00ffffffU)==0x00281e14U;
@@ -1566,7 +1561,6 @@ static void ps2_draw(float*raw,size_t len,size_t tris){
         for(size_t i=1;i<tris*3;i++) if((v[i].rgba&0x00ffffffU)!=baseRgb){uniform=false;break;}
         if(uniform){ struct Texture* tinted=ps2_blend_texture(draw_tex,baseRgb,sEnvColor); blend_tint=(tinted!=draw_tex); draw_tex=tinted; }
     }
-    const bool deku_warp_tint=textured && !reverse_tint && !blend_tint && ps2_is_deku_warp_portal_tint(draw_tex,v[0].rgba);
     const bool pause_name_tint=textured && !reverse_tint && !blend_tint && ps2_is_pause_name_tint(draw_tex,v[0].rgba);
     const bool deku_water=textured && !reverse_tint && !blend_tint && ps2_is_deku_water_material(draw_tex);
     if(textured){
@@ -1586,7 +1580,7 @@ static void ps2_draw(float*raw,size_t len,size_t tris){
     const bool native_fog_two_texture_safe = !sTwoTextureBlendActive || !sTwoTextureAlphaBlendActive;
     const bool prefer_native_fog = has_fog && !depth_only && cur_shader != NULL &&
                                    native_fog_alpha_safe && native_fog_two_texture_safe && !reverse_tint &&
-                                   !env_prim_tint && !deku_warp_tint && !pause_name_tint && !deku_water;
+                                   !env_prim_tint && !pause_name_tint && !deku_water;
     const bool exact_tint=textured && sTextureBlendPrecolor && cur_shader &&
                           cur_shader->cc.opt_texture_blend && !reverse_tint && !blend_tint &&
                           !cur_shader->cc.opt_texture_blend_shade && !do_blend && !has_fog;
@@ -1633,7 +1627,7 @@ static void ps2_draw(float*raw,size_t len,size_t tris){
                 const uint8_t f0=(uint8_t)t[0].fog,f1=(uint8_t)t[1].fog,f2=(uint8_t)t[2].fog;
                 uint32_t c0,c1,c2;
                 const bool neutralTint=reverse_tint||blend_tint||env_prim_tint;
-                const bool targetTint=deku_warp_tint||pause_name_tint||blend_fallback_target;
+                const bool targetTint=pause_name_tint||blend_fallback_target;
                 if(__builtin_expect(!neutralTint && !targetTint && !deku_water,1)){
                     c0=t[0].rgba; c1=t[1].rgba; c2=t[2].rgba;
                 }else if(neutralTint){
