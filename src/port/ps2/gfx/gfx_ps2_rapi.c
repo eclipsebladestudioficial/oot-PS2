@@ -380,7 +380,6 @@ static void ps2_select_texture(int tile,uint32_t id){
 }
 
 static void *alloc_tex_bytes(size_t n){
-    n=ALIGN(n,128);
     if(!tex_cache || n>(size_t)(tex_end-tex_ptr)){
         printf("oot-ps2 texture backing invariant failed need=%u remain=%u\n",
                (unsigned)n, tex_cache?(unsigned)(tex_end-tex_ptr):0U);
@@ -408,6 +407,16 @@ static void ps2_init_intensity_t8_clut(void){
     sIntensityT8ClutReady=true;
 }
 
+size_t texman_texture_backing_size(int width,int height,unsigned int type){
+    if(width<=0||height<=0)return 0;
+    const int psm=(type==1)?GS_PSM_CT16:((type==5)?GS_PSM_T8:GS_PSM_CT32);
+    const size_t pixels=(size_t)width*(size_t)height;
+    const size_t texel_size=pixels*((psm==GS_PSM_CT16)?2U:((psm==GS_PSM_T8)?1U:4U));
+    const size_t gskit_size=(size_t)gsKit_texture_size(width,height,psm);
+    const size_t required=texel_size>gskit_size?texel_size:gskit_size;
+    return ALIGN(required,128);
+}
+
 static void ps2_upload_texture(const uint8_t*buf,int w,int h,unsigned type){
     if(!last_tex||w<=0||h<=0)return;
     struct Texture *pt=last_tex;
@@ -415,8 +424,9 @@ static void ps2_upload_texture(const uint8_t*buf,int w,int h,unsigned type){
     GSTEXTURE*t=&pt->tex;
     const int new_psm=(type==1)?GS_PSM_CT16:((type==5)?GS_PSM_T8:GS_PSM_CT32);
     const size_t pixels=(size_t)w*h;
-    const size_t n=pixels*((new_psm==GS_PSM_CT16)?2U:((new_psm==GS_PSM_T8)?1U:4U));
-    const bool reuse=(t->Mem!=NULL && pt->backing_size>=n && t->PSM==new_psm &&
+    const size_t texel_size=pixels*((new_psm==GS_PSM_CT16)?2U:((new_psm==GS_PSM_T8)?1U:4U));
+    const size_t backing_size=texman_texture_backing_size(w,h,type);
+    const bool reuse=(t->Mem!=NULL && pt->backing_size>=backing_size && t->PSM==new_psm &&
                       t->Width==(u32)w && t->Height==(u32)h);
 
     if(reuse){
@@ -427,8 +437,8 @@ static void ps2_upload_texture(const uint8_t*buf,int w,int h,unsigned type){
         if(t->Mem!=NULL || pt->upload_serial!=0){
             ps2_release_texture_residency(t);
         }
-        t->Mem=alloc_tex_bytes(n);
-        pt->backing_size=n;
+        t->Mem=alloc_tex_bytes(backing_size);
+        pt->backing_size=backing_size;
     }
     t->Width=w;t->Height=h;t->PSM=new_psm;t->Filter=GS_FILTER_NEAREST;t->Vram=0;t->VramClut=0;
     if(new_psm==GS_PSM_T8){
@@ -445,11 +455,11 @@ static void ps2_upload_texture(const uint8_t*buf,int w,int h,unsigned type){
     if (sTextureUploadSerial == 0) { sTextureUploadSerial = 1; pt->upload_serial = 1; }
 
     if(type==1){
-        memcpy(t->Mem,buf,n);
+        memcpy(t->Mem,buf,texel_size);
     }else if(type==5){
-        memcpy(t->Mem,buf,n);
+        memcpy(t->Mem,buf,texel_size);
     }else if(type==8){
-        memcpy(t->Mem,buf,n);
+        memcpy(t->Mem,buf,texel_size);
     }else{
         u32*out=(u32*)t->Mem;
         if(type==2){
@@ -459,15 +469,18 @@ static void ps2_upload_texture(const uint8_t*buf,int w,int h,unsigned type){
             for(size_t i=0;i<pixels;i++){u32 v=in[i]; u32 a=(((v>>24)&0xff)+1)>>1; out[i]=(v&0x00ffffffU)|(a<<24);}
         }
     }
+    if(backing_size>texel_size){
+        memset((uint8_t*)t->Mem+texel_size,0,backing_size-texel_size);
+    }
 
     pt->content_hash=0;
     if(!sSkipContentHash && new_psm==GS_PSM_CT32 && w==32 && h==32){
         const uint8_t* hp=(const uint8_t*)t->Mem;
         uint32_t hval=2166136261U;
-        for(size_t i=0;i<n;i++){hval^=hp[i];hval*=16777619U;}
+        for(size_t i=0;i<texel_size;i++){hval^=hp[i];hval*=16777619U;}
         pt->content_hash=hval;
     }
-    SyncDCache(t->Mem,(u8*)t->Mem+n);
+    SyncDCache(t->Mem,(u8*)t->Mem+backing_size);
 }
 
 float identity_matrix[4][4] __attribute__((aligned(16))) = {
@@ -475,10 +488,9 @@ float identity_matrix[4][4] __attribute__((aligned(16))) = {
 };
 
 int gfx_vram_space_available(void){ return tex_cache && tex_ptr < tex_end; }
-int texman_vram_space_available(unsigned int size){
+int texman_vram_space_available(size_t size){
     if(!tex_cache) return 0;
-    size_t n=ALIGN((size_t)size,128);
-    return n <= (size_t)(tex_end-tex_ptr);
+    return size <= (size_t)(tex_end-tex_ptr);
 }
 int texman_texture_slot_available(void){ return tex_count < MAX_TEXTURES; }
 void texman_clear(void){
@@ -643,6 +655,13 @@ static inline void ps2_set_texfilter_cached(int filter){
     gsKit_set_texfilter(gs_global,filter);
     sLastTexFilter=filter;
 }
+
+static inline int ps2_filter_for_texture(const GSTEXTURE* tex){
+    if(tex!=NULL && tex->PSM==GS_PSM_CT16 && tex->Width<=4U && tex->Height<=4U){
+        return GS_FILTER_NEAREST;
+    }
+    return tex!=NULL?tex->Filter:GS_FILTER_NEAREST;
+}
 static inline u64 ps2_tex0_reg(const GSTEXTURE*t,int tw,int th){
     const bool indexed=t->VramClut!=0;
     return GS_SETREG_TEX0(t->Vram/256,t->TBW,t->PSM,tw,th,
@@ -758,7 +777,7 @@ static size_t tri_tex_batch_safe_count(size_t requested,bool fog){
 static u64* tri_tex_batch_begin(struct Texture*pt,size_t count,bool fog){
     if(count==0)return NULL;
     GSTEXTURE*t=&pt->tex;
-    ps2_set_texfilter_cached(t->Filter);
+    ps2_set_texfilter_cached(ps2_filter_for_texture(t));
     ps2_set_tex0_cached(t);
     const int type=fog?OOT_PS2_GIF_PRIM_TRIANGLE_TEXTURED_ST_FOG:OOT_PS2_GIF_PRIM_TRIANGLE_TEXTURED_ST;
 
@@ -816,7 +835,7 @@ static inline void tri_col_emit_reserved(u64**pp,
     *pp=p;
 }
 static void sprite_tex(GSTEXTURE*t,float x1,float y1,int z1,float u1,float v1,float x2,float y2,int z2,float u2,float v2,uint64_t col){
-    ps2_set_texfilter_cached(t->Filter);
+    ps2_set_texfilter_cached(ps2_filter_for_texture(t));
     const int tw=ilog2ceil((unsigned)t->Width), th=ilog2ceil((unsigned)t->Height);
     const int ix1=gsKit_float_to_int_x(gs_global,x1), iy1=gsKit_float_to_int_y(gs_global,y1);
     const int ix2=gsKit_float_to_int_x(gs_global,x2), iy2=gsKit_float_to_int_y(gs_global,y2);

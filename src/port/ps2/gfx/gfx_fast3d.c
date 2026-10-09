@@ -1701,7 +1701,8 @@ static struct ColorCombiner *gfx_lookup_or_create_color_combiner(uint32_t cc_id)
 extern int gfx_vram_space_available(void);
 extern void texman_clear(void);
 extern void texman_upload(int width, int height, unsigned int type, const void* buffer);
-extern int texman_vram_space_available(unsigned int size);
+extern size_t texman_texture_backing_size(int width, int height, unsigned int type);
+extern int texman_vram_space_available(size_t size);
 extern int texman_texture_slot_available(void);
 
 static uint32_t gfx_texture_import_width(int tile);
@@ -1715,26 +1716,24 @@ static uint32_t gfx_ps2_next_power_of_two(uint32_t value) {
     return 1U << (32 - __builtin_clz(value - 1));
 }
 
-static unsigned int gfx_texture_cache_upload_size_ps2(uint16_t width, uint16_t height, uint32_t fmt, uint32_t siz,
-                                                       bool mirror_s, bool mirror_t, uint32_t cms, uint32_t cmt,
-                                                       uint32_t masks, uint32_t maskt) {
-    size_t bytesPerPixel;
+static unsigned int gfx_texture_cache_upload_type_ps2(uint32_t fmt, uint32_t siz) {
+    if ((fmt == G_IM_FMT_RGBA) && (siz == G_IM_SIZ_16b)) return PS2_TEXFMT_5551;
+    if ((fmt == G_IM_FMT_IA) && (siz == G_IM_SIZ_8b)) return PS2_TEXFMT_4444;
+    if ((fmt == G_IM_FMT_I) && (siz == G_IM_SIZ_4b)) return PS2_TEXFMT_4444;
+    if ((fmt == G_IM_FMT_I) && (siz == G_IM_SIZ_8b)) return PS2_TEXFMT_T8;
+    if (fmt == G_IM_FMT_CI) return PS2_TEXFMT_5551;
+    return PS2_TEXFMT_8888;
+}
 
-    if ((fmt == G_IM_FMT_I) && (siz == G_IM_SIZ_8b)) {
-
-        bytesPerPixel = 1;
-    } else if (((fmt == G_IM_FMT_RGBA) && (siz == G_IM_SIZ_16b)) || (fmt == G_IM_FMT_CI)) {
-        bytesPerPixel = 2;
-    } else {
-        bytesPerPixel = 4;
-    }
+static size_t gfx_texture_cache_upload_size_ps2(uint16_t width, uint16_t height, uint32_t fmt, uint32_t siz,
+                                                 bool mirror_s, bool mirror_t, uint32_t cms, uint32_t cmt,
+                                                 uint32_t masks, uint32_t maskt) {
     const uint32_t uploadWidth = gfx_ps2_physical_upload_extent(
         width, mirror_s, masks, gfx_ps2_axis_is_clamped(cms, masks));
     const uint32_t uploadHeight = gfx_ps2_physical_upload_extent(
         height, mirror_t, maskt, gfx_ps2_axis_is_clamped(cmt, maskt));
-    size_t size = (size_t)uploadWidth * uploadHeight * bytesPerPixel;
-    size = (size + 127U) & ~127U;
-    return size > 0xFFFFFFFFU ? 0xFFFFFFFFU : (unsigned int)size;
+    return texman_texture_backing_size(uploadWidth, uploadHeight,
+                                       gfx_texture_cache_upload_type_ps2(fmt, siz));
 }
 
 static void gfx_texture_cache_clear(void) {
@@ -2923,7 +2922,9 @@ static bool gfx_prepare_flame_atlas(void) {
     gfx_flush();
     if (entry->textureId == 0) {
 
-        if (!texman_vram_space_available(GFX_FLAME_ATLAS_SIZE * 4U) || !texman_texture_slot_available()) gfx_texture_cache_clear();
+        const size_t backingSize = texman_texture_backing_size(
+            GFX_FLAME_ATLAS_WIDTH, GFX_FLAME_ATLAS_HEIGHT, PS2_TEXFMT_8888_GS_NATIVE);
+        if (!texman_vram_space_available(backingSize) || !texman_texture_slot_available()) gfx_texture_cache_clear();
         entry->textureId = gfx_rapi->new_texture();
     } else gfx_rapi->select_texture(0, entry->textureId);
     const uint32_t primRgb = (uint32_t)rdp.prim_color.r | ((uint32_t)rdp.prim_color.g << 8) |
@@ -3367,8 +3368,9 @@ static bool gfx_prepare_two_i4_precombine(void) {
     }
 
     if (!entry->textureAllocated) {
-        const uint32_t bytes = (uint32_t)entry->outputWidth * (uint32_t)entry->outputHeight * 4U;
-        if (!texman_vram_space_available(bytes) || !texman_texture_slot_available()) {
+        const size_t backingSize = texman_texture_backing_size(
+            entry->outputWidth, entry->outputHeight, PS2_TEXFMT_8888);
+        if (!texman_vram_space_available(backingSize) || !texman_texture_slot_available()) {
 
             gfx_texture_cache_clear();
         }
@@ -6675,7 +6677,7 @@ static bool gfx_s2dex_bg_prepare_texture(const uint8_t* source, uint32_t width, 
     uint32_t sourceSpan;
     uint32_t uploadWidth;
     uint32_t uploadHeight;
-    unsigned int uploadSize;
+    size_t uploadSize;
 
     if ((source == NULL) || (width == 0) || (height == 0) || (height > (UINT32_MAX / width))) {
         gfx_log_bad_texture_source(tile, "s2dex-bg-dimensions", source, 1);
@@ -6701,7 +6703,7 @@ static bool gfx_s2dex_bg_prepare_texture(const uint8_t* source, uint32_t width, 
 
     gfx_s2dex_bg_compute_upload_size(width, height, contentWidth, contentHeight, &uploadWidth, &uploadHeight);
 
-    uploadSize = uploadWidth * uploadHeight * sizeof(uint16_t);
+    uploadSize = texman_texture_backing_size(uploadWidth, uploadHeight, PS2_TEXFMT_5551);
     if (!texman_vram_space_available(uploadSize) || !texman_texture_slot_available()) {
         gfx_texture_cache_clear();
     }
