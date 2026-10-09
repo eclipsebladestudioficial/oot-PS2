@@ -18,12 +18,6 @@
 
 #define ANIM_INTERP 1
 
-#if defined(TARGET_PS2)
-#define SKELANIME_UPDATE_RATE_SCALE 0x1.555556p-2f
-#else
-#define SKELANIME_UPDATE_RATE_SCALE (1.0f / 3.0f)
-#endif
-
 s32 LinkAnimation_Loop(PlayState* play, SkelAnime* skelAnime);
 s32 LinkAnimation_Once(PlayState* play, SkelAnime* skelAnime);
 s32 SkelAnime_LoopFull(SkelAnime* skelAnime);
@@ -1427,7 +1421,7 @@ s32 Animation_OnFrameImpl(SkelAnime* skelAnime, f32 frame, f32 updateRate) {
         frame = skelAnime->animLength;
     }
 
-    curFrameDiff = prevFrame + updateSpeed - frame;
+    curFrameDiff = skelAnime->curFrame - frame;
     prevFrameDiff = curFrameDiff - updateSpeed;
     if ((curFrameDiff * updateSpeed >= 0.0f) && (prevFrameDiff * updateSpeed < 0.0f)) {
         return true;
@@ -1559,7 +1553,7 @@ s32 SkelAnime_Update(SkelAnime* skelAnime) {
  */
 s32 SkelAnime_Morph(SkelAnime* skelAnime) {
     f32 prevMorphWeight = skelAnime->morphWeight;
-    f32 updateRate = R_UPDATE_RATE * SKELANIME_UPDATE_RATE_SCALE;
+    f32 updateRate = R_UPDATE_RATE * (1.0f / 3.0f);
 
     skelAnime->morphWeight -= skelAnime->morphRate * updateRate;
     if (skelAnime->morphWeight <= 0.0f) {
@@ -1580,7 +1574,7 @@ s32 SkelAnime_MorphTaper(SkelAnime* skelAnime) {
     s16 curPhase;
     f32 prevWeight;
     f32 curWeight;
-    f32 updateRate = R_UPDATE_RATE * SKELANIME_UPDATE_RATE_SCALE;
+    f32 updateRate = R_UPDATE_RATE * (1.0f / 3.0f);
 
     skelAnime->morphWeight -= skelAnime->morphRate * updateRate;
     if (skelAnime->morphWeight <= 0.0f) {
@@ -1624,7 +1618,7 @@ void SkelAnime_AnimateFrame(SkelAnime* skelAnime) {
                                    partialFrame);
     }
     if (skelAnime->morphWeight != 0) {
-        f32 updateRate = R_UPDATE_RATE * SKELANIME_UPDATE_RATE_SCALE;
+        f32 updateRate = R_UPDATE_RATE * (1.0f / 3.0f);
 
         skelAnime->morphWeight -= skelAnime->morphRate * updateRate;
         if (skelAnime->morphWeight <= 0.0f) {
@@ -1640,19 +1634,9 @@ void SkelAnime_AnimateFrame(SkelAnime* skelAnime) {
  * Advances an animation that loops over its full length and updates the frame tables
  */
 s32 SkelAnime_LoopFull(SkelAnime* skelAnime) {
-    f32 updateRate = R_UPDATE_RATE * SKELANIME_UPDATE_RATE_SCALE;
+    f32 updateRate = R_UPDATE_RATE * (1.0f / 3.0f);
 
     skelAnime->curFrame += skelAnime->playSpeed * updateRate;
-
-#if defined(TARGET_PS2)
-    if ((skelAnime->curFrame >= -0.000244140625f) && (skelAnime->curFrame <= 0.000244140625f)) {
-        skelAnime->curFrame = 0.0f;
-    } else if ((skelAnime->curFrame >= (skelAnime->animLength - 0.000244140625f)) &&
-               (skelAnime->curFrame <= (skelAnime->animLength + 0.000244140625f))) {
-        skelAnime->curFrame = skelAnime->animLength;
-    }
-#endif
-
     if (skelAnime->curFrame < 0.0f) {
         skelAnime->curFrame += skelAnime->animLength;
     } else if (skelAnime->animLength <= skelAnime->curFrame) {
@@ -1666,20 +1650,9 @@ s32 SkelAnime_LoopFull(SkelAnime* skelAnime) {
  * Advances an animation that loops over part of its length and updates the frame tables
  */
 s32 SkelAnime_LoopPartial(SkelAnime* skelAnime) {
-    f32 updateRate = R_UPDATE_RATE * SKELANIME_UPDATE_RATE_SCALE;
+    f32 updateRate = R_UPDATE_RATE * (1.0f / 3.0f);
 
     skelAnime->curFrame += skelAnime->playSpeed * updateRate;
-
-#if defined(TARGET_PS2)
-    if ((skelAnime->curFrame >= (skelAnime->startFrame - 0.000244140625f)) &&
-        (skelAnime->curFrame <= (skelAnime->startFrame + 0.000244140625f))) {
-        skelAnime->curFrame = skelAnime->startFrame;
-    } else if ((skelAnime->curFrame >= (skelAnime->endFrame - 0.000244140625f)) &&
-               (skelAnime->curFrame <= (skelAnime->endFrame + 0.000244140625f))) {
-        skelAnime->curFrame = skelAnime->endFrame;
-    }
-#endif
-
     if (skelAnime->curFrame < skelAnime->startFrame) {
         skelAnime->curFrame = (skelAnime->curFrame - skelAnime->startFrame) + skelAnime->endFrame;
     } else if (skelAnime->endFrame <= skelAnime->curFrame) {
@@ -1694,7 +1667,7 @@ s32 SkelAnime_LoopPartial(SkelAnime* skelAnime) {
  * Advances an animation that stops at endFrame and returns true when it is reached.
  */
 s32 SkelAnime_Once(SkelAnime* skelAnime) {
-    f32 updateRate = R_UPDATE_RATE * SKELANIME_UPDATE_RATE_SCALE;
+    f32 updateRate = R_UPDATE_RATE * (1.0f / 3.0f);
 
     if (skelAnime->curFrame == skelAnime->endFrame) {
         SkelAnime_GetFrameData(skelAnime->animation, (s32)skelAnime->curFrame, skelAnime->limbCount,
@@ -1704,13 +1677,6 @@ s32 SkelAnime_Once(SkelAnime* skelAnime) {
     }
 
     skelAnime->curFrame += skelAnime->playSpeed * updateRate;
-
-#if defined(TARGET_PS2)
-    if ((skelAnime->curFrame >= (skelAnime->endFrame - 0.000244140625f)) &&
-        (skelAnime->curFrame <= (skelAnime->endFrame + 0.000244140625f))) {
-        skelAnime->curFrame = skelAnime->endFrame;
-    }
-#endif
 
     if ((skelAnime->curFrame - skelAnime->endFrame) * skelAnime->playSpeed > 0.0f) {
         skelAnime->curFrame = skelAnime->endFrame;
