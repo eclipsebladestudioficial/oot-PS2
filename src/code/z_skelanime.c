@@ -1410,6 +1410,9 @@ s32 Animation_OnFrameImpl(SkelAnime* skelAnime, f32 frame, f32 updateRate) {
     f32 prevFrame = skelAnime->curFrame - updateSpeed;
     f32 curFrameDiff;
     f32 prevFrameDiff;
+#if defined(TARGET_PS2) && TARGET_PS2
+    s32 wrapped = (prevFrame < 0.0f) || (prevFrame >= skelAnime->animLength);
+#endif
 
     if (prevFrame < 0.0f) {
         prevFrame += skelAnime->animLength;
@@ -1421,8 +1424,18 @@ s32 Animation_OnFrameImpl(SkelAnime* skelAnime, f32 frame, f32 updateRate) {
         frame = skelAnime->animLength;
     }
 
-    curFrameDiff = skelAnime->curFrame - frame;
+#if defined(TARGET_PS2) && TARGET_PS2
+    if (wrapped) {
+        curFrameDiff = prevFrame + updateSpeed - frame;
+        prevFrameDiff = curFrameDiff - updateSpeed;
+    } else {
+        curFrameDiff = skelAnime->curFrame - frame;
+        prevFrameDiff = prevFrame - frame;
+    }
+#else
+    curFrameDiff = prevFrame + updateSpeed - frame;
     prevFrameDiff = curFrameDiff - updateSpeed;
+#endif
     if ((curFrameDiff * updateSpeed >= 0.0f) && (prevFrameDiff * updateSpeed < 0.0f)) {
         return true;
     }
