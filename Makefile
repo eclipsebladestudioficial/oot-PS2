@@ -269,7 +269,7 @@ else
 endif
 
 #### Tools ####
-ifneq ($(filter ps2-port ps2-port-elf ps2-port-clean,$(MAKECMDGOALS)),)
+ifneq ($(filter ps2-port ps2-port-elf ps2-port-iso ps2-port-clean,$(MAKECMDGOALS)),)
   PS2_PORT_ONLY := 1
 endif
 
@@ -1397,6 +1397,16 @@ PS2_PORT_RUNTIME_ASM_OBJECTS := $(patsubst %.s,$(PS2_PORT_BUILD_DIR)/%.o,$(PS2_P
 PS2_PORT_ENTRY_OBJECT := $(PS2_PORT_BUILD_DIR)/$(PS2_PORT_ENTRY_SOURCE:.c=.o)
 PS2_PORT_LIBRARY := $(PS2_PORT_BUILD_DIR)/liboot_ps2_platform.a
 PS2_PORT_ELF := $(PS2_PORT_BUILD_DIR)/oot-ps2.elf
+
+//tira que eu vou cagar
+PS2_PORT_ASSET_PACK ?= $(PS2_PORT_BUILD_DIR)/oot_ps2_assets.bin
+PS2_PORT_DISC_DIR := $(PS2_PORT_BUILD_DIR)/disc
+PS2_PORT_DISC_EXECUTABLE ?= SLUS_999.99
+PS2_PORT_DISC_VOLUME ?= OCARINA_OF_TIME_PS2
+PS2_PORT_ISO := $(PS2_PORT_BUILD_DIR)/oot-ps2.iso
+PS2_PORT_MKISOFS ?= mkisofs
+
+
 PS2_PORT_BASE_ELF := $(PS2_PORT_BUILD_DIR)/oot-ps2.base.elf
 PS2_PORT_RUNTIME_PATCH_BLOB := $(PS2_PORT_BUILD_DIR)/oot_ps2_runtime_patches.bin
 PS2_PORT_RUNTIME_PATCH_ASM := $(PS2_PORT_BUILD_DIR)/oot_ps2_runtime_patches.S
@@ -1464,6 +1474,9 @@ ps2-port: $(PS2_PORT_ELF)
 
 ps2-port-elf: $(PS2_PORT_ELF)
 	@echo "PS2 ELF is up to date: $(PS2_PORT_ELF)"
+
+ps2-port-iso: $(PS2_PORT_ISO)
+	@echo "PS2 ISO is up to date: $(PS2_PORT_ISO)"
 
 PS2_PORT_GFX_HOT_CFLAGS := $(filter-out -O2,$(PS2_PORT_CFLAGS)) -O3
 PS2_AUDIO_MIX_CFLAGS := $(filter-out -O2,$(PS2_PORT_CFLAGS)) -O3
@@ -1549,11 +1562,25 @@ $(PS2_PORT_ELF): $(PS2_PORT_ENTRY_OBJECT) $(PS2_PORT_LIBRARY) $(PS2_PORT_RUNTIME
 	$(PS2_PORT_CC) -MMD -MP -MF $(PS2_PORT_RUNTIME_PATCH_OBJECT:.o=.d) -MT $(PS2_PORT_RUNTIME_PATCH_OBJECT) -c -x assembler-with-cpp $(PS2_PORT_ASM_DEFINES) $(PS2_PORT_INCLUDES) -o $(PS2_PORT_RUNTIME_PATCH_OBJECT) $(PS2_PORT_RUNTIME_PATCH_ASM)
 	$(PS2_PORT_CC) -o $@ $(PS2_PORT_ENTRY_OBJECT) -Wl,--start-group $(PS2_PORT_LIBRARY) -Wl,--end-group $(PS2_PORT_RUNTIME_PATCH_OBJECT) $(PS2_PORT_LDFLAGS)
 
+$(PS2_PORT_ISO): $(PS2_PORT_ELF) FORCE
+	@command -v $(PS2_PORT_MKISOFS) >/dev/null 2>&1 || { echo "Missing ISO builder: $(PS2_PORT_MKISOFS)" >&2; exit 1; }
+	@test -f $(PS2_PORT_ASSET_PACK) || { echo "Missing PS2 asset pack: $(PS2_PORT_ASSET_PACK)" >&2; exit 1; }
+	$(RM) -r $(PS2_PORT_DISC_DIR)
+	@mkdir -p $(PS2_PORT_DISC_DIR)
+	@printf '%s\n' \
+		'BOOT2 = cdrom0:\$(PS2_PORT_DISC_EXECUTABLE);1' \
+		'VER = 1.00' \
+		'VMODE = NTSC' > $(PS2_PORT_DISC_DIR)/SYSTEM.CNF
+	cp $(PS2_PORT_ELF) $(PS2_PORT_DISC_DIR)/$(PS2_PORT_DISC_EXECUTABLE)
+	cp $(PS2_PORT_ASSET_PACK) $(PS2_PORT_DISC_DIR)/oot_ps2_assets.bin
+	$(PS2_PORT_MKISOFS) -quiet -iso-level 2 -allow-lowercase -allow-multidot -full-iso9660-filenames \
+		-V $(PS2_PORT_DISC_VOLUME) -o $@ $(PS2_PORT_DISC_DIR)
+
 ps2-port-clean:
 	$(RM) -r $(PS2_PORT_BUILD_DIR)
 endif
 
-.PHONY: FORCE ps2-port ps2-port-elf ps2-port-clean
+.PHONY: FORCE ps2-port ps2-port-elf ps2-port-iso ps2-port-clean
 
 FORCE:
 
