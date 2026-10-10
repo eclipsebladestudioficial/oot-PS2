@@ -1398,7 +1398,7 @@ PS2_PORT_ENTRY_OBJECT := $(PS2_PORT_BUILD_DIR)/$(PS2_PORT_ENTRY_SOURCE:.c=.o)
 PS2_PORT_LIBRARY := $(PS2_PORT_BUILD_DIR)/liboot_ps2_platform.a
 PS2_PORT_ELF := $(PS2_PORT_BUILD_DIR)/oot-ps2.elf
 
-//tira que eu vou cagar
+#tira que eu vou cagar
 PS2_PORT_ASSET_PACK ?= $(PS2_PORT_BUILD_DIR)/oot_ps2_assets.bin
 PS2_PORT_DISC_DIR := $(PS2_PORT_BUILD_DIR)/disc
 PS2_PORT_DISC_EXECUTABLE ?= SLUS_999.99
