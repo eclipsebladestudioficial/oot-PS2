@@ -149,10 +149,11 @@ RegEditor* gRegEditor = &sRegEditor;
 static PreNmiBuff sPs2PreNmiBuffer;
 u8 gOotPortSystemHeap[OOT_PORT_SYSTEM_HEAP_SIZE] __attribute__((aligned(64)));
 static u8 sPs2Sram[SRAM_SIZE] __attribute__((aligned(64)));
-static u16 sPs2Framebuffers[2][SCREEN_HEIGHT][SCREEN_WIDTH] __attribute__((aligned(64)));
+
+static u8 sPs2FramebufferTags[2][64] __attribute__((aligned(64)));
 static PlayState* sPs2InputPlayState;
-u16 D_0E000000[SCREEN_HEIGHT * SCREEN_WIDTH] __attribute__((aligned(64)));
-u16 D_0F000000[SCREEN_HEIGHT * SCREEN_WIDTH] __attribute__((aligned(64)));
+u16 D_0E000000[32] __attribute__((aligned(64)));
+u16 D_0F000000[32] __attribute__((aligned(64)));
 static uintptr_t sSysCfbFbPtr[2];
 static uintptr_t sSysCfbEnd;
 static OotPs2Handle sPs2StackThreadId = -1;
@@ -341,8 +342,8 @@ static s32 OotPort_IsStaticStorageRange(const void* ptr, size_t size) {
         return true;
     }
 
-    if (OotPort_IsContainedRange(ptr, size, (uintptr_t)sPs2Framebuffers,
-                                (uintptr_t)sPs2Framebuffers + sizeof(sPs2Framebuffers))) {
+    if (OotPort_IsContainedRange(ptr, size, (uintptr_t)sPs2FramebufferTags,
+                                (uintptr_t)sPs2FramebufferTags + sizeof(sPs2FramebufferTags))) {
         return true;
     }
 
@@ -498,10 +499,10 @@ void Regs_Init(void) {
 }
 
 void SysCfb_Init(UNUSED s32 n64dd) {
-    memset(sPs2Framebuffers, 0, sizeof(sPs2Framebuffers));
-    sSysCfbFbPtr[0] = (uintptr_t)&sPs2Framebuffers[0][0][0];
-    sSysCfbFbPtr[1] = (uintptr_t)&sPs2Framebuffers[1][0][0];
-    sSysCfbEnd = (uintptr_t)&sPs2Framebuffers[ARRAY_COUNT(sPs2Framebuffers)];
+    memset(sPs2FramebufferTags, 0, sizeof(sPs2FramebufferTags));
+    sSysCfbFbPtr[0] = (uintptr_t)&sPs2FramebufferTags[0][0];
+    sSysCfbFbPtr[1] = (uintptr_t)&sPs2FramebufferTags[1][0];
+    sSysCfbEnd = (uintptr_t)sPs2FramebufferTags + sizeof(sPs2FramebufferTags);
 }
 
 void SysCfb_Reset(void) {

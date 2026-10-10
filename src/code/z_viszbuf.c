@@ -66,6 +66,10 @@ void VisZBuf_Destroy(VisZBuf* this) {
 }
 
 void VisZBuf_Draw(VisZBuf* this, Gfx** gfxP) {
+#if defined(TARGET_PS2)
+    (void)this;
+    (void)gfxP;
+#else
     Gfx* gfx = *gfxP;
     s32 pad;
     u16* zbufFrag = D_0E000000;
@@ -114,4 +118,5 @@ void VisZBuf_Draw(VisZBuf* this, Gfx** gfxP) {
 
     gDPPipeSync(gfx++);
     *gfxP = gfx;
+#endif
 }

@@ -217,6 +217,10 @@ void TransitionTile_SetVtx(TransitionTile* this) {
 }
 
 void TransitionTile_Draw(TransitionTile* this, Gfx** gfxP) {
+#if defined(TARGET_PS2)
+    (void)this;
+    (void)gfxP;
+#else
     Gfx* gfx = *gfxP;
 
     gSPDisplayList(gfx++, sTransTileSetupDL);
@@ -230,6 +234,7 @@ void TransitionTile_Draw(TransitionTile* this, Gfx** gfxP) {
     gDPPipeSync(gfx++);
     this->frame ^= 1;
     *gfxP = gfx;
+#endif
 }
 
 /**
