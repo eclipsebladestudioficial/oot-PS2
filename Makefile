@@ -1069,7 +1069,9 @@ $(BUILD_DIR)/assets/audio/samplebanks/%.xml: $(EXTRACTED_DIR)/assets/audio/sampl
 $(BUILD_DIR)/assets/audio/samplebanks/%.s: $(BUILD_DIR)/assets/audio/samplebanks/%.xml | $(AIFC_FILES)
 	$(SBC) $(SBCFLAGS) --makedepend $(@:.s=.d) $< $@
 
+ifneq ($(PS2_PORT_ONLY),1)
 -include $(SAMPLEBANK_DEP_FILES)
+endif
 
 $(BUILD_DIR)/assets/audio/samplebanks/%.o: $(BUILD_DIR)/assets/audio/samplebanks/%.s
 	$(AS) $(ASFLAGS) $< -o $@
@@ -1092,7 +1094,9 @@ $(BUILD_DIR)/assets/audio/soundfonts/%.c $(BUILD_DIR)/assets/audio/soundfonts/%.
 # substitution $(@:.c=.h) will fail ~50% of the time with -j. Instead, don't assume anything about the suffix of $@.
 	$(SFC) $(SFCFLAGS) --makedepend $(basename $@).c.d $< $(basename $@).c $(basename $@).h $(basename $@).name
 
+ifneq ($(PS2_PORT_ONLY),1)
 -include $(SOUNDFONT_DEP_FILES)
+endif
 
 $(BUILD_DIR)/assets/audio/soundfonts/%.o: $(BUILD_DIR)/assets/audio/soundfonts/%.c $(BUILD_DIR)/assets/audio/soundfonts/%.name
 	$(CPP) $(MIPS_BUILTIN_DEFS) $(CPPFLAGS) -x assembler-with-cpp $(INC) -I include/audio -MD -MP -MF $(@:.o=.d) -MT $@ $< -o /dev/null
@@ -1127,7 +1131,9 @@ ifeq ($(AUDIO_BUILD_DEBUG),1)
 	@(cmp $(@:.o=.aseq) $(patsubst $(BUILD_DIR)/assets/audio/sequences/%,$(EXTRACTED_DIR)/baserom_audiotest/audioseq_files/%,$(@:.o=.aseq)) && echo "$(<F) OK" || (mkdir -p NONMATCHINGS/sequences && cp $(@:.o=.aseq) NONMATCHINGS/sequences/$(@F:.o=.aseq)))
 endif
 
+ifneq ($(PS2_PORT_ONLY),1)
 -include $(SEQUENCE_DEP_FILES)
+endif
 
 # put together the tables
 
@@ -1165,11 +1171,13 @@ $(BUILD_DIR)/assets/audio/sequence_font_table.o: $(BUILD_DIR)/assets/audio/seque
 
 # make headers with file sizes and amounts
 
+ifneq ($(PS2_PORT_ONLY),1)
 $(BUILD_DIR)/assets/audio/soundfont_sizes.h: $(SOUNDFONT_O_FILES)
 	$(AFILE_SIZES) $@ NUM_SOUNDFONTS SOUNDFONT_SIZES .rodata $^
 
 $(BUILD_DIR)/assets/audio/sequence_sizes.h: $(SEQUENCE_O_FILES)
 	$(AFILE_SIZES) $@ NUM_SEQUENCES SEQUENCE_SIZES .data $^
+endif
 
 # Extra audiobank padding that doesn't belong to any soundfont file
 $(BUILD_DIR)/assets/audio/audiobank_padding.o:
@@ -1584,7 +1592,9 @@ endif
 
 FORCE:
 
+ifneq ($(PS2_PORT_ONLY),1)
 -include $(DEP_FILES)
+endif
 ifeq ($(PS2_PORT_ONLY),1)
 -include $(PS2_PORT_DEP_FILES)
 endif

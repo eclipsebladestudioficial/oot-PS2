@@ -26,23 +26,22 @@ static volatile bool sGsInitActive;
 static volatile bool sAsyncFrameSubmit;
 static bool sFramePending;
 static int sDisplayedBufferIndex;
+static bool sDisplayedFrameValid;
 static bool sPauseBackgroundActive;
 static bool sPauseBackgroundCapturePending;
 static bool sPauseBackgroundCaptured;
-static u32 sPauseBackgroundVram;
-static u32 sPauseBackgroundBytes;
+
+static int sPauseBackgroundSourceIndex = -1;
+static u32 sPauseBackgroundCaptureCount;
+static u32 sPauseBackgroundRestoreCount;
 static u32* sVisMonoReadback;
 static size_t sVisMonoReadbackBytes;
 static u16 sDepthReadback[64] __attribute__((aligned(64)));
 static int sDepthReadbackX = -1;
 static int sDepthReadbackY = -1;
 
-#define OOT_PS2_PAUSE_BG_PSM GS_PSM_CT16
-#define OOT_PS2_PAUSE_BG_WIDTH 320
-#define OOT_PS2_PAUSE_BG_HEIGHT 224
 
 extern void gfx_ps2_invalidate_register_cache(void);
-static void GfxPs2Window_AllocPauseBackground(void);
 
 void __real_SetGsCrt(s16 interlace, s16 mode, s16 field);
 void __real_dmaKit_wait_fast(void);
@@ -536,70 +535,30 @@ static void GfxPs2Window_Init(const char* gameName, bool startInFullscreen) {
         gsKit_init_screen(gs_global);
         sGsInitActive = false;
     }
-    GfxPs2Window_AllocPauseBackground();
+    printf("PS2PAUSEBG mode=pinned-framebuffer fb0=%08lx fb1=%08lx\n",
+           (unsigned long)gs_global->ScreenBuffer[0],
+           (unsigned long)gs_global->ScreenBuffer[1]);
     gsKit_TexManager_init(gs_global);
 }
 
-static void GfxPs2Window_AllocPauseBackground(void) {
-    if (sPauseBackgroundVram != 0 || gs_global == NULL) return;
-
-    sPauseBackgroundBytes = __real_gsKit_texture_size(OOT_PS2_PAUSE_BG_WIDTH, OOT_PS2_PAUSE_BG_HEIGHT,
-                                                       OOT_PS2_PAUSE_BG_PSM);
-    sPauseBackgroundVram = __real_gsKit_vram_alloc(gs_global, sPauseBackgroundBytes, GSKIT_ALLOC_SYSBUFFER);
-    if (sPauseBackgroundVram != GSKIT_ALLOC_ERROR) {
-        gs_global->TexturePointer = gs_global->CurrentPointer;
-    }
-}
-
-static void GfxPs2Window_QueueFrameState(u32 frameAddr, u32 framePsm, u32 frameWidth,
-                                           u32 scissorW, u32 scissorH) {
-    u64* p=gsKit_heap_alloc(gs_global,4,64,GIF_AD);
-    *p++=GIF_TAG_AD(4); *p++=GIF_AD;
-    *p++=GS_SETREG_FRAME_1(frameAddr/8192U,frameWidth/64U,framePsm,0); *p++=GS_FRAME_1;
-    *p++=GS_SETREG_SCISSOR(0,scissorW-1,0,scissorH-1); *p++=GS_SCISSOR_1;
-    *p++=GS_SETREG_TEST(0,1,0,0,0,0,0,1); *p++=GS_TEST_1;
-    *p++=GS_SETREG_ZBUF_1(gs_global->ZBuffer/8192U,gs_global->PSMZ,1); *p++=GS_ZBUF_1;
-}
-
-static void GfxPs2Window_QueueScaledSnapshot(u32 sourceAddr,u32 sourcePsm,u32 sourceW,u32 sourceH,
-                                             u32 targetAddr,u32 targetPsm,u32 targetW,u32 targetH,
-                                             int filter){
-    GSTEXTURE tex;
-    const int oldAlpha=gs_global->PrimAlphaEnable, oldFog=gs_global->PrimFogEnable, oldAA=gs_global->PrimAAEnable;
-    memset(&tex,0,sizeof(tex));
-    tex.Width=sourceW; tex.Height=sourceH; tex.PSM=(u8)sourcePsm; tex.TBW=sourceW/64U;
-    tex.Vram=sourceAddr; tex.Filter=filter;
-    gs_global->PrimAlphaEnable=0; gs_global->PrimFogEnable=0; gs_global->PrimAAEnable=0;
-    GfxPs2Window_QueueFrameState(targetAddr,targetPsm,targetW,targetW,targetH);
-    {
-        u64* p=gsKit_heap_alloc(gs_global,2,32,GIF_AD);
-        *p++=GIF_TAG_AD(2); *p++=GIF_AD;
-        *p++=0; *p++=GS_TEXFLUSH;
-        *p++=GS_SETREG_CLAMP(GS_CMODE_CLAMP,GS_CMODE_CLAMP,0,sourceW-1,0,sourceH-1); *p++=GS_CLAMP_1;
-    }
-    gsKit_prim_sprite_texture_3d(gs_global,&tex,0.0f,0.0f,0,0.0f,0.0f,
-                                 (float)targetW,(float)targetH,0,(float)sourceW,(float)sourceH,
-                                 GS_SETREG_RGBAQ(0x80,0x80,0x80,0x80,0));
-    gs_global->PrimAlphaEnable=oldAlpha; gs_global->PrimFogEnable=oldFog; gs_global->PrimAAEnable=oldAA;
-}
-
 static bool GfxPs2Window_QueuePauseBackgroundCaptureCurrent(void) {
-    const int drawBuffer = gs_global != NULL ? (gs_global->ActiveBuffer & 1) : 0;
-    const u32 src = gs_global != NULL ? gs_global->ScreenBuffer[drawBuffer] : 0;
-    const u32 dst = sPauseBackgroundVram;
-
     if (!sPauseBackgroundActive || !sPauseBackgroundCapturePending ||
-        gs_global == NULL || src == 0 || dst == 0) {
+        !sDisplayedFrameValid || gs_global == NULL)
         return false;
-    }
-
-    GfxPs2Window_QueueScaledSnapshot(src,gs_global->PSM,gs_global->Width,gs_global->Height,
-                                     dst,OOT_PS2_PAUSE_BG_PSM,OOT_PS2_PAUSE_BG_WIDTH,OOT_PS2_PAUSE_BG_HEIGHT,
-                                     GS_FILTER_LINEAR);
-    GfxPs2Window_QueueFrameState(src,gs_global->PSM,gs_global->Width,gs_global->Width,gs_global->Height);
-    gfx_ps2_invalidate_register_cache();
+    if (gs_global->DoubleBuffering == GS_SETTING_OFF ||
+        gs_global->ScreenBuffer[0] == gs_global->ScreenBuffer[1])
+        return false;
+    const int srcIndex = sDisplayedBufferIndex & 1;
+    if ((gs_global->ActiveBuffer & 1) == srcIndex)
+        return false; 
+    sPauseBackgroundSourceIndex = srcIndex;
     sPauseBackgroundCapturePending = false;
     sPauseBackgroundCaptured = true;
+    ++sPauseBackgroundCaptureCount;
+    printf("PS2PAUSEBG capture=%lu mode=pin source=%d draw=%d addr=%08lx\n",
+           (unsigned long)sPauseBackgroundCaptureCount, srcIndex,
+           (int)(gs_global->ActiveBuffer & 1),
+           (unsigned long)gs_global->ScreenBuffer[srcIndex]);
     return true;
 }
 
@@ -640,28 +599,49 @@ void gfx_ps2_request_pause_background(void) {
     if (!sPauseBackgroundActive) return;
     sPauseBackgroundCapturePending = true;
     sPauseBackgroundCaptured = false;
+    sPauseBackgroundSourceIndex = -1;
+    sPauseBackgroundRestoreCount = 0;
 }
 
 void gfx_ps2_set_pause_background_active(bool active) {
     if (!active) {
         sPauseBackgroundCapturePending = false;
         sPauseBackgroundCaptured = false;
+        sPauseBackgroundSourceIndex = -1;
     }
     sPauseBackgroundActive = active;
 }
 
 bool gfx_ps2_pause_background_active(void) {
-    return sPauseBackgroundActive && sPauseBackgroundCaptured && sPauseBackgroundVram != 0;
+    return sPauseBackgroundActive && sPauseBackgroundCaptured &&
+           sPauseBackgroundSourceIndex >= 0;
 }
 
 void gfx_ps2_restore_pause_background(void) {
-    if (!gfx_ps2_pause_background_active()) return;
-    GfxPs2Window_QueueScaledSnapshot(sPauseBackgroundVram,OOT_PS2_PAUSE_BG_PSM,
-                                     OOT_PS2_PAUSE_BG_WIDTH,OOT_PS2_PAUSE_BG_HEIGHT,
-                                     gs_global->ScreenBuffer[gs_global->ActiveBuffer&1],gs_global->PSM,
-                                     gs_global->Width,gs_global->Height,GS_FILTER_LINEAR);
-    GfxPs2Window_QueueFrameState(gs_global->ScreenBuffer[gs_global->ActiveBuffer&1],gs_global->PSM,
-                                 gs_global->Width,gs_global->Width,gs_global->Height);
+    if (!gfx_ps2_pause_background_active() || gs_global == NULL) return;
+    const int srcIndex = sPauseBackgroundSourceIndex;
+    const int dstIndex = gs_global->ActiveBuffer & 1;
+    if (srcIndex == dstIndex) {
+        printf("PS2PAUSEBG ERROR refused in-place copy source=%d\n", srcIndex);
+        return;
+    }
+    const u32 src = gs_global->ScreenBuffer[srcIndex];
+    const u32 dst = gs_global->ScreenBuffer[dstIndex];
+    
+    u64 *p = gsKit_heap_alloc(gs_global, 4, 64, GIF_AD);
+    *p++ = GIF_TAG_AD(4); *p++ = GIF_AD;
+    *p++ = GS_SETREG_BITBLTBUF(src / 256U, gs_global->Width / 64U, GS_PSM_CT24,
+                               dst / 256U, gs_global->Width / 64U, GS_PSM_CT24);
+    *p++ = GS_BITBLTBUF;
+    *p++ = GS_SETREG_TRXPOS(0, 0, 0, 0, 0); *p++ = GS_TRXPOS;
+    *p++ = GS_SETREG_TRXREG(gs_global->Width, gs_global->Height); *p++ = GS_TRXREG;
+    *p++ = GS_SETREG_TRXDIR(2); *p++ = GS_TRXDIR;
+    ++sPauseBackgroundRestoreCount;
+    if (sPauseBackgroundRestoreCount == 1) {
+        printf("PS2PAUSEBG restore first_frame capture=%lu src=%08lx dst=%08lx local=1\n",
+               (unsigned long)sPauseBackgroundCaptureCount,
+               (unsigned long)src, (unsigned long)dst);
+    }
     gfx_ps2_invalidate_register_cache();
 }
 
@@ -678,10 +658,15 @@ static bool GfxPs2Window_StartFrame(void) {
         if (!(GS_CSR_FINISH)) return false;
 
         sDisplayedBufferIndex = completed;
+        sDisplayedFrameValid = true;
+        GS_SET_DISPFB1(gs_global->ScreenBuffer[sDisplayedBufferIndex] / 8192,
+                       gs_global->Width / 64, gs_global->PSM, 0, 0);
         GS_SET_DISPFB2(gs_global->ScreenBuffer[sDisplayedBufferIndex] / 8192,
                        gs_global->Width / 64, gs_global->PSM, 0, 0);
 
-        if (gs_global->DoubleBuffering != GS_SETTING_OFF) {
+        if (gfx_ps2_pause_background_active()) {
+            nextDraw = sPauseBackgroundSourceIndex ^ 1;
+        } else if (gs_global->DoubleBuffering != GS_SETTING_OFF) {
             nextDraw = completed ^ 1;
         }
 

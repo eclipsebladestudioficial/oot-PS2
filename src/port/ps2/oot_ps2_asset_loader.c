@@ -14,7 +14,7 @@
 #define OOT_PS2_LOADED_ASSET_RANGE_COUNT    4096
 #define OOT_PS2_ASSET_READ_CHUNK_SIZE       0x4000
 #define OOT_PS2_ASSET_CACHE_SIZE            (128 * 1024)
-#define OOT_PS2_PINNED_ASSET_WINDOW_SIZE    (128 * 1024)
+
 #define OOT_PS2_HOT_ASSET_CACHE_COUNT       4
 #define OOT_PS2_HOT_READ_TRACKER_COUNT      16
 #define OOT_PS2_HOT_READ_PROMOTE_COUNT      4
@@ -22,7 +22,7 @@
 #define OOT_PS2_PACKED_CACHE_BLOCK_SIZE     0x10000
 #define OOT_PS2_PACKED_DIRECT_READ_MIN_SIZE (4 * OOT_PS2_PACKED_CACHE_BLOCK_SIZE)
 #define OOT_PS2_PACKED_CACHE_TARGET_SIZE    (2 * 1024 * 1024)
-#define OOT_PS2_PACKED_CACHE_MIN_SIZE       (1 * 1024 * 1024)
+#define OOT_PS2_PACKED_CACHE_MIN_SIZE       (256 * 1024)
 #define OOT_PS2_PACKED_CACHE_ALLOC_STEP     (1024 * 1024)
 #define OOT_PS2_PACKED_CACHE_MAX_BLOCK_COUNT \
     (OOT_PS2_PACKED_CACHE_TARGET_SIZE / OOT_PS2_PACKED_CACHE_BLOCK_SIZE)
@@ -51,6 +51,9 @@
 #define OOT_PS2_PAUSE_JPN_ASSET_NAME        "icon_item_jpn_static"
 #define OOT_PS2_PAUSE_NES_ASSET_NAME        "icon_item_nes_static"
 #define OOT_PS2_PAUSE_MAP_NAME_ASSET_NAME   "map_name_static"
+#define OOT_PS2_PAUSE_ITEM_NAME_ASSET_NAME  "item_name_static"
+#define OOT_PS2_PAUSE_MAP_GRAND_ASSET_NAME  "map_grand_static"
+#define OOT_PS2_PAUSE_MAP_ROOM_ASSET_NAME   "map_48x85_static"
 #define OOT_PS2_ASSET_READ_ZERO_RETRY_COUNT 16
 #define OOT_PS2_ASSET_READ_ZERO_RETRY_USEC  1000
 #define OOT_PS2_AUDIO_READ_BACKOFF_USEC     1000
@@ -180,6 +183,9 @@ static OotPs2PinnedAssetWindowCache sOotPs2PinnedAssetCaches[] = {
     { OOT_PS2_PAUSE_GAMEOVER_ASSET_NAME, { NULL, NULL, 0, 0, 0, 0, false, false } },
     { OOT_PS2_PAUSE_NES_ASSET_NAME, { NULL, NULL, 0, 0, 0, 0, false, false } },
     { OOT_PS2_PAUSE_MAP_NAME_ASSET_NAME, { NULL, NULL, 0, 0, 0, 0, false, false } },
+    { OOT_PS2_PAUSE_ITEM_NAME_ASSET_NAME, { NULL, NULL, 0, 0, 0, 0, false, false } },
+    { OOT_PS2_PAUSE_MAP_GRAND_ASSET_NAME, { NULL, NULL, 0, 0, 0, 0, false, false } },
+    { OOT_PS2_PAUSE_MAP_ROOM_ASSET_NAME, { NULL, NULL, 0, 0, 0, 0, false, false } },
 };
 static OotPs2AssetWindowCache sOotPs2HotAssetCaches[OOT_PS2_HOT_ASSET_CACHE_COUNT];
 static OotPs2HotReadTracker sOotPs2HotReadTrackers[OOT_PS2_HOT_READ_TRACKER_COUNT];
@@ -1048,25 +1054,22 @@ static s32 OotPort_ReadPackedAssetFileRange(const OotPortExternalAsset* asset, s
 static size_t OotPort_GetAssetCacheSizeLimit(const OotPortExternalAsset* asset) {
     size_t i;
     size_t fileSize;
-    size_t limit;
 
     if (asset == NULL) {
         return OOT_PS2_ASSET_CACHE_SIZE;
     }
 
     fileSize = (asset->vromEnd > asset->vromStart) ? (asset->vromEnd - asset->vromStart) : 0;
+    
+    if (OotPort_AssetNameEquals(asset, OOT_PS2_PAUSE_ITEM_NAME_ASSET_NAME) ||
+        OotPort_AssetNameEquals(asset, OOT_PS2_PAUSE_MAP_ROOM_ASSET_NAME) ||
+        OotPort_AssetNameEquals(asset, OOT_PS2_GAMEPLAY_KEEP_ASSET_NAME)) {
+        return fileSize < OOT_PS2_ASSET_CACHE_SIZE ? fileSize : OOT_PS2_ASSET_CACHE_SIZE;
+    }
     for (i = 0; i < OOT_PS2_PINNED_ASSET_CACHE_COUNT; i++) {
-        if (!OotPort_AssetNameEquals(asset, sOotPs2PinnedAssetCaches[i].name)) {
-            continue;
-        }
-
-        if (OotPort_AssetNameEquals(asset, OOT_PS2_LINK_ANIMATION_ASSET_NAME) ||
-            OotPort_AssetNameEquals(asset, OOT_PS2_AUDIOTABLE_ASSET_NAME)) {
+        if (OotPort_AssetNameEquals(asset, sOotPs2PinnedAssetCaches[i].name)) {
             return fileSize;
         }
-
-        limit = OOT_PS2_PINNED_ASSET_WINDOW_SIZE;
-        return fileSize < limit ? fileSize : limit;
     }
 
     return fileSize < OOT_PS2_ASSET_CACHE_SIZE ? fileSize : OOT_PS2_ASSET_CACHE_SIZE;
@@ -1127,6 +1130,7 @@ static s32 OotPort_EnsureAssetCacheRange(OotPs2AssetWindowCache* cache, const Oo
 
         data = OotPort_AllocCacheMemory(capacity);
         if (data == NULL) {
+            cache->failed = true;
             printf("oot-ps2 asset cache alloc deferred name=%s size=%lu\n", OotPort_AssetName(asset),
                    (unsigned long)capacity);
             return false;
@@ -1223,6 +1227,9 @@ static void OotPort_PreloadPersistentAssets(void) {
 
         if (!OotPort_EnsureAssetCacheRange(&selectedPinned->cache, selectedAsset, 0, selectedFileSize, false)) {
             printf("oot-ps2 persistent asset preload failed name=%s size=%lu\n", OotPort_AssetName(selectedAsset),
+                   (unsigned long)selectedFileSize);
+        } else {
+            printf("oot-ps2 asset resident name=%s bytes=%lu\n", OotPort_AssetName(selectedAsset),
                    (unsigned long)selectedFileSize);
         }
     }
