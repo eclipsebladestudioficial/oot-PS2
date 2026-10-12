@@ -1,4 +1,4 @@
-#include "oot_port_memory.h"
+#include "memory.h"
 
 #include <stdint.h>
 #include <string.h>

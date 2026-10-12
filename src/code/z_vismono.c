@@ -15,7 +15,7 @@
 #include "gfxalloc.h"
 #include "vis.h"
 #if defined(TARGET_PS2)
-#include "oot_port_gfx_ext.h"
+#include "renderer/gfx_ext.h"
 #endif
 
 // Height of the fragments the color frame buffer (CFB) is split into.

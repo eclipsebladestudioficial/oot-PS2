@@ -1,8 +1,8 @@
-#include "oot_port_mixer.h"
+#include "mixer.h"
 
 #include "attributes.h"
 #include "audio.h"
-#include "oot_port_audio_commands.h"
+#include "audio/commands.h"
 
 #include <string.h>
 #include <stddef.h>

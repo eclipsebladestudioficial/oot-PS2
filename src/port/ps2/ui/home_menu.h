@@ -2,10 +2,10 @@
 #define OOT_PS2_HOME_MENU_H
 
 #include <stdbool.h>
-#include "oot_port_controls.h"
-#include "oot_ps2_platform.h"
-#include "oot_ps2_renderer.h"
-#include "oot_ps2_video.h"
+#include "controls/controls.h"
+#include "platform.h"
+#include "renderer/renderer.h"
+#include "renderer/video.h"
 #include "play_state.h"
 
 typedef enum HomeMenuResult {

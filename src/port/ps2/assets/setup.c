@@ -1,7 +1,7 @@
-#include "oot_ps2_asset_setup.h"
+#include "setup.h"
 
-#include "oot_port_asset_loader.h"
-#include "oot_ps2_platform.h"
+#include "assets/loader.h"
+#include "platform.h"
 
 #include <stdio.h>
 #include <stdlib.h>

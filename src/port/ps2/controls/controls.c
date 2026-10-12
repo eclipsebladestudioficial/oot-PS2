@@ -1,6 +1,6 @@
-#include "oot_port_controls.h"
-#include "oot_port_asset_loader.h"
-#include "oot_ps2_platform.h"
+#include "controls.h"
+#include "assets/loader.h"
+#include "platform.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -441,4 +441,3 @@ int OotPortControls_IsN64StickScalingEnabled(void) {
 void OotPortControls_SetN64StickScalingEnabled(int enabled) {
     //sN64StickScalingEnabled = enabled != 0;
 }
-

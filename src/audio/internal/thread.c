@@ -8,7 +8,7 @@
 #include "versions.h"
 #include "audio.h"
 #if defined(TARGET_PS2)
-#include "oot_port_audio_backend.h"
+#include "audio/backend.h"
 #endif
 
 #define SAMPLES_TO_OVERPRODUCE 0x10

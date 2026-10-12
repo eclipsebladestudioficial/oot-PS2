@@ -11,7 +11,7 @@
 #include "skin_matrix.h"
 
 #if defined(TARGET_PS2)
-#include "port/ps2/oot_ps2_vu0_matrix.h"
+#include "port/ps2/renderer/vu0_matrix.h"
 #endif
 
 // clang-format off

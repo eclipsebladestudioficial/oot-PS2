@@ -8,7 +8,7 @@
 #include "font.h"
 #include "message.h"
 #if defined(TARGET_PS2)
-#include "oot_port_asset_loader.h"
+#include "assets/loader.h"
 #endif
 
 #if defined(TARGET_PS2)

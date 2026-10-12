@@ -1,4 +1,4 @@
-#include "oot_ps2_platform.h"
+#include "platform.h"
 
 #include <delaythread.h>
 #include <ee_regs.h>

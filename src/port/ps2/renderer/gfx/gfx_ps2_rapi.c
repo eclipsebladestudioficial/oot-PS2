@@ -11,12 +11,12 @@
 #include "gfx_rendering_api.h"
 #include "gfx_cc.h"
 #include "gfx_window_manager_api.h"
-#include "oot_ps2_platform.h"
-#include "oot_port_controls.h"
-#include "oot_ps2_video.h"
+#include "platform.h"
+#include "controls/controls.h"
+#include "renderer/video.h"
 #include "array_count.h"
-#include "oot_ps2_renderer.h"
-#include "oot_ps2_video.h"
+#include "renderer/renderer.h"
+#include "renderer/video.h"
 
 #define MAX_TEXTURES 768
 #define MAX_SHADERS 1024
@@ -2122,7 +2122,7 @@ static void ps2_menu_rect(float x0,float y0,float x1,float y1,u64 color){
 #define PS2_HOME_HIGHLIGHT_G 92
 #define PS2_HOME_HIGHLIGHT_B 78
 
-#include "oot_ps2_home_font.inc"
+#include "home_font.inc"
 
 static float ps2_home_scale(void){
     const float sx=(float)gs_global->Width/PS2_HOME_MENU_WIDTH;

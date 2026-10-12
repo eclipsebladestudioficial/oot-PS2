@@ -7,10 +7,10 @@ import struct
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from tools import port_runtime_patches as port
+from tools.ps2 import runtime_patches as port
 
 
 def resolve_manifest(elf_path: Path, manifest_path: Path, output: Path, base_elf_path: Path | None = None) -> None:

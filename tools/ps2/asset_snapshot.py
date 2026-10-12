@@ -19,6 +19,8 @@ GENERATED_FILES = (
     "oot_port_rominfo.c",
 )
 RUNTIME_PREFIX = "runtime/"
+LEGACY_ASSET_LOADER_INCLUDE = b'#include "oot_port_asset_loader.h"'
+ASSET_LOADER_INCLUDE = b'#include "assets/loader.h"'
 
 STRING_RE = re.compile(r'"(?:\\.|[^"\\])*"')
 CHAR_RE = re.compile(r"'(?:\\.|[^'\\])*'")
@@ -298,6 +300,10 @@ def create_snapshot(build_dir: Path, extracted_dir: Path, snapshot: Path, transf
     )
 
 
+def normalize_generated_data(data: bytes) -> bytes:
+    return data.replace(LEGACY_ASSET_LOADER_INCLUDE, ASSET_LOADER_INCLUDE)
+
+
 def restore_snapshot(snapshot: Path, output_dir: Path) -> None:
     output_dir = output_dir.resolve()
     root = output_dir.parents[2]
@@ -309,7 +315,7 @@ def restore_snapshot(snapshot: Path, output_dir: Path) -> None:
         if any(name not in GENERATED_FILES and not name.startswith(RUNTIME_PREFIX) for name in names):
             raise ValueError("PS2 snapshot contains an unexpected member")
         for name in GENERATED_FILES:
-            (output_dir / name).write_bytes(archive.read(name))
+            (output_dir / name).write_bytes(normalize_generated_data(archive.read(name)))
         for name in sorted(names - set(GENERATED_FILES)):
             relative = Path(name[len(RUNTIME_PREFIX) :])
             if relative.is_absolute() or ".." in relative.parts:
@@ -333,6 +339,8 @@ def sanitize_snapshot(source: Path, output: Path, generated_dir: Path | None = N
                 data = (generated_dir / name).read_bytes()
             else:
                 data = archive.read(name)
+            if name in GENERATED_FILES:
+                data = normalize_generated_data(data)
             if name.startswith(RUNTIME_PREFIX):
                 data = clean_runtime_data(name[len(RUNTIME_PREFIX) :], data)
             write_snapshot_member(cleaned, name, data)

@@ -1346,26 +1346,26 @@ PS2_PORT_RUNTIME_SOURCES := \
 	src/overlays/gamestates/ovl_select/z_select.c \
 	src/overlays/gamestates/ovl_title/z_title.c \
 	src/overlays/misc/ovl_map_mark_data/z_map_mark_data.c \
-	src/port/ps2/gfx/gfx_cc.c \
-	src/port/ps2/gfx/gfx_fast3d.c \
-	src/port/ps2/gfx/gfx_ps2_rapi.c \
-	src/port/ps2/gfx/gfx_window_ps2.c \
-	src/port/ps2/oot_port_audiomgr.c \
-	src/port/ps2/oot_port_mixer.c \
-	src/port/ps2/oot_ps2_asset_setup.c \
-	src/port/ps2/oot_ps2_asset_loader.c \
-	src/port/ps2/oot_ps2_audio.c \
-	src/port/ps2/oot_ps2_controls.c \
-	src/port/ps2/oot_ps2_game.c \
-	src/port/ps2/oot_ps2_home_menu.c \
-	src/port/ps2/oot_ps2_memory.c \
-	src/port/ps2/oot_ps2_platform.c \
-	src/port/ps2/oot_ps2_renderer.c \
-	src/port/ps2/oot_ps2_runtime_patch.c \
-	src/port/ps2/sys_ucode_port.c \
-	src/port/ps2/libultra_ps2.c \
-	src/port/ps2/sched_ps2.c \
-	src/port/ps2/oot_ps2_video.c \
+	src/port/ps2/renderer/gfx/gfx_cc.c \
+	src/port/ps2/renderer/gfx/gfx_fast3d.c \
+	src/port/ps2/renderer/gfx/gfx_ps2_rapi.c \
+	src/port/ps2/renderer/gfx/gfx_window_ps2.c \
+	src/port/ps2/audio/manager.c \
+	src/port/ps2/audio/mixer.c \
+	src/port/ps2/assets/setup.c \
+	src/port/ps2/assets/loader.c \
+	src/port/ps2/audio/audio.c \
+	src/port/ps2/controls/controls.c \
+	src/port/ps2/game.c \
+	src/port/ps2/ui/home_menu.c \
+	src/port/ps2/memory/memory.c \
+	src/port/ps2/platform.c \
+	src/port/ps2/renderer/renderer.c \
+	src/port/ps2/runtime/patch.c \
+	src/port/ps2/renderer/sys_ucode.c \
+	src/port/ps2/libultra.c \
+	src/port/ps2/sched.c \
+	src/port/ps2/renderer/video.c \
 	
 
 PS2DEV ?= /usr/local/ps2dev
@@ -1377,17 +1377,17 @@ PS2_PORT_PYTHON_ENV := PYTHONPATH=tools/ps2:.
 PS2_PORT_CC := $(PS2DEV)/ee/bin/mips64r5900el-ps2-elf-gcc
 PS2_PORT_AR := $(PS2DEV)/ee/bin/mips64r5900el-ps2-elf-ar
 PS2_PORT_NM := $(PS2DEV)/ee/bin/mips64r5900el-ps2-elf-nm
-PS2_PORT_ENTRY_SOURCE := src/port/ps2/oot_ps2_main.c
+PS2_PORT_ENTRY_SOURCE := src/port/ps2/main.c
 PS2_PORT_RUNTIME_ASM_SOURCES := \
 	src/code/kanread.s \
-	src/port/ps2/oot_port_asset_transform.s \
-	src/port/ps2/oot_port_ucode_assets.s \
-	src/port/ps2/oot_ps2_audio_mix.s
+	src/port/ps2/assets/transform.s \
+	src/port/ps2/assets/ucode_assets.s \
+	src/port/ps2/audio/mix.s
 PS2_PORT_ASSET_SNAPSHOT := assets/ps2/$(VERSION)/generated.zip
 PS2_PORT_ASSET_TRANSFORM := assets/ps2/$(VERSION)/asset_transform.z
 PS2_PORT_RUNTIME_PATCH_MANIFEST := assets/ps2/$(VERSION)/runtime_patches.z
-PS2_PORT_SNAPSHOT_TOOL := tools/port_asset_snapshot.py
-PS2_PORT_RUNTIME_PATCH_TOOL := tools/ps2_port_runtime_patches.py
+PS2_PORT_SNAPSHOT_TOOL := tools/ps2/asset_snapshot.py
+PS2_PORT_RUNTIME_PATCH_TOOL := tools/ps2/resolve_runtime_patches.py
 PS2_PORT_SETUP_STAMP := $(PS2_PORT_BUILD_DIR)/setup.stamp
 PS2_PORT_INCLUDE_DIR := $(PS2_PORT_BUILD_DIR)/include
 PS2_PORT_ROMINFO_SOURCE := $(PS2_PORT_BUILD_DIR)/oot_port_rominfo.c
@@ -1458,7 +1458,7 @@ PS2_PORT_INCLUDES := \
 	-I$(BUILD_DIR) \
 	-I$(PS2_PORT_BUILD_DIR) \
 	-Isrc/port/ps2 \
-	-Isrc/port/ps2/gfx \
+	-Isrc/port/ps2/renderer/gfx \
 	-I$(PS2SDK)/ee/include \
 	-I$(PS2SDK)/common/include \
 	-I$(PS2SDK)/ports/include \
@@ -1489,9 +1489,9 @@ ps2-port-iso: $(PS2_PORT_ISO)
 PS2_PORT_GFX_HOT_CFLAGS := $(filter-out -O2,$(PS2_PORT_CFLAGS)) -O3
 PS2_AUDIO_MIX_CFLAGS := $(filter-out -O2,$(PS2_PORT_CFLAGS)) -O3
 
-$(PS2_PORT_BUILD_DIR)/src/port/ps2/oot_port_mixer.o: PS2_PORT_CFLAGS := $(PS2_AUDIO_MIX_CFLAGS)
-$(PS2_PORT_BUILD_DIR)/src/port/ps2/gfx/gfx_fast3d.o: PS2_PORT_CFLAGS := $(PS2_PORT_GFX_HOT_CFLAGS)
-$(PS2_PORT_BUILD_DIR)/src/port/ps2/gfx/gfx_ps2_rapi.o: PS2_PORT_CFLAGS := $(PS2_PORT_GFX_HOT_CFLAGS)
+$(PS2_PORT_BUILD_DIR)/src/port/ps2/audio/mixer.o: PS2_PORT_CFLAGS := $(PS2_AUDIO_MIX_CFLAGS)
+$(PS2_PORT_BUILD_DIR)/src/port/ps2/renderer/gfx/gfx_fast3d.o: PS2_PORT_CFLAGS := $(PS2_PORT_GFX_HOT_CFLAGS)
+$(PS2_PORT_BUILD_DIR)/src/port/ps2/renderer/gfx/gfx_ps2_rapi.o: PS2_PORT_CFLAGS := $(PS2_PORT_GFX_HOT_CFLAGS)
 
 $(PS2_PORT_BUILD_DIR)/%.o: %.c
 	@mkdir -p $(dir $@)
@@ -1532,7 +1532,7 @@ $(PS2_PORT_ASSET_SEGMENT_OBJECT): $(PS2_PORT_ASSET_SEGMENT_SOURCE)
 	@mkdir -p $(dir $@)
 	$(PS2_PORT_CC) -MMD -MP -MF $(@:.o=.d) -MT $@ -c -x assembler-with-cpp $(PS2_PORT_ASM_FLAGS) -o $@ $<
 
-$(PS2_PORT_BUILD_DIR)/src/port/ps2/oot_port_asset_transform.o: $(PS2_PORT_ASSET_TRANSFORM)
+$(PS2_PORT_BUILD_DIR)/src/port/ps2/assets/transform.o: $(PS2_PORT_ASSET_TRANSFORM)
 $(PS2_PORT_RUNTIME_OBJECTS) $(PS2_PORT_RUNTIME_ASM_OBJECTS) $(PS2_PORT_ENTRY_OBJECT): $(PS2_PORT_SETUP_STAMP)
 
 $(PS2_PORT_LIBRARY): $(PS2_PORT_RUNTIME_OBJECTS) $(PS2_PORT_RUNTIME_ASM_OBJECTS) \

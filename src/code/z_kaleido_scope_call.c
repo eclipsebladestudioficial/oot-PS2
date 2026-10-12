@@ -10,7 +10,7 @@
 #include "translation.h"
 #include "play_state.h"
 #if defined(TARGET_PS2)
-#include "oot_ps2_renderer.h"
+#include "renderer/renderer.h"
 #endif
 
 void (*sKaleidoScopeUpdateFunc)(PlayState* play);

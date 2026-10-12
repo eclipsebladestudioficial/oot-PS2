@@ -15,7 +15,7 @@
 #include <timer.h>
 
 #include "gfx_window_manager_api.h"
-#include "../oot_ps2_platform.h"
+#include "platform.h"
 
 #define OOT_PS2_DISPLAY_WIDTH 640
 #define OOT_PS2_DISPLAY_HEIGHT 448

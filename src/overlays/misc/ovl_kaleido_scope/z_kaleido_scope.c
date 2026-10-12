@@ -28,7 +28,7 @@
 #include "player.h"
 #include "save.h"
 #if defined(TARGET_PS2)
-#include "oot_ps2_renderer.h"
+#include "renderer/renderer.h"
 #endif
 
 #include "assets/textures/icon_item_static/icon_item_static.h"

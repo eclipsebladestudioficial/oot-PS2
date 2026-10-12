@@ -1,5 +1,5 @@
-#include "oot_ps2_runtime_patch.h"
-#include "oot_port_asset_loader.h"
+#include "patch.h"
+#include "assets/loader.h"
 #include <kernel.h>
 #include <stdlib.h>
 #include <string.h>

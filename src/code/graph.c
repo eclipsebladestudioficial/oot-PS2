@@ -30,7 +30,7 @@
 #include "save.h"
 #include "play_state.h"
 #if defined(TARGET_PS2)
-#include "oot_port_audio_backend.h"
+#include "audio/backend.h"
 #endif
 
 #define GFXPOOL_HEAD_MAGIC 0x1234

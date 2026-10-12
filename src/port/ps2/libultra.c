@@ -1,13 +1,13 @@
 #include "ultra64.h"
 
 #include "attributes.h"
-#include "oot_ps2_platform.h"
+#include "platform.h"
 
 #include <stdarg.h>
 #include <stdio.h>
 
-#include "oot_port_audio_backend.h"
-#include "oot_port_controls.h"
+#include "audio/backend.h"
+#include "controls/controls.h"
 #include "versions.h"
 
 #define OOT_PS2_MAX_THREADS 16

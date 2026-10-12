@@ -32,7 +32,7 @@
 #include "play_state.h"
 #include "vis.h"
 #if defined(TARGET_PS2)
-#include "oot_ps2_platform.h"
+#include "platform.h"
 #endif
 
 #pragma increment_block_number "gc-eu:0 gc-eu-mq:0 gc-jp:0 gc-jp-ce:0 gc-jp-mq:0 gc-us:0 gc-us-mq:0"

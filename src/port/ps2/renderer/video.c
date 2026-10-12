@@ -2,8 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <gsKit.h> 
-#include "oot_ps2_platform.h"
-#include "oot_ps2_video.h"
+#include "platform.h"
+#include "renderer/video.h"
 
 #define OOT_PS2_VIDEO_INI_BUFFER_SIZE 512
 #define OOT_PS2_VIDEO_PATH_CAPACITY 384

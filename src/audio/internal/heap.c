@@ -6,7 +6,7 @@
 #include "versions.h"
 #include "audio.h"
 #if defined(TARGET_PS2)
-#include "oot_port_audio_commands.h"
+#include "audio/commands.h"
 #endif
 
 

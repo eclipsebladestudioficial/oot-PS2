@@ -2,7 +2,7 @@
 #include <string.h>
 #include <kernel.h>
 #include <timer.h>
-#include "oot_ps2_home_menu.h"
+#include "ui/home_menu.h"
 
 #define OOT_PS2_HOME_MENU_ITEM_RESUME_GAME 0
 #define OOT_PS2_HOME_MENU_ITEM_CONTROLLER_MAPPING 1

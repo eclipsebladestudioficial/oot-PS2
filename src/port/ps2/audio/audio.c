@@ -1,8 +1,8 @@
-#include "oot_port_audio_backend.h"
+#include "backend.h"
 #include "audio.h"
 #include "dma.h"
-#include "oot_port_mixer.h"
-#include "oot_ps2_platform.h"
+#include "audio/mixer.h"
+#include "platform.h"
 #include <audsrv.h>
 #include <kernel.h>
 #include <ps2_audio_driver.h>

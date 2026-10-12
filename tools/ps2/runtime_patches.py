@@ -12,11 +12,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from tools.port_asset_segments import ElfObject, R_MIPS_32, SHN_UNDEF, U64_SOURCE_DECL_RE
-from tools.port_asset_snapshot import permutation, word_partitions
+from tools.ps2.asset_segments import ElfObject, R_MIPS_32, SHN_UNDEF, U64_SOURCE_DECL_RE
+from tools.ps2.asset_snapshot import permutation, word_partitions
 from tools import version_config
 
 

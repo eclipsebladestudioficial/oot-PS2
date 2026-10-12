@@ -26,7 +26,7 @@
 #include "save.h"
 #include "skin_matrix.h"
 #if defined(TARGET_PS2)
-#include "oot_ps2_renderer.h"
+#include "renderer/renderer.h"
 #endif
 
 Vec3f D_801270A0 = { 0.0f, 0.0f, 0.0f };

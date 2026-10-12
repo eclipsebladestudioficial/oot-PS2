@@ -61,12 +61,11 @@
 #include "z_actor_dlftbls.h"
 #include "z_game_dlftbls.h"
 #include "z_lib.h"
-#include "oot_port_asset_loader.h"
-#include "oot_port_audio_backend.h"
-#include "oot_port_compat.h"
-#include "oot_port_memory.h"
-#include "oot_ps2_platform.h"
-#include "oot_ps2_crash.h"
+#include "assets/loader.h"
+#include "audio/backend.h"
+#include "compat.h"
+#include "memory/memory.h"
+#include "platform.h"
 
 #include <math.h>
 #include <stdarg.h>
@@ -753,21 +752,6 @@ void LogUtils_HungupThread(const char* name, int line) {
 void LogUtils_ResetHungup(void) {
 }
 
-static const char* sOotPs2CrashStage = "BOOT";
-static s32 sOotPs2CrashSceneId = -1;
-static u32 sOotPs2CrashFrame;
-
-void Crash_SetStage(const char* stage) {
-    if (stage != NULL) {
-        sOotPs2CrashStage = stage;
-    }
-}
-
-void Crash_SetSceneFrame(s32 sceneId, u32 frame) {
-    sOotPs2CrashSceneId = sceneId;
-    sOotPs2CrashFrame = frame;
-}
-
 void Fault_Init(void) {
 }
 
@@ -830,10 +814,8 @@ void Fault_SetCharPad(UNUSED s8 padW, UNUSED s8 padH) {
 NORETURN void Fault_AddHungupAndCrashImpl(const char* exp1, const char* exp2) {
     char msg[320];
 
-    snprintf(msg, sizeof(msg), "oot-ps2 fault: %s %s stage=%s scene=%d frame=%u\n",
-             exp1 != NULL ? exp1 : "(null)", exp2 != NULL ? exp2 : "",
-             sOotPs2CrashStage != NULL ? sOotPs2CrashStage : "(null)", sOotPs2CrashSceneId,
-             (unsigned)sOotPs2CrashFrame);
+    snprintf(msg, sizeof(msg), "oot-ps2 fault: %s %s\n", exp1 != NULL ? exp1 : "(null)",
+             exp2 != NULL ? exp2 : "");
     OotPort_FaultWrite(msg);
     while (true) {
         Thread_Delay(1000000);
@@ -843,10 +825,7 @@ NORETURN void Fault_AddHungupAndCrashImpl(const char* exp1, const char* exp2) {
 NORETURN void Fault_AddHungupAndCrash(const char* file, int line) {
     char msg[320];
 
-    snprintf(msg, sizeof(msg), "oot-ps2 fault at %s:%d stage=%s scene=%d frame=%u\n",
-             file != NULL ? file : "(null)", line,
-             sOotPs2CrashStage != NULL ? sOotPs2CrashStage : "(null)", sOotPs2CrashSceneId,
-             (unsigned)sOotPs2CrashFrame);
+    snprintf(msg, sizeof(msg), "oot-ps2 fault at %s:%d\n", file != NULL ? file : "(null)", line);
     OotPort_FaultWrite(msg);
     while (true) {
         Thread_Delay(1000000);

@@ -33,7 +33,7 @@
 #include "save.h"
 
 #if defined(TARGET_PS2)
-#include "oot_ps2_renderer.h"
+#include "renderer/renderer.h"
 #endif
 
 #include "assets/objects/gameplay_keep/eff_lightning.h"

@@ -5,7 +5,7 @@
 #include "ultra64.h"
 #include "audio.h"
 #if defined(TARGET_PS2)
-#include "oot_port_audio_backend.h"
+#include "audio/backend.h"
 #endif
 
 void Audio_InvalDCache(void* buf, s32 size) {

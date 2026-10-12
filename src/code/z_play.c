@@ -44,8 +44,8 @@
 #include "light.h"
 #include "play_state.h"
 #if defined(TARGET_PS2)
-#include "oot_port_gfx_ext.h"
-#include "oot_ps2_renderer.h"
+#include "renderer/gfx_ext.h"
+#include "renderer/renderer.h"
 #endif
 #include "player.h"
 #include "save.h"

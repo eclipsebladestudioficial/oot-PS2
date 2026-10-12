@@ -1,9 +1,9 @@
-#include "oot_port_asset_loader.h"
-#include "oot_ps2_asset_setup.h"
-#include "oot_port_audio_backend.h"
-#include "oot_port_memory.h"
+#include "loader.h"
+#include "assets/setup.h"
+#include "audio/backend.h"
+#include "memory/memory.h"
 #include "segment_symbols.h"
-#include "oot_ps2_platform.h"
+#include "platform.h"
 
 #include <stdio.h>
 #include <stdlib.h>

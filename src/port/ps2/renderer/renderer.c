@@ -1,12 +1,11 @@
-#include "oot_ps2_renderer.h"
+#include "renderer.h"
 
 #include <stdbool.h>
 
 #include "gfx/gfx_fast3d.h"
 #include "gfx/gfx_rendering_api.h"
 #include "gfx/gfx_window_manager_api.h"
-#include "oot_ps2_platform.h"
-#include "oot_ps2_crash.h"
+#include "platform.h"
 
 extern struct GfxRenderingAPI gfx_ps2_rapi;
 extern struct GfxWindowManagerAPI gfx_ps2_wapi;
@@ -39,20 +38,15 @@ void Renderer_Init(void) {
         return;
     }
 
-    Crash_SetStage("RENDERER_GFX_INIT");
     gfx_init(&gfx_ps2_wapi, &gfx_ps2_rapi, "oot-ps2", false);
     sInitialized = true;
 }
 
 void Renderer_RenderDisplayList(Gfx* dl) {
     Renderer_Init();
-    Crash_SetStage("RENDER_START_FRAME");
     gfx_start_frame();
-    Crash_SetStage("RENDER_DISPLAY_LIST");
     gfx_run(dl);
-    Crash_SetStage("RENDER_END_FRAME");
     gfx_end_frame();
-    Crash_SetStage("RENDER_DONE");
 }
 
 void Renderer_RenderTask(const OSTask* task) {

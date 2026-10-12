@@ -1,8 +1,8 @@
 #include "sched.h"
 
 #include "array_count.h"
-#include "oot_ps2_platform.h"
-#include "oot_ps2_renderer.h"
+#include "platform.h"
+#include "renderer/renderer.h"
 
 #include <string.h>
 
