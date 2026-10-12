@@ -598,7 +598,7 @@ void Room_Init(PlayState* play, Room* room) {
 static s32 sPs2PendingPrerenderRoomActive;
 static u32 sPs2PendingPrerenderRoomKey = 0xFFFFFFFFU;
 
-static void Room_SetPs2PendingPrerenderState(Room* room) {
+static void Room_SetPendingPrerenderState(Room* room) {
     s32 active = false;
 
     if ((room != NULL) && (room->segment != NULL) && (room->roomShape != NULL) &&
@@ -627,8 +627,8 @@ static void Room_SetPs2PendingPrerenderState(Room* room) {
     sPs2PendingPrerenderRoomKey = active ? (u32)(uintptr_t)room->segment : 0xFFFFFFFFU;
 }
 
-static void Room_ApplyPs2PendingPrerenderState(void) {
-    OotPs2Renderer_SetPrerenderRoomState(sPs2PendingPrerenderRoomActive, sPs2PendingPrerenderRoomKey);
+static void Room_ApplyPendingPrerenderState(void) {
+    Renderer_SetPrerenderRoomState(sPs2PendingPrerenderRoomActive, sPs2PendingPrerenderRoomKey);
 }
 #endif
 
@@ -783,9 +783,9 @@ s32 Room_ProcessRoomRequest(PlayState* play, RoomContext* roomCtx) {
 
             Scene_ExecuteCommands(play, roomCtx->curRoom.segment);
 #if defined(TARGET_PS2)
-            Room_SetPs2PendingPrerenderState(&roomCtx->curRoom);
+            Room_SetPendingPrerenderState(&roomCtx->curRoom);
             if (roomCtx->prevRoom.num < 0) {
-                Room_ApplyPs2PendingPrerenderState();
+                Room_ApplyPendingPrerenderState();
             }
 #endif
             Player_SetBootData(play, GET_PLAYER(play));
@@ -819,7 +819,7 @@ void Room_FinishRoomChange(PlayState* play, RoomContext* roomCtx) {
     roomCtx->prevRoom.segment = NULL;
 
 #if defined(TARGET_PS2)
-    Room_ApplyPs2PendingPrerenderState();
+    Room_ApplyPendingPrerenderState();
 #endif
 
     func_80031B14(play, &play->actorCtx);

@@ -243,8 +243,8 @@ void Play_Destroy(GameState* thisx) {
     Player* player = GET_PLAYER(this);
 
 #if defined(TARGET_PS2)
-    OotPs2Renderer_SetPrerenderRoomState(false, 0xFFFFFFFFU);
-    OotPs2Renderer_SetPauseBackgroundActive(false);
+    Renderer_SetPrerenderRoomState(false, 0xFFFFFFFFU);
+    Renderer_SetPauseBackgroundActive(false);
 #endif
 
     if (1) {}

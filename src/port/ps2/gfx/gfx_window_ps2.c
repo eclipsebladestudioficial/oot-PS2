@@ -59,14 +59,14 @@ void __real_gsKit_finish(void);
 void __real_gsKit_queue_reset(GSQUEUE* queue);
 
 int __wrap_DIntr(void) {
-    if (sGsInitActive && OotPs2Platform_IsDiscBoot()) {
+    if (sGsInitActive && Platform_IsDiscBoot()) {
         return 1;
     }
     return __real_DIntr();
 }
 
 int __wrap_EIntr(void) {
-    if (sGsInitActive && OotPs2Platform_IsDiscBoot()) {
+    if (sGsInitActive && Platform_IsDiscBoot()) {
         return 1;
     }
     return __real_EIntr();
@@ -150,7 +150,7 @@ void gfx_ps2_prepare_crash_screen(void) {
     dmaKit_chan_init(DMA_CHANNEL_GIF);
 }
 
-static int GfxPs2WaitGifBounded(void) {
+static int GfxWaitGifBounded(void) {
     u32 timeout = 8000000;
 
     while (((*(volatile u32*)0x1000A000) & 0x100) != 0 && timeout-- != 0) {
@@ -169,7 +169,7 @@ static int GfxPs2WaitGifBounded(void) {
     return 1;
 }
 
-static int GfxPs2WaitFinishBounded(void) {
+static int GfxWaitFinishBounded(void) {
     u32 timeout = 8000000;
 
     while (!(GS_CSR_FINISH) && timeout-- != 0) {
@@ -181,7 +181,7 @@ static int GfxPs2WaitFinishBounded(void) {
     return 1;
 }
 
-static int GfxPs2WaitVif1Bounded(void) {
+static int GfxWaitVif1Bounded(void) {
     u32 timeout = 4000000U;
 
     while (((*R_EE_D1_CHCR) & 0x100U) != 0U && timeout-- != 0U) {
@@ -190,7 +190,7 @@ static int GfxPs2WaitVif1Bounded(void) {
     return ((*R_EE_D1_CHCR) & 0x100U) == 0U;
 }
 
-static bool GfxPs2Window_ReadLocalRect(void* dst, size_t dstBytes, u32 sourceAddr, u32 sourcePsm,
+static bool GfxWindow_ReadLocalRect(void* dst, size_t dstBytes, u32 sourceAddr, u32 sourcePsm,
                                        u32 sourceWidth, u32 x, u32 y, u32 width, u32 height) {
     u64 packet[10] __attribute__((aligned(64)));
     u64* p = packet;
@@ -213,7 +213,7 @@ static bool GfxPs2Window_ReadLocalRect(void* dst, size_t dstBytes, u32 sourceAdd
     }
     qwc = (u32)((transferBytes + 15U) >> 4);
 
-   if (!GfxPs2WaitFinishBounded()) {
+   if (!GfxWaitFinishBounded()) {
         return false;
     }
     if (dmaKit_wait(DMA_CHANNEL_GIF, 4000000U) < 0) {
@@ -247,7 +247,7 @@ static bool GfxPs2Window_ReadLocalRect(void* dst, size_t dstBytes, u32 sourceAdd
     *R_EE_D1_MADR = DMA_SET_MADR((u32)(uintptr_t)dst, 0);
     *R_EE_D1_CHCR = DMA_SET_CHCR(0, 0, 0, 0, 0, 1, 0);
 
-    if (!GfxPs2WaitVif1Bounded()) {
+    if (!GfxWaitVif1Bounded()) {
         *R_EE_D1_CHCR = 0;
         VIF1_STAT = 0;
         GS_SETREG_BUSDIR(0);
@@ -294,7 +294,7 @@ bool gfx_ps2_depth_read(int32_t x, int32_t y, uint16_t* depth) {
     if (baseY > gs_global->Height - blockH) baseY = gs_global->Height - blockH;
 
     if (baseX != sDepthReadbackX || baseY != sDepthReadbackY) {
-        if (!GfxPs2Window_ReadLocalRect(sDepthReadback, sizeof(sDepthReadback), gs_global->ZBuffer,
+        if (!GfxWindow_ReadLocalRect(sDepthReadback, sizeof(sDepthReadback), gs_global->ZBuffer,
                                         gs_global->PSMZ, gs_global->Width, baseX, baseY, blockW, blockH)) {
             sDepthReadbackX = -1;
             sDepthReadbackY = -1;
@@ -328,14 +328,14 @@ void gfx_ps2_apply_vismono(uint8_t primR, uint8_t primG, uint8_t primB, uint8_t 
 
     if (gs_global->Os_Queue->tag_size != 0) {
         gsKit_queue_exec(gs_global);
-        if (dmaKit_wait(DMA_CHANNEL_GIF, 8000000U) < 0 || !GfxPs2WaitFinishBounded()) {
+        if (dmaKit_wait(DMA_CHANNEL_GIF, 8000000U) < 0 || !GfxWaitFinishBounded()) {
             return;
         }
         gsKit_queue_reset(gs_global->Os_Queue);
     }
 
     frameAddr = gs_global->ScreenBuffer[gs_global->ActiveBuffer & 1];
-    if (!GfxPs2Window_ReadLocalRect(sVisMonoReadback, sVisMonoReadbackBytes, frameAddr, gs_global->PSM,
+    if (!GfxWindow_ReadLocalRect(sVisMonoReadback, sVisMonoReadbackBytes, frameAddr, gs_global->PSM,
                                     gs_global->Width, 0, 0, gs_global->Width, gs_global->Height)) {
         return;
     }
@@ -362,7 +362,7 @@ void gfx_ps2_apply_vismono(uint8_t primR, uint8_t primG, uint8_t primB, uint8_t 
     gfx_ps2_invalidate_register_cache();
 }
 
-static void GfxPs2SetBufferAttributesDisc(GSGLOBAL* g) {
+static void GfxSetBufferAttributesDisc(GSGLOBAL* g) {
     g->StartXOffset = 0;
     g->StartYOffset = 0;
     g->StartX = 492;
@@ -378,13 +378,13 @@ static void GfxPs2SetBufferAttributesDisc(GSGLOBAL* g) {
     g->DH = (g->MagV + 1) * g->Height;
 }
 
-static int GfxPs2InitScreenDisc(GSGLOBAL* g) {
+static int GfxInitScreenDisc(GSGLOBAL* g) {
     u64* pData;
     u64* pStore;
     int size = 19;
     u32 bytes;
 
-    GfxPs2SetBufferAttributesDisc(g);
+    GfxSetBufferAttributesDisc(g);
     GS_RESET();
     __asm__ volatile("sync.p; nop;");
     *GS_CSR = 0;
@@ -484,11 +484,11 @@ static int GfxPs2InitScreenDisc(GSGLOBAL* g) {
     *pData++ = GS_TEXA;
 
     __real_dmaKit_send_ucab(DMA_CHANNEL_GIF, pStore, size);
-    GfxPs2WaitGifBounded();
+    GfxWaitGifBounded();
     __real_gsKit_clear(g, GS_SETREG_RGBAQ(0x00, 0x00, 0x00, 0x00, 0x00));
     __real_gsKit_queue_exec(g);
-    GfxPs2WaitGifBounded();
-    GfxPs2WaitFinishBounded();
+    GfxWaitGifBounded();
+    GfxWaitFinishBounded();
 
     GS_SET_DISPFB1(g->ScreenBuffer[0] / 8192, g->Width / 64, g->PSM, 0, 0);
     GS_SET_DISPFB2(g->ScreenBuffer[0] / 8192, g->Width / 64, g->PSM, 0, 0);
@@ -503,7 +503,7 @@ static int GfxPs2InitScreenDisc(GSGLOBAL* g) {
     return 1;
 }
 
-static void GfxPs2Window_Init(const char* gameName, bool startInFullscreen) {
+static void GfxWindow_Init(const char* gameName, bool startInFullscreen) {
     (void)gameName;
     (void)startInFullscreen;
 
@@ -526,9 +526,9 @@ static void GfxPs2Window_Init(const char* gameName, bool startInFullscreen) {
 
     ResetEE(INIT_VU1 | INIT_VIF1 | INIT_GIF);
     __asm__ volatile("sync.p; nop;");
-    if (OotPs2Platform_IsDiscBoot()) {
+    if (Platform_IsDiscBoot()) {
         sGsInitActive = true;
-        GfxPs2InitScreenDisc(gs_global);
+        GfxInitScreenDisc(gs_global);
         sGsInitActive = false;
     } else {
         sGsInitActive = true;
@@ -541,7 +541,7 @@ static void GfxPs2Window_Init(const char* gameName, bool startInFullscreen) {
     gsKit_TexManager_init(gs_global);
 }
 
-static bool GfxPs2Window_QueuePauseBackgroundCaptureCurrent(void) {
+static bool GfxWindow_QueuePauseBackgroundCaptureCurrent(void) {
     if (!sPauseBackgroundActive || !sPauseBackgroundCapturePending ||
         !sDisplayedFrameValid || gs_global == NULL)
         return false;
@@ -563,36 +563,36 @@ static bool GfxPs2Window_QueuePauseBackgroundCaptureCurrent(void) {
 }
 
 void gfx_ps2_capture_pause_background_current(void) {
-    (void)GfxPs2Window_QueuePauseBackgroundCaptureCurrent();
+    (void)GfxWindow_QueuePauseBackgroundCaptureCurrent();
 }
 
-static void GfxPs2Window_SetKeyboardCallbacks(bool (*isKeyDown)(int), bool (*isKeyPressed)(int),
+static void GfxWindow_SetKeyboardCallbacks(bool (*isKeyDown)(int), bool (*isKeyPressed)(int),
                                               void (*allKeysUp)(void)) {
     (void)isKeyDown;
     (void)isKeyPressed;
     (void)allKeysUp;
 }
 
-static void GfxPs2Window_SetFullscreenChangedCallback(void (*onFullscreenChanged)(bool)) {
+static void GfxWindow_SetFullscreenChangedCallback(void (*onFullscreenChanged)(bool)) {
     (void)onFullscreenChanged;
 }
 
-static void GfxPs2Window_SetFullscreen(bool fullscreen) {
+static void GfxWindow_SetFullscreen(bool fullscreen) {
     (void)fullscreen;
 }
 
-static void GfxPs2Window_MainLoop(void (*runOneGameIter)(void)) {
+static void GfxWindow_MainLoop(void (*runOneGameIter)(void)) {
     for (;;) {
         runOneGameIter();
     }
 }
 
-static void GfxPs2Window_GetDimensions(uint32_t* width, uint32_t* height) {
+static void GfxWindow_GetDimensions(uint32_t* width, uint32_t* height) {
     *width = OOT_PS2_DISPLAY_WIDTH;
     *height = OOT_PS2_DISPLAY_HEIGHT;
 }
 
-static void GfxPs2Window_HandleEvents(void) {
+static void GfxWindow_HandleEvents(void) {
 }
 
 void gfx_ps2_request_pause_background(void) {
@@ -645,7 +645,7 @@ void gfx_ps2_restore_pause_background(void) {
     gfx_ps2_invalidate_register_cache();
 }
 
-static bool GfxPs2Window_StartFrame(void) {
+static bool GfxWindow_StartFrame(void) {
     sDepthReadbackX = -1;
     sDepthReadbackY = -1;
     if (sFramePending) {
@@ -677,10 +677,10 @@ static bool GfxPs2Window_StartFrame(void) {
     return true;
 }
 
-static void GfxPs2Window_SwapBuffersBegin(void) {
+static void GfxWindow_SwapBuffersBegin(void) {
 }
 
-static void GfxPs2Window_SwapBuffersEnd(void) {
+static void GfxWindow_SwapBuffersEnd(void) {
     sAsyncFrameSubmit = true;
     gsKit_queue_exec(gs_global);
     sAsyncFrameSubmit = false;
@@ -688,7 +688,7 @@ static void GfxPs2Window_SwapBuffersEnd(void) {
     gsKit_TexManager_nextFrame(gs_global);
 }
 
-static double GfxPs2Window_GetTime(void) {
+static double GfxWindow_GetTime(void) {
     u32 seconds;
     u32 microseconds;
 
@@ -697,15 +697,15 @@ static double GfxPs2Window_GetTime(void) {
 }
 
 struct GfxWindowManagerAPI gfx_ps2_wapi = {
-    GfxPs2Window_Init,
-    GfxPs2Window_SetKeyboardCallbacks,
-    GfxPs2Window_SetFullscreenChangedCallback,
-    GfxPs2Window_SetFullscreen,
-    GfxPs2Window_MainLoop,
-    GfxPs2Window_GetDimensions,
-    GfxPs2Window_HandleEvents,
-    GfxPs2Window_StartFrame,
-    GfxPs2Window_SwapBuffersBegin,
-    GfxPs2Window_SwapBuffersEnd,
-    GfxPs2Window_GetTime,
+    GfxWindow_Init,
+    GfxWindow_SetKeyboardCallbacks,
+    GfxWindow_SetFullscreenChangedCallback,
+    GfxWindow_SetFullscreen,
+    GfxWindow_MainLoop,
+    GfxWindow_GetDimensions,
+    GfxWindow_HandleEvents,
+    GfxWindow_StartFrame,
+    GfxWindow_SwapBuffersBegin,
+    GfxWindow_SwapBuffersEnd,
+    GfxWindow_GetTime,
 };

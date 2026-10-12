@@ -156,7 +156,7 @@ u16 D_0E000000[32] __attribute__((aligned(64)));
 u16 D_0F000000[32] __attribute__((aligned(64)));
 static uintptr_t sSysCfbFbPtr[2];
 static uintptr_t sSysCfbEnd;
-static OotPs2Handle sPs2StackThreadId = -1;
+static Handle sPs2StackThreadId = -1;
 static uintptr_t sPs2StackStart;
 static uintptr_t sPs2StackEnd;
 static uintptr_t sPs2StackAltStart;
@@ -164,7 +164,7 @@ static uintptr_t sPs2StackAltEnd;
 
 static const char* OotPort_GetSavePath(const char* filename, char* buffer, size_t bufferSize) {
     if (OotPort_IsDiscBoot()) {
-        OotPs2File_Mkdir("mc0:/OOTPS2", 0777);
+        File_Mkdir("mc0:/OOTPS2", 0777);
         if (snprintf(buffer, bufferSize, "mc0:/OOTPS2/%s", filename) >= (s32)bufferSize) {
             return filename;
         }
@@ -176,7 +176,7 @@ static const char* OotPort_GetSavePath(const char* filename, char* buffer, size_
 static void OotPort_LoadSram(void) {
     char pathBuffer[384];
     const char* path = OotPort_GetSavePath(OOT_PS2_SAVE_PATH, pathBuffer, sizeof(pathBuffer));
-    OotPs2Handle fd = OotPs2File_Open(path, OOT_PS2_FILE_RDONLY, 0);
+    Handle fd = File_Open(path, OOT_PS2_FILE_RDONLY, 0);
     u8* out = sPs2Sram;
     size_t remaining = sizeof(sPs2Sram);
 
@@ -186,11 +186,11 @@ static void OotPort_LoadSram(void) {
 
     while (remaining != 0) {
         int chunk = remaining > OOT_PS2_SAVE_IO_CHUNK_SIZE ? OOT_PS2_SAVE_IO_CHUNK_SIZE : (int)remaining;
-        int read = OotPs2File_Read(fd, out, chunk);
+        int read = File_Read(fd, out, chunk);
 
         if (read < 0) {
             memset(sPs2Sram, 0, sizeof(sPs2Sram));
-            OotPs2File_Close(fd);
+            File_Close(fd);
             return;
         }
         if (read == 0) {
@@ -201,7 +201,7 @@ static void OotPort_LoadSram(void) {
         remaining -= read;
     }
 
-    OotPs2File_Close(fd);
+    File_Close(fd);
     if (remaining != 0) {
         memset(out, 0, remaining);
     }
@@ -210,7 +210,7 @@ static void OotPort_LoadSram(void) {
 static s32 OotPort_FlushSram(void) {
     char pathBuffer[384];
     const char* path = OotPort_GetSavePath(OOT_PS2_SAVE_PATH, pathBuffer, sizeof(pathBuffer));
-    OotPs2Handle fd = OotPs2File_Open(path, OOT_PS2_FILE_WRONLY | OOT_PS2_FILE_CREAT | OOT_PS2_FILE_TRUNC, 0777);
+    Handle fd = File_Open(path, OOT_PS2_FILE_WRONLY | OOT_PS2_FILE_CREAT | OOT_PS2_FILE_TRUNC, 0777);
     const u8* in = sPs2Sram;
     size_t remaining = sizeof(sPs2Sram);
 
@@ -221,11 +221,11 @@ static s32 OotPort_FlushSram(void) {
 
     while (remaining != 0) {
         int chunk = remaining > OOT_PS2_SAVE_IO_CHUNK_SIZE ? OOT_PS2_SAVE_IO_CHUNK_SIZE : (int)remaining;
-        int written = OotPs2File_Write(fd, in, chunk);
+        int written = File_Write(fd, in, chunk);
 
         if (written <= 0) {
             printf("oot-ps2 save write failed path=%s written=%d\n", path, written);
-            OotPs2File_Close(fd);
+            File_Close(fd);
             return false;
         }
 
@@ -233,7 +233,7 @@ static s32 OotPort_FlushSram(void) {
         remaining -= written;
     }
 
-    OotPs2File_Close(fd);
+    File_Close(fd);
     return true;
 }
 
@@ -253,8 +253,8 @@ static int OotPort_IsContainedRange(const void* ptr, size_t size, uintptr_t rang
 }
 
 static void OotPort_UpdateCurrentThreadStackRange(void) {
-    OotPs2Handle threadId = OotPs2Thread_GetId();
-    OotPs2ThreadInfo threadInfo;
+    Handle threadId = Thread_GetId();
+    ThreadInfo threadInfo;
     uintptr_t stack;
     uintptr_t stackSize;
 
@@ -269,7 +269,7 @@ static void OotPort_UpdateCurrentThreadStackRange(void) {
     sPs2StackAltEnd = 0;
 
     memset(&threadInfo, 0, sizeof(threadInfo));
-    if (OotPs2Thread_GetInfo(threadId, &threadInfo) < 0) {
+    if (Thread_GetInfo(threadId, &threadInfo) < 0) {
         return;
     }
 
@@ -289,14 +289,14 @@ static void OotPort_UpdateCurrentThreadStackRange(void) {
     }
 }
 
-extern s32 OotPs2Asset_IsMutableTextureRange(uintptr_t start, uintptr_t end);
+extern s32 Asset_IsMutableTextureRange(uintptr_t start, uintptr_t end);
 
 int OotPort_IsRuntimeByteRangeSlow(uintptr_t start, uintptr_t end) {
     OotPort_UpdateCurrentThreadStackRange();
 
     return ((start >= sPs2StackStart) && (end <= sPs2StackEnd)) ||
            ((start >= sPs2StackAltStart) && (end <= sPs2StackAltEnd)) ||
-           OotPs2Asset_IsMutableTextureRange(start, end);
+           Asset_IsMutableTextureRange(start, end);
 }
 
 static s32 OotPort_IsNativeUserRange(uintptr_t addr, size_t size) {
@@ -619,11 +619,11 @@ s32 DmaMgr_AudioDmaHandler(UNUSED OSPiHandle* pihandle, OSIoMesg* mb, UNUSED s32
     return 0;
 }
 
-void OotPs2Input_SetPlayState(void* playState) {
+void Input_SetPlayState(void* playState) {
     sPs2InputPlayState = (PlayState*)playState;
 }
 
-static s32 OotPs2Input_FirstPersonAimActive(void) {
+static s32 Input_FirstPersonAimActive(void) {
     Camera* camera;
 
     if (sPs2InputPlayState == NULL) {
@@ -649,7 +649,7 @@ void PadMgr_RequestPadData(PadMgr* padMgr, Input* inputs, s32 gameRequest) {
     input->prev = padMgr->inputs[0].cur;
     input->cur = pads[0];
 
-    if (OotPs2Input_FirstPersonAimActive() &&
+    if (Input_FirstPersonAimActive() &&
         (sPs2InputPlayState == NULL || !IS_PAUSED(&sPs2InputPlayState->pauseCtx))) {
         input->cur.stick_x /= 2;
         input->cur.stick_y /= 2;
@@ -757,13 +757,13 @@ static const char* sOotPs2CrashStage = "BOOT";
 static s32 sOotPs2CrashSceneId = -1;
 static u32 sOotPs2CrashFrame;
 
-void OotPs2Crash_SetStage(const char* stage) {
+void Crash_SetStage(const char* stage) {
     if (stage != NULL) {
         sOotPs2CrashStage = stage;
     }
 }
 
-void OotPs2Crash_SetSceneFrame(s32 sceneId, u32 frame) {
+void Crash_SetSceneFrame(s32 sceneId, u32 frame) {
     sOotPs2CrashSceneId = sceneId;
     sOotPs2CrashFrame = frame;
 }
@@ -789,7 +789,7 @@ void Fault_RemoveClient(FaultClient* client) {
 
 static void OotPort_FaultWrite(const char* msg) {
     osSyncPrintf("%s", msg);
-    OotPs2File_Write(1, msg, strlen(msg));
+    File_Write(1, msg, strlen(msg));
 }
 
 NORETURN void oot_port_assert(const char* assertion, const char* file, int line) {
@@ -836,7 +836,7 @@ NORETURN void Fault_AddHungupAndCrashImpl(const char* exp1, const char* exp2) {
              (unsigned)sOotPs2CrashFrame);
     OotPort_FaultWrite(msg);
     while (true) {
-        OotPs2Thread_Delay(1000000);
+        Thread_Delay(1000000);
     }
 }
 
@@ -849,7 +849,7 @@ NORETURN void Fault_AddHungupAndCrash(const char* file, int line) {
              (unsigned)sOotPs2CrashFrame);
     OotPort_FaultWrite(msg);
     while (true) {
-        OotPs2Thread_Delay(1000000);
+        Thread_Delay(1000000);
     }
 }
 

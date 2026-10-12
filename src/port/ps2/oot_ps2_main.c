@@ -31,7 +31,7 @@ void Graph_Init(GraphicsContext* gfxCtx);
 void Graph_Destroy(GraphicsContext* gfxCtx);
 void Graph_Update(GraphicsContext* gfxCtx, GameState* gameState);
 
-static size_t OotPs2StateSize(GameStateFunc init) {
+static size_t StateSize(GameStateFunc init) {
     if (init == Setup_Init) {
         return sizeof(SetupState);
     }
@@ -53,7 +53,7 @@ static size_t OotPs2StateSize(GameStateFunc init) {
     return sizeof(GameState);
 }
 
-static s32 OotPs2BootIsDisc(const char* path) {
+static s32 BootIsDisc(const char* path) {
     if (path == NULL) {
         return false;
     }
@@ -62,8 +62,8 @@ static s32 OotPs2BootIsDisc(const char* path) {
            (strncmp(path, "cdfs:", 5) == 0);
 }
 
-static void OotPs2Drivers_Init(const char* executablePath) {
-    s32 discBoot = OotPs2BootIsDisc(executablePath);
+static void Drivers_Init(const char* executablePath) {
+    s32 discBoot = BootIsDisc(executablePath);
 
     SifInitRpc(0);
     if (!discBoot) {
@@ -93,24 +93,24 @@ int main(int argc, char** argv) {
     size_t nextSize = sizeof(SetupState);
     const char* executablePath = ((argc > 0) && (argv != NULL) && (argv[0] != NULL)) ? argv[0] : NULL;
 
-    OotPs2Thread_ChangePriority(OotPs2Thread_GetId(), 0x30);
-    OotPs2Platform_SetDiscBoot(OotPs2BootIsDisc(executablePath));
-    OotPs2Drivers_Init(executablePath);
-    OotPs2Video_Init(executablePath);
+    Thread_ChangePriority(Thread_GetId(), 0x30);
+    Platform_SetDiscBoot(BootIsDisc(executablePath));
+    Drivers_Init(executablePath);
+    Video_Init(executablePath);
     osInitialize();
-    OotPs2Renderer_Init();
+    Renderer_Init();
 
     if (!OotPort_AssetInit(executablePath)) {
         return 1;
     }
 
-    if (!OotPs2RuntimePatch_Apply()) {
+    if (!RuntimePatch_Apply()) {
         return 1;
     }
 
     OotPortControls_Load();
     OotPortGame_Init();
-    OotPs2HomeMenu_Init();
+    HomeMenu_Init();
     Graph_Init(&gfxCtx);
 
     while (nextInit != NULL) {
@@ -121,12 +121,12 @@ int main(int argc, char** argv) {
 
         memset(gameState, 0, nextSize);
         GameState_Init(gameState, nextInit, &gfxCtx);
-        OotPs2Input_SetPlayState(nextInit == Play_Init ? gameState : NULL);
+        Input_SetPlayState(nextInit == Play_Init ? gameState : NULL);
 
         while (GameState_IsRunning(gameState)) {
-            OotPs2HomeMenu_PollHomeButton();
+            HomeMenu_PollHomeButton();
 
-            if (OotPs2HomeMenu_IsOpen()) {
+            if (HomeMenu_IsOpen()) {
 
                 if (nextInit == Play_Init) {
                     Player* player = GET_PLAYER((PlayState*)gameState);
@@ -137,7 +137,7 @@ int main(int argc, char** argv) {
                     }
                 }
 
-                if (OotPs2HomeMenu_RunFrame(tunicColor) == OOT_PS2_HOME_MENU_RESULT_EXIT_GAME) {
+                if (HomeMenu_RunFrame(tunicColor) == OOT_PS2_HOME_MENU_RESULT_EXIT_GAME) {
                     gameState->running = false;
                     nextInit = NULL;
                     break;
@@ -148,8 +148,8 @@ int main(int argc, char** argv) {
         }
 
         nextInit = GameState_GetInit(gameState);
-        nextSize = gameState->size != 0 ? gameState->size : OotPs2StateSize(nextInit);
-        OotPs2Input_SetPlayState(NULL);
+        nextSize = gameState->size != 0 ? gameState->size : StateSize(nextInit);
+        Input_SetPlayState(NULL);
         GameState_Destroy(gameState);
         SYSTEM_ARENA_FREE(gameState, __FILE__, __LINE__);
     }

@@ -27,7 +27,7 @@
 #include "overlays/actors/ovl_En_Horse/z_en_horse.h"
 
 #if defined(TARGET_PS2)
-extern void OotPs2_GetRightStick(int* x, int* y);
+extern void _GetRightStick(int* x, int* y);
 #endif
 
 #pragma increment_block_number "gc-eu:128 gc-eu-mq:128 gc-jp:128 gc-jp-ce:128 gc-jp-mq:128 gc-us:128 gc-us-mq:128" \
@@ -1781,7 +1781,7 @@ s32 Camera_Normal1(Camera* camera) {
         int camStickX = 0;
         int camStickY = 0;
 
-        OotPs2_GetRightStick(&camStickX, &camStickY);
+        _GetRightStick(&camStickX, &camStickY);
         if (camStickX != 0 || camStickY != 0) {
             eyeAdjustment.yaw -= (s16)(camStickX * 8);
             eyeAdjustment.pitch += (s16)(camStickY * 5);

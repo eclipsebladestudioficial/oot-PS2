@@ -4812,7 +4812,7 @@ void KaleidoScope_Update(PlayState* play) {
                     R_UPDATE_RATE = 3;
                     R_PAUSE_BG_PRERENDER_STATE = PAUSE_BG_PRERENDER_OFF;
 #if defined(TARGET_PS2)
-                    OotPs2Renderer_SetPauseBackgroundActive(false);
+                    Renderer_SetPauseBackgroundActive(false);
 #endif
                     func_800981B8(&play->objectCtx);
                     func_800418D0(&play->colCtx, play);
@@ -4875,7 +4875,7 @@ void KaleidoScope_Update(PlayState* play) {
             R_UPDATE_RATE = 3;
             R_PAUSE_BG_PRERENDER_STATE = PAUSE_BG_PRERENDER_OFF;
 #if defined(TARGET_PS2)
-            OotPs2Renderer_SetPauseBackgroundActive(false);
+            Renderer_SetPauseBackgroundActive(false);
 #endif
 #if defined(TARGET_PS2)
             KaleidoScope_RestorePortGameplaySegments(play);

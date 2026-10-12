@@ -6,12 +6,12 @@
 #include "ultra64.h"
 #include "z_math.h"
 
-static inline int OotPs2Vu0_IsAligned16(const void* ptr) {
+static inline int Vu0_IsAligned16(const void* ptr) {
     return (((uintptr_t)ptr & 15U) == 0U);
 }
 
-static inline int OotPs2Vu0_MtxFMult(const MtxF* a, const MtxF* b, MtxF* dest) {
-    if (!OotPs2Vu0_IsAligned16(a) || !OotPs2Vu0_IsAligned16(b) || !OotPs2Vu0_IsAligned16(dest)) {
+static inline int Vu0_MtxFMult(const MtxF* a, const MtxF* b, MtxF* dest) {
+    if (!Vu0_IsAligned16(a) || !Vu0_IsAligned16(b) || !Vu0_IsAligned16(dest)) {
         return 0;
     }
 
@@ -50,11 +50,11 @@ static inline int OotPs2Vu0_MtxFMult(const MtxF* a, const MtxF* b, MtxF* dest) {
     return 1;
 }
 
-static inline int OotPs2Vu0_MtxFMultVec3f(const MtxF* mf, const Vec3f* src, Vec3f* dest) {
+static inline int Vu0_MtxFMultVec3f(const MtxF* mf, const Vec3f* src, Vec3f* dest) {
     float in[4] __attribute__((aligned(16))) = { src->x, src->y, src->z, 1.0f };
     float out[4] __attribute__((aligned(16)));
 
-    if (!OotPs2Vu0_IsAligned16(mf)) {
+    if (!Vu0_IsAligned16(mf)) {
         return 0;
     }
 
@@ -79,11 +79,11 @@ static inline int OotPs2Vu0_MtxFMultVec3f(const MtxF* mf, const Vec3f* src, Vec3
     return 1;
 }
 
-static inline int OotPs2Vu0_MtxFMultVec3fW(const MtxF* mf, const Vec3f* src, Vec3f* dest, f32* wDest) {
+static inline int Vu0_MtxFMultVec3fW(const MtxF* mf, const Vec3f* src, Vec3f* dest, f32* wDest) {
     float in[4] __attribute__((aligned(16))) = { src->x, src->y, src->z, 1.0f };
     float out[4] __attribute__((aligned(16)));
 
-    if (!OotPs2Vu0_IsAligned16(mf)) {
+    if (!Vu0_IsAligned16(mf)) {
         return 0;
     }
 
@@ -109,10 +109,10 @@ static inline int OotPs2Vu0_MtxFMultVec3fW(const MtxF* mf, const Vec3f* src, Vec
     return 1;
 }
 
-static inline int OotPs2Vu0_MtxFTranslate(MtxF* mf, f32 x, f32 y, f32 z) {
+static inline int Vu0_MtxFTranslate(MtxF* mf, f32 x, f32 y, f32 z) {
     float v[4] __attribute__((aligned(16))) = { x, y, z, 1.0f };
 
-    if (!OotPs2Vu0_IsAligned16(mf)) {
+    if (!Vu0_IsAligned16(mf)) {
         return 0;
     }
 
@@ -133,10 +133,10 @@ static inline int OotPs2Vu0_MtxFTranslate(MtxF* mf, f32 x, f32 y, f32 z) {
     return 1;
 }
 
-static inline int OotPs2Vu0_MtxFScale(MtxF* mf, f32 x, f32 y, f32 z) {
+static inline int Vu0_MtxFScale(MtxF* mf, f32 x, f32 y, f32 z) {
     float v[4] __attribute__((aligned(16))) = { x, y, z, 1.0f };
 
-    if (!OotPs2Vu0_IsAligned16(mf)) {
+    if (!Vu0_IsAligned16(mf)) {
         return 0;
     }
 
@@ -157,10 +157,10 @@ static inline int OotPs2Vu0_MtxFScale(MtxF* mf, f32 x, f32 y, f32 z) {
     return 1;
 }
 
-static inline int OotPs2Vu0_MtxFRotateX(MtxF* mf, f32 sinValue, f32 cosValue) {
+static inline int Vu0_MtxFRotateX(MtxF* mf, f32 sinValue, f32 cosValue) {
     float v[4] __attribute__((aligned(16))) = { sinValue, cosValue, 0.0f, 0.0f };
 
-    if (!OotPs2Vu0_IsAligned16(mf)) {
+    if (!Vu0_IsAligned16(mf)) {
         return 0;
     }
 
@@ -182,10 +182,10 @@ static inline int OotPs2Vu0_MtxFRotateX(MtxF* mf, f32 sinValue, f32 cosValue) {
     return 1;
 }
 
-static inline int OotPs2Vu0_MtxFRotateY(MtxF* mf, f32 sinValue, f32 cosValue) {
+static inline int Vu0_MtxFRotateY(MtxF* mf, f32 sinValue, f32 cosValue) {
     float v[4] __attribute__((aligned(16))) = { sinValue, cosValue, 0.0f, 0.0f };
 
-    if (!OotPs2Vu0_IsAligned16(mf)) {
+    if (!Vu0_IsAligned16(mf)) {
         return 0;
     }
 
@@ -207,10 +207,10 @@ static inline int OotPs2Vu0_MtxFRotateY(MtxF* mf, f32 sinValue, f32 cosValue) {
     return 1;
 }
 
-static inline int OotPs2Vu0_MtxFRotateZ(MtxF* mf, f32 sinValue, f32 cosValue) {
+static inline int Vu0_MtxFRotateZ(MtxF* mf, f32 sinValue, f32 cosValue) {
     float v[4] __attribute__((aligned(16))) = { sinValue, cosValue, 0.0f, 0.0f };
 
-    if (!OotPs2Vu0_IsAligned16(mf)) {
+    if (!Vu0_IsAligned16(mf)) {
         return 0;
     }
 

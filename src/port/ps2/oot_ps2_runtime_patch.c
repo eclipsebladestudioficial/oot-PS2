@@ -75,7 +75,7 @@ done:
     return ok;
 }
 
-typedef struct OotPs2RuntimePatchRecord {
+typedef struct RuntimePatchRecord {
     u32 destinationOffset;
     u32 sourceVrom;
     u32 size;
@@ -85,9 +85,9 @@ typedef struct OotPs2RuntimePatchRecord {
     u32 flags;
     const u8* compressed;
     const u8* relocations;
-} OotPs2RuntimePatchRecord;
+} RuntimePatchRecord;
 
-static void OotPs2RuntimePatch_SortReadOrder(u32* order, const OotPs2RuntimePatchRecord* records, u32 count) {
+static void RuntimePatch_SortReadOrder(u32* order, const RuntimePatchRecord* records, u32 count) {
     u32 i;
 
     for (i = 1; i < count; i++) {
@@ -108,11 +108,11 @@ static void OotPs2RuntimePatch_SortReadOrder(u32* order, const OotPs2RuntimePatc
     }
 }
 
-s32 OotPs2RuntimePatch_Apply(void) {
+s32 RuntimePatch_Apply(void) {
     const u8* cursor = gOotPs2RuntimePatchBlob;
     const u8* end = gOotPs2RuntimePatchBlobEnd;
     const u8* permutations;
-    OotPs2RuntimePatchRecord* records = NULL;
+    RuntimePatchRecord* records = NULL;
     u32* readOrder = NULL;
     u32 patchCount;
     u32 permutationCount;
@@ -142,7 +142,7 @@ s32 OotPs2RuntimePatch_Apply(void) {
     if ((records == NULL) || (readOrder == NULL)) goto done;
 
     for (patchIndex = 0; patchIndex < patchCount; patchIndex++) {
-        OotPs2RuntimePatchRecord* record = &records[patchIndex];
+        RuntimePatchRecord* record = &records[patchIndex];
         const size_t headerSize = hasFlags ? 28U : 24U;
         size_t relocationBytes;
 
@@ -176,18 +176,18 @@ s32 OotPs2RuntimePatch_Apply(void) {
     mappedScratch = malloc(maxRecordSize != 0 ? maxRecordSize : 1U);
     if ((payloadScratch == NULL) || (mappedScratch == NULL)) goto done;
 
-    OotPs2RuntimePatch_SortReadOrder(readOrder, records, patchCount);
+    RuntimePatch_SortReadOrder(readOrder, records, patchCount);
 
     for (patchIndex = 0; patchIndex < patchCount; patchIndex++) {
         const u32 recordIndex = readOrder[patchIndex];
-        const OotPs2RuntimePatchRecord* record = &records[recordIndex];
+        const RuntimePatchRecord* record = &records[recordIndex];
         u8* destination = _ftext + record->destinationOffset;
 
         if (OotPort_AssetRead(destination, record->sourceVrom, record->size) != OOT_PORT_ASSET_READ_OK) goto done;
     }
 
     for (patchIndex = 0; patchIndex < patchCount; patchIndex++) {
-        const OotPs2RuntimePatchRecord* record = &records[patchIndex];
+        const RuntimePatchRecord* record = &records[patchIndex];
         u8* destination = _ftext + record->destinationOffset;
         u8* payload;
         uLongf inflatedSize;

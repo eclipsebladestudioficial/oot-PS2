@@ -3,6 +3,6 @@
 
 #include "ultra64.h"
 
-s32 OotPs2RuntimePatch_Apply(void);
+s32 RuntimePatch_Apply(void);
 
 #endif

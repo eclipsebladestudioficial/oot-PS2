@@ -278,7 +278,7 @@ s32 Environment_ZBufValToFixedPoint(s32 zBufferVal) {
 
 u16 Environment_GetPixelDepth(s32 x, s32 y) {
 #if defined(TARGET_PS2)
-    return OotPs2Renderer_IsDepthClear(x, y) ? GPACK_ZDZ(G_MAXFBZ, 0) : 0;
+    return Renderer_IsDepthClear(x, y) ? GPACK_ZDZ(G_MAXFBZ, 0) : 0;
 #else
     s32 pixelDepth = gZBuffer[y][x];
 
@@ -290,7 +290,7 @@ void Environment_GraphCallback(GraphicsContext* gfxCtx, void* param) {
     PlayState* play = (PlayState*)param;
 
 #if defined(TARGET_PS2)
-    OotPs2Renderer_BeginDepthQueries();
+    Renderer_BeginDepthQueries();
 #endif
     sSunScreenDepth = Environment_GetPixelDepth(sSunDepthTestX, sSunDepthTestY);
     Lights_GlowCheck(play);

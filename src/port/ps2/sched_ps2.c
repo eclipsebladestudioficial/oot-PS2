@@ -14,11 +14,11 @@ static u32 sNextGfxCompletionUsec;
 static u32 sGfxPacingRemainder;
 static bool sGfxPacingInitialized;
 
-static inline s32 SchedPs2_TimeDiff(u32 a, u32 b) {
+static inline s32 Sched_TimeDiff(u32 a, u32 b) {
     return (s32)(a - b);
 }
 
-static u32 SchedPs2_GetUpdateRate(const OSScTask* task) {
+static u32 Sched_GetUpdateRate(const OSScTask* task) {
     if ((task == NULL) || (task->framebuffer == NULL) || (task->framebuffer->updateRate <= 0)) {
         return 1U;
     }
@@ -26,7 +26,7 @@ static u32 SchedPs2_GetUpdateRate(const OSScTask* task) {
     return (u32)task->framebuffer->updateRate;
 }
 
-static u32 SchedPs2_GetFrameUsec(u32 updateRate) {
+static u32 Sched_GetFrameUsec(u32 updateRate) {
     u32 frameUsec = OOT_PS2_FRAME_BASE_USEC * updateRate;
 
     sGfxPacingRemainder += OOT_PS2_FRAME_REMAINDER * updateRate;
@@ -40,9 +40,9 @@ static u32 SchedPs2_GetFrameUsec(u32 updateRate) {
     return frameUsec;
 }
 
-static void SchedPs2_PacePresentedTask(u32 updateRate) {
-    const u32 now = OotPs2Time_GetUsecLow();
-    const u32 frameUsec = SchedPs2_GetFrameUsec(updateRate);
+static void Sched_PacePresentedTask(u32 updateRate) {
+    const u32 now = Time_GetUsecLow();
+    const u32 frameUsec = Sched_GetFrameUsec(updateRate);
 
     if (!sGfxPacingInitialized) {
         sNextGfxCompletionUsec = now;
@@ -50,10 +50,10 @@ static void SchedPs2_PacePresentedTask(u32 updateRate) {
     }
 
     {
-        const s32 waitUsec = SchedPs2_TimeDiff(sNextGfxCompletionUsec, now);
+        const s32 waitUsec = Sched_TimeDiff(sNextGfxCompletionUsec, now);
 
         if (waitUsec > 0) {
-            OotPs2Thread_Delay((u32)waitUsec);
+            Thread_Delay((u32)waitUsec);
         } else if (waitUsec < 0) {
 
             sNextGfxCompletionUsec = now;
@@ -63,9 +63,9 @@ static void SchedPs2_PacePresentedTask(u32 updateRate) {
     sNextGfxCompletionUsec += frameUsec;
 }
 
-static void SchedPs2_RenderTask(const OSScTask* task) {
+static void Sched_RenderTask(const OSScTask* task) {
 
-    OotPs2Renderer_RenderTask(&task->list);
+    Renderer_RenderTask(&task->list);
 }
 
 void Sched_Notify(Scheduler* sc) {
@@ -83,13 +83,13 @@ void Sched_Notify(Scheduler* sc) {
         if (task->list.t.type == M_GFXTASK) {
             const bool presents = ((task->flags & OS_SC_SWAPBUFFER) != 0) && (task->framebuffer != NULL);
 
-            SchedPs2_RenderTask(task);
+            Sched_RenderTask(task);
 
             if (presents) {
-                const u32 updateRate = SchedPs2_GetUpdateRate(task);
+                const u32 updateRate = Sched_GetUpdateRate(task);
                 
                 osViSwapBuffer(task->framebuffer->swapBuffer);
-                SchedPs2_PacePresentedTask(updateRate);
+                Sched_PacePresentedTask(updateRate);
             }
         }
 
@@ -116,7 +116,7 @@ void Sched_Init(Scheduler* sc, void* stack, OSPri priority, u8 viModeType, UNK_T
     sGfxPacingRemainder = 0U;
     sGfxPacingInitialized = false;
 
-    OotPs2Renderer_Init();
+    Renderer_Init();
 
     (void)stack;
     (void)priority;

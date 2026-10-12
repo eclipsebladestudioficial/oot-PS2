@@ -24,8 +24,8 @@ extern void KaleidoScope_Draw(PlayState* play);
 
 static void KaleidoScopeCall_RequestPauseBg(void) {
 #if defined(TARGET_PS2)
-    OotPs2Renderer_SetPauseBackgroundActive(true);
-    OotPs2Renderer_RequestPauseBackground();
+    Renderer_SetPauseBackgroundActive(true);
+    Renderer_RequestPauseBackground();
     R_PAUSE_BG_PRERENDER_STATE = PAUSE_BG_PRERENDER_SETUP;
 #else
     R_PAUSE_BG_PRERENDER_STATE = PAUSE_BG_PRERENDER_SETUP;

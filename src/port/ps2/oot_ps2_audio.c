@@ -37,16 +37,16 @@ static volatile u32 sAudioRingRead;
 static volatile u32 sAudioRingWrite;
 static volatile u32 sAudioRingCount;
 static u32 sAudioQuantumPhase;
-static OotPs2Handle sAudioRingMutex = -1;
-static OotPs2Handle sAudioDataSema = -1;
-static OotPs2Handle sAudioOutputThreadId = -1;
-static OotPs2Handle sAudioProducerThreadId = -1;
+static Handle sAudioRingMutex = -1;
+static Handle sAudioDataSema = -1;
+static Handle sAudioOutputThreadId = -1;
+static Handle sAudioProducerThreadId = -1;
 
 void AudioThread_InitExternalPool(void* ramAddr, u32 size);
 
-static void OotPs2Audio_ResetRing(void) {
+static void Audio_ResetRing(void) {
     if (sAudioRingMutex >= 0) {
-        OotPs2Sema_Wait(sAudioRingMutex);
+        Sema_Wait(sAudioRingMutex);
     }
 
     sAudioRingRead = 0;
@@ -54,11 +54,11 @@ static void OotPs2Audio_ResetRing(void) {
     sAudioRingCount = 0;
 
     if (sAudioRingMutex >= 0) {
-        OotPs2Sema_Signal(sAudioRingMutex);
+        Sema_Signal(sAudioRingMutex);
     }
 }
 
-static u32 OotPs2Audio_RingWrite(const u8* src, u32 bytes) {
+static u32 Audio_RingWrite(const u8* src, u32 bytes) {
     u32 first;
     u32 countAfter;
 
@@ -72,7 +72,7 @@ static u32 OotPs2Audio_RingWrite(const u8* src, u32 bytes) {
         bytes = OOT_PS2_AUDIO_RING_BYTES;
     }
 
-    OotPs2Sema_Wait(sAudioRingMutex);
+    Sema_Wait(sAudioRingMutex);
 
     if (sAudioRingCount > OOT_PS2_AUDIO_HIGH_BYTES) {
         u32 drop = (sAudioRingCount - OOT_PS2_AUDIO_TARGET_BYTES) & ~(OOT_PS2_AUDIO_FRAME_BYTES - 1);
@@ -107,20 +107,20 @@ static u32 OotPs2Audio_RingWrite(const u8* src, u32 bytes) {
     sAudioRingCount += bytes;
     countAfter = sAudioRingCount;
 
-    OotPs2Sema_Signal(sAudioRingMutex);
+    Sema_Signal(sAudioRingMutex);
 
     if (countAfter >= OOT_PS2_AUDIO_PREBUFFER_BYTES) {
-        OotPs2Sema_Signal(sAudioDataSema);
+        Sema_Signal(sAudioDataSema);
     }
 
     return bytes;
 }
 
-static u32 OotPs2Audio_RingRead(u8* dst, u32 bytes) {
+static u32 Audio_RingRead(u8* dst, u32 bytes) {
     u32 take;
     u32 first;
 
-    OotPs2Sema_Wait(sAudioRingMutex);
+    Sema_Wait(sAudioRingMutex);
 
     take = sAudioRingCount;
     if (take > bytes) {
@@ -143,11 +143,11 @@ static u32 OotPs2Audio_RingRead(u8* dst, u32 bytes) {
     sAudioRingRead = (sAudioRingRead + take) % OOT_PS2_AUDIO_RING_BYTES;
     sAudioRingCount -= take;
 
-    OotPs2Sema_Signal(sAudioRingMutex);
+    Sema_Signal(sAudioRingMutex);
     return take;
 }
 
-static s32 OotPs2Audio_FeedOneChunk(void) {
+static s32 Audio_FeedOneChunk(void) {
     u32 got;
     s32 result;
 
@@ -156,7 +156,7 @@ static s32 OotPs2Audio_FeedOneChunk(void) {
         return -1;
     }
 
-    got = OotPs2Audio_RingRead(sAudioFeedChunk, OOT_PS2_AUDIO_CHUNK_BYTES);
+    got = Audio_RingRead(sAudioFeedChunk, OOT_PS2_AUDIO_CHUNK_BYTES);
     if (got < OOT_PS2_AUDIO_CHUNK_BYTES) {
         memset(sAudioFeedChunk + got, 0, OOT_PS2_AUDIO_CHUNK_BYTES - got);
     }
@@ -164,7 +164,7 @@ static s32 OotPs2Audio_FeedOneChunk(void) {
     return audsrv_play_audio((const char*)sAudioFeedChunk, OOT_PS2_AUDIO_CHUNK_BYTES) < 0 ? -1 : 0;
 }
 
-static s32 OotPs2Audio_OutputThread(OotPs2ThreadArgSize args, void* argp) {
+static s32 Audio_OutputThread(ThreadArgSize args, void* argp) {
     u64 nextFeed;
     u64 periodNumerator;
     u64 periodBase;
@@ -176,12 +176,12 @@ static s32 OotPs2Audio_OutputThread(OotPs2ThreadArgSize args, void* argp) {
     (void)argp;
 
     while (sAudioRingCount < OOT_PS2_AUDIO_PREBUFFER_BYTES) {
-        OotPs2Sema_Wait(sAudioDataSema);
+        Sema_Wait(sAudioDataSema);
     }
 
     for (i = 0; i < OOT_PS2_AUDIO_IOP_PRIME_CHUNKS; i++) {
-        if (OotPs2Audio_FeedOneChunk() < 0) {
-            OotPs2Thread_Delay(1000);
+        if (Audio_FeedOneChunk() < 0) {
+            Thread_Delay(1000);
             i--;
         }
     }
@@ -189,18 +189,18 @@ static s32 OotPs2Audio_OutputThread(OotPs2ThreadArgSize args, void* argp) {
     periodNumerator = (u64)OOT_PS2_AUDIO_CHUNK_FRAMES * 1000000ULL;
     periodBase = periodNumerator / sAudioFrequency;
     periodRemainder = (u32)(periodNumerator % sAudioFrequency);
-    nextFeed = OotPs2Time_GetUsec() + periodBase;
+    nextFeed = Time_GetUsec() + periodBase;
 
     for (;;) {
-        u64 now = OotPs2Time_GetUsec();
+        u64 now = Time_GetUsec();
         s64 delay = (s64)(nextFeed - now);
 
         if (delay > 0) {
-            OotPs2Thread_Delay((u32)delay);
+            Thread_Delay((u32)delay);
         }
 
-        if (OotPs2Audio_FeedOneChunk() < 0) {
-            OotPs2Thread_Delay(1000);
+        if (Audio_FeedOneChunk() < 0) {
+            Thread_Delay(1000);
         }
 
         nextFeed += periodBase;
@@ -210,7 +210,7 @@ static s32 OotPs2Audio_OutputThread(OotPs2ThreadArgSize args, void* argp) {
             periodPhase -= sAudioFrequency;
         }
 
-        now = OotPs2Time_GetUsec();
+        now = Time_GetUsec();
         if (now > nextFeed + 100000ULL) {
             nextFeed = now;
             periodPhase = 0;
@@ -220,8 +220,8 @@ static s32 OotPs2Audio_OutputThread(OotPs2ThreadArgSize args, void* argp) {
     return 0;
 }
 
-static void OotPs2Audio_ProducerThread(void* arg) {
-    u64 nextUpdate = OotPs2Time_GetUsec();
+static void Audio_ProducerThread(void* arg) {
+    u64 nextUpdate = Time_GetUsec();
     u32 updateUsecPhase = 0;
 
     (void)arg;
@@ -239,13 +239,13 @@ static void OotPs2Audio_ProducerThread(void* arg) {
             updateUsecPhase -= 60U;
         }
 
-        now = OotPs2Time_GetUsec();
+        now = Time_GetUsec();
         delay = (s64)(nextUpdate - now);
         if (delay > 0) {
-            OotPs2Thread_Delay((u32)delay);
+            Thread_Delay((u32)delay);
         }
 
-        now = OotPs2Time_GetUsec();
+        now = Time_GetUsec();
         if (now > nextUpdate + 50000ULL) {
             nextUpdate = now;
             updateUsecPhase = 0;
@@ -253,15 +253,15 @@ static void OotPs2Audio_ProducerThread(void* arg) {
     }
 }
 
-static s32 OotPs2Audio_StartThread(const char* name, OotPs2ThreadEntry entry, s32 priority, s32 stackSize,
-                                   OotPs2Handle* outThreadId) {
-    OotPs2Handle threadId = OotPs2Thread_Create(name, entry, priority, stackSize);
+static s32 Audio_StartThread(const char* name, ThreadEntry entry, s32 priority, s32 stackSize,
+                                   Handle* outThreadId) {
+    Handle threadId = Thread_Create(name, entry, priority, stackSize);
 
     if (threadId < 0) {
         return -1;
     }
-    if (OotPs2Thread_Start(threadId, 0, NULL) < 0) {
-        OotPs2Thread_Delete(threadId);
+    if (Thread_Start(threadId, 0, NULL) < 0) {
+        Thread_Delete(threadId);
         return -1;
     }
 
@@ -269,24 +269,24 @@ static s32 OotPs2Audio_StartThread(const char* name, OotPs2ThreadEntry entry, s3
     return 0;
 }
 
-static s32 OotPs2Audio_StartOutputThread(void) {
-    sAudioRingMutex = OotPs2Sema_Create(1, 1);
+static s32 Audio_StartOutputThread(void) {
+    sAudioRingMutex = Sema_Create(1, 1);
     if (sAudioRingMutex < 0) {
         return -1;
     }
 
-    sAudioDataSema = OotPs2Sema_Create(0, 1);
+    sAudioDataSema = Sema_Create(0, 1);
     if (sAudioDataSema < 0) {
-        OotPs2Sema_Delete(sAudioRingMutex);
+        Sema_Delete(sAudioRingMutex);
         sAudioRingMutex = -1;
         return -1;
     }
 
-    OotPs2Audio_ResetRing();
-    if (OotPs2Audio_StartThread("oot-audio-out", OotPs2Audio_OutputThread, OOT_PS2_AUDIO_OUTPUT_PRIORITY,
+    Audio_ResetRing();
+    if (Audio_StartThread("oot-audio-out", Audio_OutputThread, OOT_PS2_AUDIO_OUTPUT_PRIORITY,
                                 OOT_PS2_AUDIO_OUTPUT_STACK_SIZE, &sAudioOutputThreadId) < 0) {
-        OotPs2Sema_Delete(sAudioDataSema);
-        OotPs2Sema_Delete(sAudioRingMutex);
+        Sema_Delete(sAudioDataSema);
+        Sema_Delete(sAudioRingMutex);
         sAudioDataSema = -1;
         sAudioRingMutex = -1;
         return -1;
@@ -295,7 +295,7 @@ static s32 OotPs2Audio_StartOutputThread(void) {
     return 0;
 }
 
-static s32 OotPs2Audio_StartProducerThread(void) {
+static s32 Audio_StartProducerThread(void) {
     ee_thread_t thread;
     s32 threadId;
 
@@ -304,7 +304,7 @@ static s32 OotPs2Audio_StartProducerThread(void) {
     }
 
     memset(&thread, 0, sizeof(thread));
-    thread.func = OotPs2Audio_ProducerThread;
+    thread.func = Audio_ProducerThread;
     thread.stack = sAudioProducerStack;
     thread.stack_size = sizeof(sAudioProducerStack);
     thread.initial_priority = OOT_PS2_AUDIO_PRODUCER_PRIORITY;
@@ -323,7 +323,7 @@ static s32 OotPs2Audio_StartProducerThread(void) {
     return 0;
 }
 
-static s32 OotPs2Audio_SetFormat(u32 frequency) {
+static s32 Audio_SetFormat(u32 frequency) {
     audsrv_fmt_t format;
     s32 result;
 
@@ -361,14 +361,14 @@ s32 OotPortAudioBackend_Init(void) {
     }
 
     sAudioDriverReady = 1;
-    if (OotPs2Audio_SetFormat(sAudioFrequency) < 0) {
+    if (Audio_SetFormat(sAudioFrequency) < 0) {
         deinit_audio_driver();
         sAudioDriverReady = 0;
         return -1;
     }
 
     audsrv_set_volume(MAX_VOLUME);
-    if (OotPs2Audio_StartOutputThread() < 0) {
+    if (Audio_StartOutputThread() < 0) {
         deinit_audio_driver();
         sAudioDriverReady = 0;
         return -1;
@@ -383,7 +383,7 @@ s32 OotPortAudioBackend_Queue(const void* buf, u32 size) {
     }
 
     size &= ~(OOT_PS2_AUDIO_FRAME_BYTES - 1);
-    return OotPs2Audio_RingWrite((const u8*)buf, size) == size ? 0 : -1;
+    return Audio_RingWrite((const u8*)buf, size) == size ? 0 : -1;
 }
 
 s32 OotPortAudioBackend_SetFrequency(u32 frequency) {
@@ -397,8 +397,8 @@ s32 OotPortAudioBackend_SetFrequency(u32 frequency) {
     }
 
     audsrv_stop_audio();
-    OotPs2Audio_ResetRing();
-    return OotPs2Audio_SetFormat(frequency);
+    Audio_ResetRing();
+    return Audio_SetFormat(frequency);
 }
 
 u32 OotPortAudioBackend_GetLength(void) {
@@ -492,7 +492,7 @@ void OotPortAudio_Init(void) {
     Audio_InitSound();
     sAudioInitialized = 1;
 
-    OotPs2Audio_StartProducerThread();
+    Audio_StartProducerThread();
 }
 
 void OotPortAudio_Update(void) {

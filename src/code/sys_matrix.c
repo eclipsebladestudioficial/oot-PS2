@@ -77,7 +77,7 @@ void Matrix_Translate(f32 x, f32 y, f32 z, u8 mode) {
 
     if (mode == MTXMODE_APPLY) {
 #if defined(TARGET_PS2)
-        if (!OotPs2Vu0_MtxFTranslate(cmf, x, y, z)) {
+        if (!Vu0_MtxFTranslate(cmf, x, y, z)) {
             tx = cmf->xx;
             ty = cmf->xy;
             cmf->xw += tx * x + ty * y + cmf->xz * z;
@@ -113,7 +113,7 @@ void Matrix_Scale(f32 x, f32 y, f32 z, u8 mode) {
 
     if (mode == MTXMODE_APPLY) {
 #if defined(TARGET_PS2)
-        if (!OotPs2Vu0_MtxFScale(cmf, x, y, z)) {
+        if (!Vu0_MtxFScale(cmf, x, y, z)) {
             cmf->xx *= x;
             cmf->yx *= x;
             cmf->zx *= x;
@@ -161,7 +161,7 @@ void Matrix_RotateX(f32 x, u8 mode) {
             cos = cosf(x);
 
 #if defined(TARGET_PS2)
-            if (!OotPs2Vu0_MtxFRotateX(cmf, sin, cos)) {
+            if (!Vu0_MtxFRotateX(cmf, sin, cos)) {
                 temp1 = cmf->xy;
                 temp2 = cmf->xz;
                 cmf->xy = temp1 * cos + temp2 * sin;
@@ -249,7 +249,7 @@ void Matrix_RotateY(f32 y, u8 mode) {
             cos = cosf(y);
 
 #if defined(TARGET_PS2)
-            if (!OotPs2Vu0_MtxFRotateY(cmf, sin, cos)) {
+            if (!Vu0_MtxFRotateY(cmf, sin, cos)) {
                 temp1 = cmf->xx;
                 temp2 = cmf->xz;
                 cmf->xx = temp1 * cos - temp2 * sin;
@@ -337,7 +337,7 @@ void Matrix_RotateZ(f32 z, u8 mode) {
             cos = cosf(z);
 
 #if defined(TARGET_PS2)
-            if (!OotPs2Vu0_MtxFRotateZ(cmf, sin, cos)) {
+            if (!Vu0_MtxFRotateZ(cmf, sin, cos)) {
                 temp1 = cmf->xx;
                 temp2 = cmf->xy;
                 cmf->xx = temp1 * cos + temp2 * sin;
@@ -428,7 +428,7 @@ void Matrix_RotateZYX(s16 x, s16 y, s16 z, u8 mode) {
         cos = Math_CosS(z);
 
 #if defined(TARGET_PS2)
-        if (!OotPs2Vu0_MtxFRotateZ(cmf, sin, cos)) {
+        if (!Vu0_MtxFRotateZ(cmf, sin, cos)) {
             temp1 = cmf->xx;
             temp2 = cmf->xy;
             cmf->xx = temp1 * cos + temp2 * sin;
@@ -476,7 +476,7 @@ void Matrix_RotateZYX(s16 x, s16 y, s16 z, u8 mode) {
             cos = Math_CosS(y);
 
 #if defined(TARGET_PS2)
-            if (!OotPs2Vu0_MtxFRotateY(cmf, sin, cos)) {
+            if (!Vu0_MtxFRotateY(cmf, sin, cos)) {
                 temp1 = cmf->xx;
                 temp2 = cmf->xz;
                 cmf->xx = temp1 * cos - temp2 * sin;
@@ -525,7 +525,7 @@ void Matrix_RotateZYX(s16 x, s16 y, s16 z, u8 mode) {
             cos = Math_CosS(x);
 
 #if defined(TARGET_PS2)
-            if (!OotPs2Vu0_MtxFRotateX(cmf, sin, cos)) {
+            if (!Vu0_MtxFRotateX(cmf, sin, cos)) {
                 temp1 = cmf->xy;
                 temp2 = cmf->xz;
                 cmf->xy = temp1 * cos + temp2 * sin;
@@ -586,14 +586,14 @@ void Matrix_TranslateRotateZYX(Vec3f* translation, Vec3s* rotation) {
     f32 temp2;
 
 #if defined(TARGET_PS2)
-    if (OotPs2Vu0_IsAligned16(cmf)) {
-        OotPs2Vu0_MtxFTranslate(cmf, translation->x, translation->y, translation->z);
-        OotPs2Vu0_MtxFRotateZ(cmf, sin, cos);
+    if (Vu0_IsAligned16(cmf)) {
+        Vu0_MtxFTranslate(cmf, translation->x, translation->y, translation->z);
+        Vu0_MtxFRotateZ(cmf, sin, cos);
         if (rotation->y != 0) {
-            OotPs2Vu0_MtxFRotateY(cmf, Math_SinS(rotation->y), Math_CosS(rotation->y));
+            Vu0_MtxFRotateY(cmf, Math_SinS(rotation->y), Math_CosS(rotation->y));
         }
         if (rotation->x != 0) {
-            OotPs2Vu0_MtxFRotateX(cmf, Math_SinS(rotation->x), Math_CosS(rotation->x));
+            Vu0_MtxFRotateX(cmf, Math_SinS(rotation->x), Math_CosS(rotation->x));
         }
         return;
     }
@@ -841,7 +841,7 @@ void Matrix_MultVec3f(Vec3f* src, Vec3f* dest) {
     MtxF* cmf = sCurrentMatrix;
 
 #if defined(TARGET_PS2)
-    if (!OotPs2Vu0_MtxFMultVec3f(cmf, src, dest)) {
+    if (!Vu0_MtxFMultVec3f(cmf, src, dest)) {
         dest->x = cmf->xw + (cmf->xx * src->x + cmf->xy * src->y + cmf->xz * src->z);
         dest->y = cmf->yw + (cmf->yx * src->x + cmf->yy * src->y + cmf->yz * src->z);
         dest->z = cmf->zw + (cmf->zx * src->x + cmf->zy * src->y + cmf->zz * src->z);
@@ -916,7 +916,7 @@ void Matrix_MtxToMtxF(Mtx* src, MtxF* dest) {
 
 void Matrix_MultVec3fExt(Vec3f* src, Vec3f* dest, MtxF* mf) {
 #if defined(TARGET_PS2)
-    if (!OotPs2Vu0_MtxFMultVec3f(mf, src, dest)) {
+    if (!Vu0_MtxFMultVec3f(mf, src, dest)) {
         dest->x = mf->xw + (mf->xx * src->x + mf->xy * src->y + mf->xz * src->z);
         dest->y = mf->yw + (mf->yx * src->x + mf->yy * src->y + mf->yz * src->z);
         dest->z = mf->zw + (mf->zx * src->x + mf->zy * src->y + mf->zz * src->z);

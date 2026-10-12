@@ -6,24 +6,24 @@
 #define OOT_PS2_VIDEO_INI_PATH "video.ini"
 #define OOT_PS2_DVE_CABLE_COMPOSITE 0
 
-typedef enum OotPs2VideoOutput {
+typedef enum VideoOutput {
     OOT_PS2_VIDEO_OUTPUT_PROGRESSIVE = 0,
     OOT_PS2_VIDEO_OUTPUT_INTERLACED = 1,
-} OotPs2VideoOutput;
+} VideoOutput;
 
-typedef enum OotPs2VideoResolution {
+typedef enum VideoResolution {
     OOT_PS2_VIDEO_RESOLUTION_480I = 0,
     OOT_PS2_VIDEO_RESOLUTION_480P = 1,
     OOT_PS2_VIDEO_RESOLUTION_720P = 2,
     OOT_PS2_VIDEO_RESOLUTION_1080I = 3,
-} OotPs2VideoResolution;
+} VideoResolution;
 
-typedef enum OotPs2VideoAspect {
+typedef enum VideoAspect {
     OOT_PS2_VIDEO_ASPECT_4_3 = 0,
     OOT_PS2_VIDEO_ASPECT_16_9 = 1,
-} OotPs2VideoAspect;
+} VideoAspect;
 
-typedef struct OotPs2VideoMode {
+typedef struct VideoMode {
     int field;
     int mode;
     int interlaced;
@@ -32,22 +32,22 @@ typedef struct OotPs2VideoMode {
     int displayHeight;
     int viewportWidth;
     int viewportHeight;
-} OotPs2VideoMode;
+} VideoMode;
 
-void OotPs2Video_Init(const char* executablePath);
-void OotPs2Video_ResetDefaults(void);
-void OotPs2Video_ForceLcd(void);
-void OotPs2Video_CommitMode(void);
-int OotPs2Video_Save(void);
+void Video_Init(const char* executablePath);
+void Video_ResetDefaults(void);
+void Video_ForceLcd(void);
+void Video_CommitMode(void);
+int Video_Save(void);
 
-void OotPs2Video_CycleOutput(int direction);
-void OotPs2Video_CycleResolution(int direction);
-void OotPs2Video_CycleAspect(int direction);
-const char* OotPs2Video_GetOutputName(void);
-const char* OotPs2Video_GetResolutionName(void);
-const char* OotPs2Video_GetAspectName(void);
-void OotPs2Video_GetMode(OotPs2VideoMode* mode);
-void OotPs2Video_GetActiveMode(OotPs2VideoMode* mode);
-void OotPs2Video_GetResolution(OotPs2VideoResolution* videoResolution);
+void Video_CycleOutput(int direction);
+void Video_CycleResolution(int direction);
+void Video_CycleAspect(int direction);
+const char* Video_GetOutputName(void);
+const char* Video_GetResolutionName(void);
+const char* Video_GetAspectName(void);
+void Video_GetMode(VideoMode* mode);
+void Video_GetActiveMode(VideoMode* mode);
+void Video_GetResolution(VideoResolution* videoResolution);
 
 #endif

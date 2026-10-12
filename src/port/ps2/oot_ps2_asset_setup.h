@@ -3,6 +3,6 @@
 
 #include "ultra64.h"
 
-s32 OotPs2AssetSetup_Ensure(void);
+s32 AssetSetup_Ensure(void);
 
 #endif

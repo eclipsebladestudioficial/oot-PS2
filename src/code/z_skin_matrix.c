@@ -30,7 +30,7 @@ MtxF sMtxFClear = {
  */
 void SkinMatrix_Vec3fMtxFMultXYZW(MtxF* mf, Vec3f* src, Vec3f* xyzDest, f32* wDest) {
 #if defined(TARGET_PS2)
-    if (OotPs2Vu0_MtxFMultVec3fW(mf, src, xyzDest, wDest)) {
+    if (Vu0_MtxFMultVec3fW(mf, src, xyzDest, wDest)) {
         return;
     }
 #endif
@@ -50,7 +50,7 @@ void SkinMatrix_Vec3fMtxFMultXYZW(MtxF* mf, Vec3f* src, Vec3f* xyzDest, f32* wDe
  */
 void SkinMatrix_Vec3fMtxFMultXYZ(MtxF* mf, Vec3f* src, Vec3f* dest) {
 #if defined(TARGET_PS2)
-    if (OotPs2Vu0_MtxFMultVec3f(mf, src, dest)) {
+    if (Vu0_MtxFMultVec3f(mf, src, dest)) {
         return;
     }
 #endif
@@ -78,7 +78,7 @@ void SkinMatrix_Vec3fMtxFMultXYZ(MtxF* mf, Vec3f* src, Vec3f* dest) {
  */
 void SkinMatrix_MtxFMtxFMult(MtxF* mfA, MtxF* mfB, MtxF* dest) {
 #if defined(TARGET_PS2)
-    if (OotPs2Vu0_MtxFMult(mfA, mfB, dest)) {
+    if (Vu0_MtxFMult(mfA, mfB, dest)) {
         return;
     }
 #endif

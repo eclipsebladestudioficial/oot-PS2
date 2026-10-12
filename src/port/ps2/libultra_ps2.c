@@ -17,10 +17,10 @@
 
 typedef struct {
     OSThread* thread;
-    OotPs2Handle ps2ThreadId;
+    Handle ps2ThreadId;
     void (*entry)(void*);
     void* arg;
-} OotPs2ThreadSlot;
+} ThreadSlot;
 
 typedef struct {
     OSTimer* timer;
@@ -29,15 +29,15 @@ typedef struct {
     u64 dueUsec;
     u64 intervalUsec;
     volatile s32 active;
-} OotPs2TimerSlot;
+} TimerSlot;
 
 typedef struct {
     OSMesgQueue* mq;
     OSMesg msg;
-} OotPs2PendingTimerMsg;
+} PendingTimerMsg;
 
-static OotPs2ThreadSlot sThreadSlots[OOT_PS2_MAX_THREADS];
-static OotPs2TimerSlot sTimerSlots[OOT_PS2_MAX_TIMERS];
+static ThreadSlot sThreadSlots[OOT_PS2_MAX_THREADS];
+static TimerSlot sTimerSlots[OOT_PS2_MAX_TIMERS];
 static OSContPad sControllerPads[MAXCONTROLLERS];
 static OSContStatus sControllerStatus[MAXCONTROLLERS];
 static OSMesgQueue* sPiCmdQueue;
@@ -48,10 +48,10 @@ static void* sCurrentFramebuffer;
 static void* sNextFramebuffer;
 static OSViMode* sCurrentViMode;
 static OSViContext sCurrentViContext;
-static OotPs2Handle sMesgQueueLockSema = OOT_PS2_INVALID_HANDLE;
+static Handle sMesgQueueLockSema = OOT_PS2_INVALID_HANDLE;
 
-static OotPs2Handle sTimerServiceThreadId = OOT_PS2_INVALID_HANDLE;
-static OotPs2Handle sTimerLockSema = OOT_PS2_INVALID_HANDLE;
+static Handle sTimerServiceThreadId = OOT_PS2_INVALID_HANDLE;
+static Handle sTimerLockSema = OOT_PS2_INVALID_HANDLE;
 static volatile s32 sTimerServiceRunning;
 static volatile u32 sFastCount;
 static volatile s32 sFastCountInitialized;
@@ -77,12 +77,12 @@ OSPifRam __osContPifRam;
 OSPifRam __osPfsPifRam;
 u8 __osMaxControllers = 1;
 
-static s32 OotPort_IsValidUid(OotPs2Handle uid) {
+static s32 OotPort_IsValidUid(Handle uid) {
     return uid > 0;
 }
 
 static u64 OotPort_GetUsec(void) {
-    return OotPs2Time_GetUsec();
+    return Time_GetUsec();
 }
 
 static u64 OotPort_CyclesToUsec(OSTime cycles) {
@@ -93,20 +93,20 @@ static u64 OotPort_CyclesToUsec(OSTime cycles) {
     return (u64)OS_CYCLES_TO_USEC(cycles);
 }
 
-static void OotPort_ClearThreadSlot(OotPs2ThreadSlot* slot) {
+static void OotPort_ClearThreadSlot(ThreadSlot* slot) {
     if (slot != NULL) {
         memset(slot, 0, sizeof(*slot));
         slot->ps2ThreadId = OOT_PS2_INVALID_HANDLE;
     }
 }
 
-static void OotPort_ClearTimerSlot(OotPs2TimerSlot* slot) {
+static void OotPort_ClearTimerSlot(TimerSlot* slot) {
     if (slot != NULL) {
         memset(slot, 0, sizeof(*slot));
     }
 }
 
-static OotPs2ThreadSlot* OotPort_FindThreadSlot(OSThread* thread) {
+static ThreadSlot* OotPort_FindThreadSlot(OSThread* thread) {
     s32 i;
 
     for (i = 0; i < OOT_PS2_MAX_THREADS; i++) {
@@ -118,7 +118,7 @@ static OotPs2ThreadSlot* OotPort_FindThreadSlot(OSThread* thread) {
     return NULL;
 }
 
-static OotPs2ThreadSlot* OotPort_FindThreadSlotByPlatformId(OotPs2Handle ps2ThreadId) {
+static ThreadSlot* OotPort_FindThreadSlotByPlatformId(Handle ps2ThreadId) {
     s32 i;
 
     if (!OotPort_IsValidUid(ps2ThreadId)) {
@@ -134,7 +134,7 @@ static OotPs2ThreadSlot* OotPort_FindThreadSlotByPlatformId(OotPs2Handle ps2Thre
     return NULL;
 }
 
-static OotPs2ThreadSlot* OotPort_AllocThreadSlot(OSThread* thread) {
+static ThreadSlot* OotPort_AllocThreadSlot(OSThread* thread) {
     s32 i;
 
     for (i = 0; i < OOT_PS2_MAX_THREADS; i++) {
@@ -148,9 +148,9 @@ static OotPs2ThreadSlot* OotPort_AllocThreadSlot(OSThread* thread) {
     return NULL;
 }
 
-static int OotPort_ThreadTrampoline(OotPs2ThreadArgSize args, void* argp) {
+static int OotPort_ThreadTrampoline(ThreadArgSize args, void* argp) {
     OSThread* thread = (OSThread*)argp;
-    OotPs2ThreadSlot* slot = OotPort_FindThreadSlot(thread);
+    ThreadSlot* slot = OotPort_FindThreadSlot(thread);
 
     (void)args;
 
@@ -161,11 +161,11 @@ static int OotPort_ThreadTrampoline(OotPs2ThreadArgSize args, void* argp) {
         OotPort_ClearThreadSlot(slot);
     }
 
-    OotPs2Thread_ExitDelete();
+    Thread_ExitDelete();
     return 0;
 }
 
-static OotPs2TimerSlot* OotPort_FindTimerSlot(OSTimer* timer) {
+static TimerSlot* OotPort_FindTimerSlot(OSTimer* timer) {
     s32 i;
 
     if (timer == NULL) {
@@ -181,7 +181,7 @@ static OotPs2TimerSlot* OotPort_FindTimerSlot(OSTimer* timer) {
     return NULL;
 }
 
-static OotPs2TimerSlot* OotPort_AllocTimerSlot(OSTimer* timer) {
+static TimerSlot* OotPort_AllocTimerSlot(OSTimer* timer) {
     s32 i;
 
     for (i = 0; i < OOT_PS2_MAX_TIMERS; i++) {
@@ -196,13 +196,13 @@ static OotPs2TimerSlot* OotPort_AllocTimerSlot(OSTimer* timer) {
 }
 
 static s32 OotPort_EnsureTimerLock(void) {
-    OotPs2Handle sema;
+    Handle sema;
 
     if (OotPort_IsValidUid(sTimerLockSema)) {
         return 0;
     }
 
-    sema = OotPs2Sema_Create(1, 1);
+    sema = Sema_Create(1, 1);
     if (!OotPort_IsValidUid(sema)) {
         sTimerLockSema = OOT_PS2_INVALID_HANDLE;
         return -1;
@@ -214,22 +214,22 @@ static s32 OotPort_EnsureTimerLock(void) {
 
 static void OotPort_LockTimers(void) {
     if (OotPort_IsValidUid(sTimerLockSema)) {
-        OotPs2Sema_Wait(sTimerLockSema);
+        Sema_Wait(sTimerLockSema);
     }
 }
 
 static void OotPort_UnlockTimers(void) {
     if (OotPort_IsValidUid(sTimerLockSema)) {
-        OotPs2Sema_Signal(sTimerLockSema);
+        Sema_Signal(sTimerLockSema);
     }
 }
 
-static int OotPort_TimerServiceThread(OotPs2ThreadArgSize args, void* argp) {
+static int OotPort_TimerServiceThread(ThreadArgSize args, void* argp) {
     (void)args;
     (void)argp;
 
     while (sTimerServiceRunning) {
-        OotPs2PendingTimerMsg pending[OOT_PS2_MAX_TIMERS];
+        PendingTimerMsg pending[OOT_PS2_MAX_TIMERS];
         s32 pendingCount = 0;
         s32 anyActive = false;
         u64 now = OotPort_GetUsec();
@@ -239,7 +239,7 @@ static int OotPort_TimerServiceThread(OotPs2ThreadArgSize args, void* argp) {
         OotPort_LockTimers();
 
         for (i = 0; i < OOT_PS2_MAX_TIMERS; i++) {
-            OotPs2TimerSlot* slot = &sTimerSlots[i];
+            TimerSlot* slot = &sTimerSlots[i];
 
             if (!slot->active || slot->timer == NULL) {
                 continue;
@@ -266,7 +266,7 @@ static int OotPort_TimerServiceThread(OotPs2ThreadArgSize args, void* argp) {
         }
 
         for (i = 0; i < OOT_PS2_MAX_TIMERS; i++) {
-            OotPs2TimerSlot* slot = &sTimerSlots[i];
+            TimerSlot* slot = &sTimerSlots[i];
 
             if (slot->active && slot->timer != NULL) {
                 u64 delta = (slot->dueUsec > now) ? (slot->dueUsec - now) : 0;
@@ -295,16 +295,16 @@ static int OotPort_TimerServiceThread(OotPs2ThreadArgSize args, void* argp) {
             }
         }
 
-        OotPs2Thread_Delay(sleepUsec);
+        Thread_Delay(sleepUsec);
     }
 
     sTimerServiceThreadId = OOT_PS2_INVALID_HANDLE;
-    OotPs2Thread_ExitDelete();
+    Thread_ExitDelete();
     return 0;
 }
 
 static s32 OotPort_EnsureTimerService(void) {
-    OotPs2Handle threadId;
+    Handle threadId;
     s32 ret;
 
     if (OotPort_EnsureTimerLock() < 0) {
@@ -317,16 +317,16 @@ static s32 OotPort_EnsureTimerService(void) {
 
     sTimerServiceRunning = true;
 
-    threadId = OotPs2Thread_Create("oot-timers", OotPort_TimerServiceThread, 0x18, 0x2000);
+    threadId = Thread_Create("oot-timers", OotPort_TimerServiceThread, 0x18, 0x2000);
     if (!OotPort_IsValidUid(threadId)) {
         sTimerServiceRunning = false;
         sTimerServiceThreadId = OOT_PS2_INVALID_HANDLE;
         return -1;
     }
 
-    ret = OotPs2Thread_Start(threadId, 0, NULL);
+    ret = Thread_Start(threadId, 0, NULL);
     if (ret < 0) {
-        OotPs2Thread_Delete(threadId);
+        Thread_Delete(threadId);
         sTimerServiceRunning = false;
         sTimerServiceThreadId = OOT_PS2_INVALID_HANDLE;
         return -1;
@@ -337,31 +337,31 @@ static s32 OotPort_EnsureTimerService(void) {
 }
 
 static void OotPort_StopTimerService(void) {
-    OotPs2Handle threadId = sTimerServiceThreadId;
-    OotPs2Handle sema = sTimerLockSema;
+    Handle threadId = sTimerServiceThreadId;
+    Handle sema = sTimerLockSema;
 
     sTimerServiceRunning = false;
     sTimerServiceThreadId = OOT_PS2_INVALID_HANDLE;
 
-    if (OotPort_IsValidUid(threadId) && threadId != OotPs2Thread_GetId()) {
-        OotPs2Thread_TerminateDelete(threadId);
+    if (OotPort_IsValidUid(threadId) && threadId != Thread_GetId()) {
+        Thread_TerminateDelete(threadId);
     }
 
     if (OotPort_IsValidUid(sema)) {
-        OotPs2Sema_Delete(sema);
+        Sema_Delete(sema);
     }
 
     sTimerLockSema = OOT_PS2_INVALID_HANDLE;
 }
 
 static s32 OotPort_EnsureMesgQueueLock(void) {
-    OotPs2Handle sema;
+    Handle sema;
 
     if (OotPort_IsValidUid(sMesgQueueLockSema)) {
         return 0;
     }
 
-    sema = OotPs2Sema_Create(1, 1);
+    sema = Sema_Create(1, 1);
     if (!OotPort_IsValidUid(sema)) {
         sMesgQueueLockSema = OOT_PS2_INVALID_HANDLE;
         return -1;
@@ -372,24 +372,24 @@ static s32 OotPort_EnsureMesgQueueLock(void) {
 }
 
 static void OotPort_StopMesgQueueLock(void) {
-    OotPs2Handle sema = sMesgQueueLockSema;
+    Handle sema = sMesgQueueLockSema;
 
     sMesgQueueLockSema = OOT_PS2_INVALID_HANDLE;
 
     if (OotPort_IsValidUid(sema)) {
-        OotPs2Sema_Delete(sema);
+        Sema_Delete(sema);
     }
 }
 
 static void OotPort_LockMesgQueue(UNUSED OSMesgQueue* mq) {
     if (OotPort_IsValidUid(sMesgQueueLockSema)) {
-        OotPs2Sema_Wait(sMesgQueueLockSema);
+        Sema_Wait(sMesgQueueLockSema);
     }
 }
 
 static void OotPort_UnlockMesgQueue(UNUSED OSMesgQueue* mq) {
     if (OotPort_IsValidUid(sMesgQueueLockSema)) {
-        OotPs2Sema_Signal(sMesgQueueLockSema);
+        Sema_Signal(sMesgQueueLockSema);
     }
 }
 
@@ -421,7 +421,7 @@ void __osInitialize_common(void) {
     }
     osMemSize = 0x02000000;
     osClockRate = OS_CLOCK_RATE;
-    OotPs2Pad_Init();
+    Pad_Init();
     OotPort_EnsureMesgQueueLock();
 }
 
@@ -472,7 +472,7 @@ s32 osSendMesg(OSMesgQueue* mq, OSMesg msg, s32 flag) {
             return -1;
         }
 
-        OotPs2Thread_Delay(1000);
+        Thread_Delay(1000);
     }
 }
 
@@ -496,7 +496,7 @@ s32 osJamMesg(OSMesgQueue* mq, OSMesg msg, s32 flag) {
             return -1;
         }
 
-        OotPs2Thread_Delay(1000);
+        Thread_Delay(1000);
     }
 }
 
@@ -523,7 +523,7 @@ s32 osRecvMesg(OSMesgQueue* mq, OSMesg* msg, s32 flag) {
             return -1;
         }
 
-        OotPs2Thread_Delay(1000);
+        Thread_Delay(1000);
     }
 }
 
@@ -531,8 +531,8 @@ void osSetEventMesg(UNUSED OSEvent e, UNUSED OSMesgQueue* mq, UNUSED OSMesg msg)
 }
 
 void osCreateThread(OSThread* thread, OSId id, void (*entry)(void*), void* arg, void* sp, OSPri pri) {
-    OotPs2ThreadSlot* slot;
-    OotPs2Handle threadId;
+    ThreadSlot* slot;
+    Handle threadId;
     char name[32];
 
     if (thread == NULL) {
@@ -541,7 +541,7 @@ void osCreateThread(OSThread* thread, OSId id, void (*entry)(void*), void* arg, 
 
     slot = OotPort_FindThreadSlot(thread);
     if (slot != NULL && OotPort_IsValidUid(slot->ps2ThreadId)) {
-        OotPs2Thread_TerminateDelete(slot->ps2ThreadId);
+        Thread_TerminateDelete(slot->ps2ThreadId);
         OotPort_ClearThreadSlot(slot);
     }
 
@@ -562,7 +562,7 @@ void osCreateThread(OSThread* thread, OSId id, void (*entry)(void*), void* arg, 
     slot->arg = arg;
     slot->ps2ThreadId = OOT_PS2_INVALID_HANDLE;
 
-    threadId = OotPs2Thread_Create(name, OotPort_ThreadTrampoline, 0x20 + (OS_PRIORITY_APPMAX - pri), 0x20000);
+    threadId = Thread_Create(name, OotPort_ThreadTrampoline, 0x20 + (OS_PRIORITY_APPMAX - pri), 0x20000);
     if (!OotPort_IsValidUid(threadId)) {
         OotPort_ClearThreadSlot(slot);
         return;
@@ -572,7 +572,7 @@ void osCreateThread(OSThread* thread, OSId id, void (*entry)(void*), void* arg, 
 }
 
 void osStartThread(OSThread* thread) {
-    OotPs2ThreadSlot* slot;
+    ThreadSlot* slot;
     s32 ret;
 
     if (thread == NULL) {
@@ -590,18 +590,18 @@ void osStartThread(OSThread* thread) {
 
     thread->state = OS_STATE_RUNNABLE;
 
-    ret = OotPs2Thread_Start(slot->ps2ThreadId, sizeof(thread), thread);
+    ret = Thread_Start(slot->ps2ThreadId, sizeof(thread), thread);
     if (ret < 0) {
         thread->state = OS_STATE_STOPPED;
     }
 }
 
 void osDestroyThread(OSThread* thread) {
-    OotPs2ThreadSlot* slot;
-    OotPs2Handle threadId;
+    ThreadSlot* slot;
+    Handle threadId;
 
     if (thread == NULL) {
-        threadId = OotPs2Thread_GetId();
+        threadId = Thread_GetId();
         slot = OotPort_FindThreadSlotByPlatformId(threadId);
         if (slot != NULL) {
             if (slot->thread != NULL) {
@@ -610,7 +610,7 @@ void osDestroyThread(OSThread* thread) {
             OotPort_ClearThreadSlot(slot);
         }
 
-        OotPs2Thread_ExitDelete();
+        Thread_ExitDelete();
         return;
     }
 
@@ -626,10 +626,10 @@ void osDestroyThread(OSThread* thread) {
     thread->state = OS_STATE_STOPPED;
 
     if (OotPort_IsValidUid(threadId)) {
-        if (threadId == OotPs2Thread_GetId()) {
-            OotPs2Thread_ExitDelete();
+        if (threadId == Thread_GetId()) {
+            Thread_ExitDelete();
         } else {
-            OotPs2Thread_TerminateDelete(threadId);
+            Thread_TerminateDelete(threadId);
         }
     }
 }
@@ -639,18 +639,18 @@ void osStopThread(OSThread* thread) {
 }
 
 void osYieldThread(void) {
-    OotPs2Thread_Delay(0);
+    Thread_Delay(0);
 }
 
 void osSetThreadPri(OSThread* thread, OSPri pri) {
-    OotPs2ThreadSlot* slot = OotPort_FindThreadSlot(thread);
+    ThreadSlot* slot = OotPort_FindThreadSlot(thread);
 
     if (thread != NULL) {
         thread->priority = pri;
     }
 
     if (slot != NULL && OotPort_IsValidUid(slot->ps2ThreadId)) {
-        OotPs2Thread_ChangePriority(slot->ps2ThreadId, 0x20 + (OS_PRIORITY_APPMAX - pri));
+        Thread_ChangePriority(slot->ps2ThreadId, 0x20 + (OS_PRIORITY_APPMAX - pri));
     }
 }
 
@@ -664,7 +664,7 @@ OSPri osGetThreadPri(OSThread* thread) {
 
 OSId osGetThreadId(OSThread* thread) {
     if (thread == NULL) {
-        return OotPs2Thread_GetId();
+        return Thread_GetId();
     }
 
     return thread->id;
@@ -679,7 +679,7 @@ OSThread* __osGetCurrFaultedThread(void) {
 }
 
 OSTime osGetTime(void) {
-    return OotPs2Time_GetUsec();
+    return Time_GetUsec();
 }
 
 void osSetTime(UNUSED OSTime time) {
@@ -687,7 +687,7 @@ void osSetTime(UNUSED OSTime time) {
 
 u32 osGetCount(void) {
     if (!sFastCountInitialized) {
-        sFastCount = OotPs2Time_GetUsecLow();
+        sFastCount = Time_GetUsecLow();
         sFastCountInitialized = true;
     }
 
@@ -700,7 +700,7 @@ u32 osGetCount(void) {
 }
 
 s32 osSetTimer(OSTimer* timer, OSTime countdown, OSTime interval, OSMesgQueue* mq, OSMesg msg) {
-    OotPs2TimerSlot* slot;
+    TimerSlot* slot;
     u64 now;
 
     if (timer == NULL) {
@@ -742,7 +742,7 @@ s32 osSetTimer(OSTimer* timer, OSTime countdown, OSTime interval, OSMesgQueue* m
 }
 
 s32 osStopTimer(OSTimer* timer) {
-    OotPs2TimerSlot* slot;
+    TimerSlot* slot;
 
     if (timer == NULL) {
         return -1;
@@ -832,22 +832,22 @@ void osMapTLBRdb(void) {
 
 void osWritebackDCache(void* vaddr, s32 nbytes) {
     if (nbytes > 0) {
-        OotPs2Cache_WritebackRange(vaddr, (size_t)nbytes);
+        Cache_WritebackRange(vaddr, (size_t)nbytes);
     }
 }
 
 void osInvalDCache(void* vaddr, s32 nbytes) {
     if (nbytes > 0) {
-        OotPs2Cache_InvalidateRange(vaddr, (size_t)nbytes);
+        Cache_InvalidateRange(vaddr, (size_t)nbytes);
     }
 }
 
 void osWritebackDCacheAll(void) {
-    OotPs2Cache_WritebackInvalidateAll();
+    Cache_WritebackInvalidateAll();
 }
 
 void osInvalICache(UNUSED void* vaddr, UNUSED s32 nbytes) {
-    OotPs2Cache_InvalidateInstruction();
+    Cache_InvalidateInstruction();
 }
 
 u32 osVirtualToPhysical(void* vaddr) {
@@ -998,10 +998,10 @@ s32 osContSetCh(UNUSED u8 ch) {
 }
 
 s32 osContStartReadData(UNUSED OSMesgQueue* mq) {
-    OotPs2PadState pad;
+    PadState pad;
 
     memset(sControllerPads, 0, sizeof(sControllerPads));
-    OotPs2Pad_Read(&pad);
+    Pad_Read(&pad);
 
     sControllerPads[0].button = OotPortControls_MapButtons(pad.buttons);
     sControllerPads[0].stick_x = OotPortControls_MapStick(pad.lx);

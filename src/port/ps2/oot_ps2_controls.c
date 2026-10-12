@@ -8,21 +8,21 @@
 
 #define OOT_PS2_CONTROLS_INI_BUFFER_SIZE 4096
 
-typedef struct OotPs2ButtonBinding {
+typedef struct ButtonBinding {
     const char* iniName;
     const char* displayName;
     u32 buttonMask;
     u16 defaultN64Mask;
     u16 n64Mask;
-} OotPs2ButtonBinding;
+} ButtonBinding;
 
-typedef struct OotPs2N64Action {
+typedef struct N64Action {
     const char* iniName;
     const char* displayName;
     u16 n64Mask;
-} OotPs2N64Action;
+} N64Action;
 
-static OotPs2ButtonBinding sButtonBindings[] = {
+static ButtonBinding sButtonBindings[] = {
     { "cross", "Cross", OOT_PS2_BUTTON_CROSS, BTN_A, BTN_A },
     { "circle", "Circle", OOT_PS2_BUTTON_CIRCLE, BTN_B, BTN_B },
     { "triangle", "Triangle", OOT_PS2_BUTTON_TRIANGLE, BTN_CUP, BTN_CUP },
@@ -37,7 +37,7 @@ static OotPs2ButtonBinding sButtonBindings[] = {
     { "right", "D-Pad Right", OOT_PS2_BUTTON_RIGHT, BTN_CRIGHT, BTN_CRIGHT },
 };
 
-static const OotPs2N64Action sN64Actions[] = {
+static const N64Action sN64Actions[] = {
     { "none", "None", 0 },
     { "A", "A", BTN_A },
     { "B", "B", BTN_B },
@@ -126,7 +126,7 @@ static int OotPortControls_FindBinding(const char* name) {
     return -1;
 }
 
-static const OotPs2N64Action* OotPortControls_FindActionByName(const char* name) {
+static const N64Action* OotPortControls_FindActionByName(const char* name) {
     int i;
 
     for (i = 0; i < (int)(sizeof(sN64Actions) / sizeof(sN64Actions[0])); i++) {
@@ -156,7 +156,7 @@ static u16 OotPortControls_ParseActionList(char* value) {
     char* token;
 
     for (token = strtok(value, ",|+"); token != NULL; token = strtok(NULL, ",|+")) {
-        const OotPs2N64Action* action = OotPortControls_FindActionByName(OotPortControls_Trim(token));
+        const N64Action* action = OotPortControls_FindActionByName(OotPortControls_Trim(token));
 
         if (action != NULL) {
             n64Mask |= action->n64Mask;
@@ -191,7 +191,7 @@ s32 OotPortControls_Load(void) {
     char pathBuffer[384];
     char iniBuffer[OOT_PS2_CONTROLS_INI_BUFFER_SIZE];
     const char* path;
-    OotPs2Handle fd;
+    Handle fd;
     s32 readSize;
     char* line;
     char* nextLine;
@@ -200,7 +200,7 @@ s32 OotPortControls_Load(void) {
     OotPortControls_InitDefaults();
 
     path = OotPortControls_Path(pathBuffer, sizeof(pathBuffer));
-    fd = OotPs2File_Open(path, OOT_PS2_FILE_RDONLY, 0);
+    fd = File_Open(path, OOT_PS2_FILE_RDONLY, 0);
     if (fd < 0) {
         if (OotPort_IsDiscBoot()) {
             return 0;
@@ -208,8 +208,8 @@ s32 OotPortControls_Load(void) {
         return OotPortControls_Save();
     }
 
-    readSize = OotPs2File_Read(fd, iniBuffer, sizeof(iniBuffer) - 1);
-    OotPs2File_Close(fd);
+    readSize = File_Read(fd, iniBuffer, sizeof(iniBuffer) - 1);
+    File_Close(fd);
     if (readSize < 0) {
         return readSize;
     }
@@ -285,7 +285,7 @@ s32 OotPortControls_Save(void) {
     int written;
     int offset = 0;
     int i;
-    OotPs2Handle fd;
+    Handle fd;
 
     OotPortControls_EnsureInitialized();
 
@@ -310,13 +310,13 @@ s32 OotPortControls_Save(void) {
 #undef OOT_PS2_CONTROLS_APPEND
 
     path = OotPortControls_Path(pathBuffer, sizeof(pathBuffer));
-    fd = OotPs2File_Open(path, OOT_PS2_FILE_WRONLY | OOT_PS2_FILE_CREAT | OOT_PS2_FILE_TRUNC, 0777);
+    fd = File_Open(path, OOT_PS2_FILE_WRONLY | OOT_PS2_FILE_CREAT | OOT_PS2_FILE_TRUNC, 0777);
     if (fd < 0) {
         return fd;
     }
 
-    written = OotPs2File_Write(fd, iniBuffer, offset);
-    OotPs2File_Close(fd);
+    written = File_Write(fd, iniBuffer, offset);
+    File_Close(fd);
     return written == offset ? 0 : -1;
 }
 

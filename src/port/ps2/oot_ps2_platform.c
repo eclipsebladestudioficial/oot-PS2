@@ -17,17 +17,17 @@
 #define OOT_PS2_MAX_PLATFORM_THREADS 24
 #define OOT_PS2_MIN_THREAD_STACK 16384
 
-typedef struct OotPs2ThreadSlot {
+typedef struct ThreadSlot {
     s32 used;
     s32 id;
-    OotPs2ThreadEntry entry;
+    ThreadEntry entry;
     void* stack;
     s32 stackSize;
-    OotPs2ThreadArgSize startArgs;
+    ThreadArgSize startArgs;
     void* startArg;
-} OotPs2ThreadSlot;
+} ThreadSlot;
 
-static OotPs2ThreadSlot sThreadSlots[OOT_PS2_MAX_PLATFORM_THREADS];
+static ThreadSlot sThreadSlots[OOT_PS2_MAX_PLATFORM_THREADS];
 static s32 sPadReady;
 static s32 sPadAnalogConfigured;
 static u8 sPadBuffer[256] __attribute__((aligned(64)));
@@ -36,15 +36,15 @@ static volatile s32 sPadRightX;
 static volatile s32 sPadRightY;
 static s32 sOotPs2DiscBootEarly;
 
-void OotPs2Platform_SetDiscBoot(s32 discBoot) {
+void Platform_SetDiscBoot(s32 discBoot) {
     sOotPs2DiscBootEarly = discBoot != 0;
 }
 
-s32 OotPs2Platform_IsDiscBoot(void) {
+s32 Platform_IsDiscBoot(void) {
     return sOotPs2DiscBootEarly;
 }
 
-static OotPs2ThreadSlot* OotPs2Thread_FindSlot(s32 id) {
+static ThreadSlot* Thread_FindSlot(s32 id) {
     s32 i;
 
     for (i = 0; i < OOT_PS2_MAX_PLATFORM_THREADS; i++) {
@@ -55,7 +55,7 @@ static OotPs2ThreadSlot* OotPs2Thread_FindSlot(s32 id) {
     return NULL;
 }
 
-static OotPs2ThreadSlot* OotPs2Thread_AllocSlot(void) {
+static ThreadSlot* Thread_AllocSlot(void) {
     s32 i;
 
     for (i = 0; i < OOT_PS2_MAX_PLATFORM_THREADS; i++) {
@@ -68,8 +68,8 @@ static OotPs2ThreadSlot* OotPs2Thread_AllocSlot(void) {
     return NULL;
 }
 
-static void OotPs2Thread_Trampoline(void* arg) {
-    OotPs2ThreadSlot* slot = (OotPs2ThreadSlot*)arg;
+static void Thread_Trampoline(void* arg) {
+    ThreadSlot* slot = (ThreadSlot*)arg;
 
     if (slot != NULL && slot->entry != NULL) {
         slot->entry(slot->startArgs, slot->startArg);
@@ -77,8 +77,8 @@ static void OotPs2Thread_Trampoline(void* arg) {
     ExitDeleteThread();
 }
 
-OotPs2Handle OotPs2Thread_Create(const char* name, OotPs2ThreadEntry entry, s32 priority, s32 stackSize) {
-    OotPs2ThreadSlot* slot = OotPs2Thread_AllocSlot();
+Handle Thread_Create(const char* name, ThreadEntry entry, s32 priority, s32 stackSize) {
+    ThreadSlot* slot = Thread_AllocSlot();
     ee_thread_t thread;
 
     (void)name;
@@ -95,7 +95,7 @@ OotPs2Handle OotPs2Thread_Create(const char* name, OotPs2ThreadEntry entry, s32 
     }
 
     memset(&thread, 0, sizeof(thread));
-    thread.func = OotPs2Thread_Trampoline;
+    thread.func = Thread_Trampoline;
     thread.stack = slot->stack;
     thread.stack_size = slot->stackSize;
     thread.initial_priority = priority < 1 ? 64 : (priority > 127 ? 127 : priority);
@@ -110,8 +110,8 @@ OotPs2Handle OotPs2Thread_Create(const char* name, OotPs2ThreadEntry entry, s32 
     return slot->id;
 }
 
-s32 OotPs2Thread_Start(OotPs2Handle id, OotPs2ThreadArgSize args, void* argp) {
-    OotPs2ThreadSlot* slot = OotPs2Thread_FindSlot(id);
+s32 Thread_Start(Handle id, ThreadArgSize args, void* argp) {
+    ThreadSlot* slot = Thread_FindSlot(id);
 
     if (slot == NULL) {
         return -1;
@@ -121,8 +121,8 @@ s32 OotPs2Thread_Start(OotPs2Handle id, OotPs2ThreadArgSize args, void* argp) {
     return StartThread(id, slot);
 }
 
-s32 OotPs2Thread_Delete(OotPs2Handle id) {
-    OotPs2ThreadSlot* slot = OotPs2Thread_FindSlot(id);
+s32 Thread_Delete(Handle id) {
+    ThreadSlot* slot = Thread_FindSlot(id);
     s32 result = DeleteThread(id);
 
     if (slot != NULL) {
@@ -132,24 +132,24 @@ s32 OotPs2Thread_Delete(OotPs2Handle id) {
     return result;
 }
 
-s32 OotPs2Thread_TerminateDelete(OotPs2Handle id) {
+s32 Thread_TerminateDelete(Handle id) {
     TerminateThread(id);
-    return OotPs2Thread_Delete(id);
+    return Thread_Delete(id);
 }
 
-void OotPs2Thread_ExitDelete(void) {
+void Thread_ExitDelete(void) {
     ExitDeleteThread();
 }
 
-s32 OotPs2Thread_ChangePriority(OotPs2Handle id, s32 priority) {
+s32 Thread_ChangePriority(Handle id, s32 priority) {
     return ChangeThreadPriority(id, priority);
 }
 
-OotPs2Handle OotPs2Thread_GetId(void) {
+Handle Thread_GetId(void) {
     return GetThreadId();
 }
 
-s32 OotPs2Thread_GetInfo(OotPs2Handle id, OotPs2ThreadInfo* out) {
+s32 Thread_GetInfo(Handle id, ThreadInfo* out) {
     ee_thread_status_t status;
     s32 result;
 
@@ -165,15 +165,15 @@ s32 OotPs2Thread_GetInfo(OotPs2Handle id, OotPs2ThreadInfo* out) {
     return result;
 }
 
-void OotPs2Thread_Delay(u32 usec) {
+void Thread_Delay(u32 usec) {
     DelayThread(usec);
 }
 
-void OotPs2Thread_ExitGame(void) {
+void Thread_ExitGame(void) {
     SleepThread();
 }
 
-OotPs2Handle OotPs2Sema_Create(s32 initialCount, s32 maxCount) {
+Handle Sema_Create(s32 initialCount, s32 maxCount) {
     ee_sema_t sema;
 
     memset(&sema, 0, sizeof(sema));
@@ -182,19 +182,19 @@ OotPs2Handle OotPs2Sema_Create(s32 initialCount, s32 maxCount) {
     return CreateSema(&sema);
 }
 
-s32 OotPs2Sema_Wait(OotPs2Handle id) {
+s32 Sema_Wait(Handle id) {
     return WaitSema(id);
 }
 
-s32 OotPs2Sema_Signal(OotPs2Handle id) {
+s32 Sema_Signal(Handle id) {
     return SignalSema(id);
 }
 
-s32 OotPs2Sema_Delete(OotPs2Handle id) {
+s32 Sema_Delete(Handle id) {
     return DeleteSema(id);
 }
 
-u64 OotPs2Time_GetUsec(void) {
+u64 Time_GetUsec(void) {
     u32 seconds = 0;
     u32 usec = 0;
 
@@ -202,11 +202,11 @@ u64 OotPs2Time_GetUsec(void) {
     return (u64)seconds * 1000000ULL + usec;
 }
 
-u32 OotPs2Time_GetUsecLow(void) {
-    return (u32)OotPs2Time_GetUsec();
+u32 Time_GetUsecLow(void) {
+    return (u32)Time_GetUsec();
 }
 
-static s32 OotPs2File_ConvertFlags(s32 flags) {
+static s32 File_ConvertFlags(s32 flags) {
     s32 out = O_RDONLY;
 
     if ((flags & 3) == OOT_PS2_FILE_WRONLY) {
@@ -223,60 +223,60 @@ static s32 OotPs2File_ConvertFlags(s32 flags) {
     return out;
 }
 
-OotPs2Handle OotPs2File_Open(const char* path, s32 flags, s32 mode) {
-    return open(path, OotPs2File_ConvertFlags(flags), mode);
+Handle File_Open(const char* path, s32 flags, s32 mode) {
+    return open(path, File_ConvertFlags(flags), mode);
 }
 
-s32 OotPs2File_Close(OotPs2Handle fd) {
+s32 File_Close(Handle fd) {
     return close(fd);
 }
 
-s32 OotPs2File_Read(OotPs2Handle fd, void* buffer, u32 size) {
+s32 File_Read(Handle fd, void* buffer, u32 size) {
     return read(fd, buffer, size);
 }
 
-s32 OotPs2File_Write(OotPs2Handle fd, const void* buffer, u32 size) {
+s32 File_Write(Handle fd, const void* buffer, u32 size) {
     return write(fd, buffer, size);
 }
 
-OotPs2Offset OotPs2File_Seek(OotPs2Handle fd, OotPs2Offset offset, s32 whence) {
+Offset File_Seek(Handle fd, Offset offset, s32 whence) {
     return lseek(fd, offset, whence);
 }
 
-s32 OotPs2File_Mkdir(const char* path, s32 mode) {
+s32 File_Mkdir(const char* path, s32 mode) {
     return mkdir(path, mode);
 }
 
-s32 OotPs2File_Remove(const char* path) {
+s32 File_Remove(const char* path) {
     return remove(path);
 }
 
-s32 OotPs2File_Rename(const char* from, const char* to) {
+s32 File_Rename(const char* from, const char* to) {
     return rename(from, to);
 }
 
-void OotPs2Cache_WritebackInvalidateAll(void) {
+void Cache_WritebackInvalidateAll(void) {
     FlushCache(WRITEBACK_DCACHE);
     FlushCache(INVALIDATE_DCACHE);
 }
 
-void OotPs2Cache_WritebackRange(const void* address, size_t size) {
+void Cache_WritebackRange(const void* address, size_t size) {
     if (address != NULL && size != 0) {
         SyncDCache((void*)address, (u8*)address + size);
     }
 }
 
-void OotPs2Cache_InvalidateRange(void* address, size_t size) {
+void Cache_InvalidateRange(void* address, size_t size) {
     if (address != NULL && size != 0) {
         InvalidDCache(address, (u8*)address + size);
     }
 }
 
-void OotPs2Cache_InvalidateInstruction(void) {
+void Cache_InvalidateInstruction(void) {
     FlushCache(INVALIDATE_ICACHE);
 }
 
-void OotPs2Pad_Init(void) {
+void Pad_Init(void) {
     if (!sPadReady) {
         if (padInit(0) >= 0 && padPortOpen(0, 0, sPadBuffer) > 0) {
             sPadReady = true;
@@ -303,7 +303,7 @@ void OotPs2Pad_Init(void) {
     }
 }
 
-s32 OotPs2Pad_Read(OotPs2PadState* out) {
+s32 Pad_Read(PadState* out) {
     u32 buttons;
     s32 state;
 
@@ -311,7 +311,7 @@ s32 OotPs2Pad_Read(OotPs2PadState* out) {
         return -1;
     }
 
-    OotPs2Pad_Init();
+    Pad_Init();
     memset(out, 0, sizeof(*out));
     out->lx = 128;
     out->ly = 128;
@@ -400,7 +400,7 @@ s32 OotPs2Pad_Read(OotPs2PadState* out) {
     return 1;
 }
 
-void OotPs2_GetRightStick(int* x, int* y) {
+void _GetRightStick(int* x, int* y) {
     if (x != NULL) {
         *x = sPadRightX;
     }

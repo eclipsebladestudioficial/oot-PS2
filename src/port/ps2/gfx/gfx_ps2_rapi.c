@@ -1916,9 +1916,9 @@ cleanup:
 }
 
 int gfx_ps2_apply_video_mode(void) {
-    OotPs2VideoMode vmode;
+    VideoMode vmode;
 
-    OotPs2Video_GetMode(&vmode);
+    Video_GetMode(&vmode);
 
     //gsKit_deinit_global(gs_global);
     //gs_global = gsKit_init_global();
@@ -2081,7 +2081,7 @@ static void ps2_fps_overlay(void){
     static u64 window_start;
     static u32 frames;
     static char text[16]="FPS: 0.0";
-    u64 now=OotPs2Time_GetUsec();
+    u64 now=Time_GetUsec();
     if(window_start==0)window_start=now;
     frames++;
     if(now-window_start>=500000ULL){
@@ -2483,10 +2483,10 @@ static void gfx_ps2_render_video_settings(int selectedIndex, const char* statusM
 
             switch (row) {
                 case 0:
-                    snprintf(line, sizeof(line), "Resolution: %s", OotPs2Video_GetResolutionName());
+                    snprintf(line, sizeof(line), "Resolution: %s", Video_GetResolutionName());
                     break;
                 case 1:
-                    snprintf(line, sizeof(line), "Aspect Ratio: %s", OotPs2Video_GetAspectName());
+                    snprintf(line, sizeof(line), "Aspect Ratio: %s", Video_GetAspectName());
                     break;
                 case 2:
                     snprintf(line, sizeof(line), "Apply video mode");

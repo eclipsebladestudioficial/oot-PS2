@@ -350,7 +350,7 @@ void Lights_GlowCheck(PlayState* play) {
             if ((multDest.z > 1.0f) && (fabsf(wX) < 1.0f) && (fabsf(wY) < 1.0f)) {
                 // Obtain the z-buffer value for the screen pixel corresponding to the center of the glow.
 #if defined(TARGET_PS2)
-                if (OotPs2Renderer_DepthTest((s32)((wX * (SCREEN_WIDTH / 2)) + (SCREEN_WIDTH / 2)),
+                if (Renderer_DepthTest((s32)((wX * (SCREEN_WIDTH / 2)) + (SCREEN_WIDTH / 2)),
                                              (s32)((wY * -(SCREEN_HEIGHT / 2)) + (SCREEN_HEIGHT / 2)),
                                              multDest.z * cappedInvWDest)) {
                     params->drawGlow = true;

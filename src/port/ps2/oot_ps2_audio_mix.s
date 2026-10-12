@@ -5,9 +5,9 @@
 
 # i am very new to this, so please forgive me if anything is wrong i am still learning a lot about vu0 and mmi but from what i have studied i believe this is correct
 
-.globl OotPs2Audio_MixSamples
-.ent OotPs2Audio_MixSamples
-OotPs2Audio_MixSamples:
+.globl Audio_MixSamples
+.ent Audio_MixSamples
+Audio_MixSamples:
     andi    $8, $6, 0xffff
     pcpyld  $8, $8, $8
     pcpyh   $8, $8
@@ -54,7 +54,7 @@ OotPs2Audio_MixSamples:
 .LmixDone:
     jr      $31
     nop
-.end OotPs2Audio_MixSamples
+.end Audio_MixSamples
 
 .section .rodata
 .align 4
@@ -66,9 +66,9 @@ OotPs2Audio_MixSamples:
 
 .text
 .align 4
-.globl OotPs2Audio_MixEnvelopeBlock8
-.ent OotPs2Audio_MixEnvelopeBlock8
-OotPs2Audio_MixEnvelopeBlock8:
+.globl Audio_MixEnvelopeBlock8
+.ent Audio_MixEnvelopeBlock8
+Audio_MixEnvelopeBlock8:
     lw      $8, 0($4)
     lw      $9, 4($4)
     lw      $10, 8($4)
@@ -156,4 +156,4 @@ OotPs2Audio_MixEnvelopeBlock8:
 
     jr      $31
     nop
-.end OotPs2Audio_MixEnvelopeBlock8
+.end Audio_MixEnvelopeBlock8

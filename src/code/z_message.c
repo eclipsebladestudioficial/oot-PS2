@@ -486,7 +486,7 @@ void Message_GrowTextbox(MessageContext* msgCtx) {
 
 
 #if defined(TARGET_PS2)
-static void Message_FindMessagePs2(Font* font, const OotPortMessageEntry* entries, size_t count,
+static void Message_FindMessage(Font* font, const OotPortMessageEntry* entries, size_t count,
                                    uintptr_t segmentRomStart, u16 textId) {
     const OotPortMessageEntry* entry = OotPort_FindMessageEntry(entries, count, textId);
 
@@ -506,7 +506,7 @@ static void Message_FindMessagePs2(Font* font, const OotPortMessageEntry* entrie
     font->msgLength = entry->vromEnd - entry->vromStart;
 }
 
-static void Message_SwapWideMessageBufferPs2(u16* buffer, s32 count) {
+static void Message_SwapWideMessageBuffer(u16* buffer, s32 count) {
     s32 i;
 
     for (i = 0; i < count; i++) {
@@ -521,7 +521,7 @@ static void Message_SwapWideMessageBufferPs2(u16* buffer, s32 count) {
 
 void Message_FindMessageJPN(PlayState* play, u16 textId) {
 #if defined(TARGET_PS2)
-    Message_FindMessagePs2(&play->msgCtx.font, gOotPortJpnMessageEntries, gOotPortJpnMessageEntriesCount,
+    Message_FindMessage(&play->msgCtx.font, gOotPortJpnMessageEntries, gOotPortJpnMessageEntriesCount,
                            (uintptr_t)_jpn_message_data_staticSegmentRomStart, textId);
 #else
     const char* foundSeg;
@@ -563,7 +563,7 @@ void Message_FindMessageJPN(PlayState* play, u16 textId) {
 
 void Message_FindMessageNES(PlayState* play, u16 textId) {
 #if defined(TARGET_PS2)
-    Message_FindMessagePs2(&play->msgCtx.font, gOotPortNesMessageEntries, gOotPortNesMessageEntriesCount,
+    Message_FindMessage(&play->msgCtx.font, gOotPortNesMessageEntries, gOotPortNesMessageEntriesCount,
                            (uintptr_t)_nes_message_data_staticSegmentRomStart, textId);
 #else
     const char* foundSeg;
@@ -675,7 +675,7 @@ void Message_FindMessagePAL(PlayState* play, u16 textId) {
 
 void Message_FindCreditsMessage(PlayState* play, u16 textId) {
 #if defined(TARGET_PS2)
-    Message_FindMessagePs2(&play->msgCtx.font, gOotPortStaffMessageEntries, gOotPortStaffMessageEntriesCount,
+    Message_FindMessage(&play->msgCtx.font, gOotPortStaffMessageEntries, gOotPortStaffMessageEntriesCount,
                            (uintptr_t)_staff_message_data_staticSegmentRomStart, textId);
 #else
     const char* foundSeg;
@@ -2695,7 +2695,7 @@ void Message_OpenText(PlayState* play, u16 textId) {
                              font->msgLength, "../z_message_PAL.c", UNK_LINE);
 #endif
 #if defined(TARGET_PS2)
-            Message_SwapWideMessageBufferPs2(MSG_BUF_WIDE, font->msgLength / 2);
+            Message_SwapWideMessageBuffer(MSG_BUF_WIDE, font->msgLength / 2);
 #endif
         } else {
             Message_FindMessageNES(play, textId);

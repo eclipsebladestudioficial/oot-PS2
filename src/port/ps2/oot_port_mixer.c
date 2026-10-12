@@ -17,10 +17,10 @@ typedef struct {
     u16 volumeRight;
     u16 reverb;
     u16 swapWetChannels;
-} OotPs2AudioEnvBlock;
+} AudioEnvBlock;
 
-void OotPs2Audio_MixSamples(const s16* input, s16* output, s16 gain, s32 sampleCount);
-void OotPs2Audio_MixEnvelopeBlock8(const OotPs2AudioEnvBlock* block);
+void Audio_MixSamples(const s16* input, s16* output, s16 gain, s32 sampleCount);
+void Audio_MixEnvelopeBlock8(const AudioEnvBlock* block);
 
 #define OOT_PORT_DMEM_SIZE 0x2000
 #define ROUND_UP_64(v) (((v) + 63) & ~63)
@@ -177,7 +177,7 @@ static s32 OotPortMixer_SignExtendShift4(u8 value, s32 shift) {
     return (s32)((u32)(value & 0xF) << 28) >> (28 - shift);
 }
 
-static inline s32 OotPs2Mixer_AdpcmMultiplyAdd(s32 accumulator, s32 left, s32 right) {
+static inline s32 Mixer_AdpcmMultiplyAdd(s32 accumulator, s32 left, s32 right) {
     __asm__ volatile("madd %[left], %[right]"
                      : [accumulator] "+l"(accumulator)
                      : [left] "r"(left), [right] "r"(right)
@@ -185,7 +185,7 @@ static inline s32 OotPs2Mixer_AdpcmMultiplyAdd(s32 accumulator, s32 left, s32 ri
     return accumulator;
 }
 
-static void OotPs2Mixer_DecodeAdpcmHalf(s16** outPtr, const s16 table[2][8], const s32* ins) {
+static void Mixer_DecodeAdpcmHalf(s16** outPtr, const s16 table[2][8], const s32* ins) {
     s16* out = *outPtr;
     s32 prev1 = out[-1];
     s32 prev2 = out[-2];
@@ -194,78 +194,78 @@ static void OotPs2Mixer_DecodeAdpcmHalf(s16** outPtr, const s16 table[2][8], con
     s32 acc;
 
     acc = ins[0] << 11;
-    acc = OotPs2Mixer_AdpcmMultiplyAdd(acc, table0[0], prev2);
-    acc = OotPs2Mixer_AdpcmMultiplyAdd(acc, table1[0], prev1);
+    acc = Mixer_AdpcmMultiplyAdd(acc, table0[0], prev2);
+    acc = Mixer_AdpcmMultiplyAdd(acc, table1[0], prev1);
     *out++ = OotPortMixer_Clamp16(acc >> 11);
 
     acc = ins[1] << 11;
-    acc = OotPs2Mixer_AdpcmMultiplyAdd(acc, table0[1], prev2);
-    acc = OotPs2Mixer_AdpcmMultiplyAdd(acc, table1[1], prev1);
-    acc = OotPs2Mixer_AdpcmMultiplyAdd(acc, table1[0], ins[0]);
+    acc = Mixer_AdpcmMultiplyAdd(acc, table0[1], prev2);
+    acc = Mixer_AdpcmMultiplyAdd(acc, table1[1], prev1);
+    acc = Mixer_AdpcmMultiplyAdd(acc, table1[0], ins[0]);
     *out++ = OotPortMixer_Clamp16(acc >> 11);
 
     acc = ins[2] << 11;
-    acc = OotPs2Mixer_AdpcmMultiplyAdd(acc, table0[2], prev2);
-    acc = OotPs2Mixer_AdpcmMultiplyAdd(acc, table1[2], prev1);
-    acc = OotPs2Mixer_AdpcmMultiplyAdd(acc, table1[1], ins[0]);
-    acc = OotPs2Mixer_AdpcmMultiplyAdd(acc, table1[0], ins[1]);
+    acc = Mixer_AdpcmMultiplyAdd(acc, table0[2], prev2);
+    acc = Mixer_AdpcmMultiplyAdd(acc, table1[2], prev1);
+    acc = Mixer_AdpcmMultiplyAdd(acc, table1[1], ins[0]);
+    acc = Mixer_AdpcmMultiplyAdd(acc, table1[0], ins[1]);
     *out++ = OotPortMixer_Clamp16(acc >> 11);
 
     acc = ins[3] << 11;
-    acc = OotPs2Mixer_AdpcmMultiplyAdd(acc, table0[3], prev2);
-    acc = OotPs2Mixer_AdpcmMultiplyAdd(acc, table1[3], prev1);
-    acc = OotPs2Mixer_AdpcmMultiplyAdd(acc, table1[2], ins[0]);
-    acc = OotPs2Mixer_AdpcmMultiplyAdd(acc, table1[1], ins[1]);
-    acc = OotPs2Mixer_AdpcmMultiplyAdd(acc, table1[0], ins[2]);
+    acc = Mixer_AdpcmMultiplyAdd(acc, table0[3], prev2);
+    acc = Mixer_AdpcmMultiplyAdd(acc, table1[3], prev1);
+    acc = Mixer_AdpcmMultiplyAdd(acc, table1[2], ins[0]);
+    acc = Mixer_AdpcmMultiplyAdd(acc, table1[1], ins[1]);
+    acc = Mixer_AdpcmMultiplyAdd(acc, table1[0], ins[2]);
     *out++ = OotPortMixer_Clamp16(acc >> 11);
 
     acc = ins[4] << 11;
-    acc = OotPs2Mixer_AdpcmMultiplyAdd(acc, table0[4], prev2);
-    acc = OotPs2Mixer_AdpcmMultiplyAdd(acc, table1[4], prev1);
-    acc = OotPs2Mixer_AdpcmMultiplyAdd(acc, table1[3], ins[0]);
-    acc = OotPs2Mixer_AdpcmMultiplyAdd(acc, table1[2], ins[1]);
-    acc = OotPs2Mixer_AdpcmMultiplyAdd(acc, table1[1], ins[2]);
-    acc = OotPs2Mixer_AdpcmMultiplyAdd(acc, table1[0], ins[3]);
+    acc = Mixer_AdpcmMultiplyAdd(acc, table0[4], prev2);
+    acc = Mixer_AdpcmMultiplyAdd(acc, table1[4], prev1);
+    acc = Mixer_AdpcmMultiplyAdd(acc, table1[3], ins[0]);
+    acc = Mixer_AdpcmMultiplyAdd(acc, table1[2], ins[1]);
+    acc = Mixer_AdpcmMultiplyAdd(acc, table1[1], ins[2]);
+    acc = Mixer_AdpcmMultiplyAdd(acc, table1[0], ins[3]);
     *out++ = OotPortMixer_Clamp16(acc >> 11);
 
     acc = ins[5] << 11;
-    acc = OotPs2Mixer_AdpcmMultiplyAdd(acc, table0[5], prev2);
-    acc = OotPs2Mixer_AdpcmMultiplyAdd(acc, table1[5], prev1);
-    acc = OotPs2Mixer_AdpcmMultiplyAdd(acc, table1[4], ins[0]);
-    acc = OotPs2Mixer_AdpcmMultiplyAdd(acc, table1[3], ins[1]);
-    acc = OotPs2Mixer_AdpcmMultiplyAdd(acc, table1[2], ins[2]);
-    acc = OotPs2Mixer_AdpcmMultiplyAdd(acc, table1[1], ins[3]);
-    acc = OotPs2Mixer_AdpcmMultiplyAdd(acc, table1[0], ins[4]);
+    acc = Mixer_AdpcmMultiplyAdd(acc, table0[5], prev2);
+    acc = Mixer_AdpcmMultiplyAdd(acc, table1[5], prev1);
+    acc = Mixer_AdpcmMultiplyAdd(acc, table1[4], ins[0]);
+    acc = Mixer_AdpcmMultiplyAdd(acc, table1[3], ins[1]);
+    acc = Mixer_AdpcmMultiplyAdd(acc, table1[2], ins[2]);
+    acc = Mixer_AdpcmMultiplyAdd(acc, table1[1], ins[3]);
+    acc = Mixer_AdpcmMultiplyAdd(acc, table1[0], ins[4]);
     *out++ = OotPortMixer_Clamp16(acc >> 11);
 
     acc = ins[6] << 11;
-    acc = OotPs2Mixer_AdpcmMultiplyAdd(acc, table0[6], prev2);
-    acc = OotPs2Mixer_AdpcmMultiplyAdd(acc, table1[6], prev1);
-    acc = OotPs2Mixer_AdpcmMultiplyAdd(acc, table1[5], ins[0]);
-    acc = OotPs2Mixer_AdpcmMultiplyAdd(acc, table1[4], ins[1]);
-    acc = OotPs2Mixer_AdpcmMultiplyAdd(acc, table1[3], ins[2]);
-    acc = OotPs2Mixer_AdpcmMultiplyAdd(acc, table1[2], ins[3]);
-    acc = OotPs2Mixer_AdpcmMultiplyAdd(acc, table1[1], ins[4]);
-    acc = OotPs2Mixer_AdpcmMultiplyAdd(acc, table1[0], ins[5]);
+    acc = Mixer_AdpcmMultiplyAdd(acc, table0[6], prev2);
+    acc = Mixer_AdpcmMultiplyAdd(acc, table1[6], prev1);
+    acc = Mixer_AdpcmMultiplyAdd(acc, table1[5], ins[0]);
+    acc = Mixer_AdpcmMultiplyAdd(acc, table1[4], ins[1]);
+    acc = Mixer_AdpcmMultiplyAdd(acc, table1[3], ins[2]);
+    acc = Mixer_AdpcmMultiplyAdd(acc, table1[2], ins[3]);
+    acc = Mixer_AdpcmMultiplyAdd(acc, table1[1], ins[4]);
+    acc = Mixer_AdpcmMultiplyAdd(acc, table1[0], ins[5]);
     *out++ = OotPortMixer_Clamp16(acc >> 11);
 
     acc = ins[7] << 11;
-    acc = OotPs2Mixer_AdpcmMultiplyAdd(acc, table0[7], prev2);
-    acc = OotPs2Mixer_AdpcmMultiplyAdd(acc, table1[7], prev1);
-    acc = OotPs2Mixer_AdpcmMultiplyAdd(acc, table1[6], ins[0]);
-    acc = OotPs2Mixer_AdpcmMultiplyAdd(acc, table1[5], ins[1]);
-    acc = OotPs2Mixer_AdpcmMultiplyAdd(acc, table1[4], ins[2]);
-    acc = OotPs2Mixer_AdpcmMultiplyAdd(acc, table1[3], ins[3]);
-    acc = OotPs2Mixer_AdpcmMultiplyAdd(acc, table1[2], ins[4]);
-    acc = OotPs2Mixer_AdpcmMultiplyAdd(acc, table1[1], ins[5]);
-    acc = OotPs2Mixer_AdpcmMultiplyAdd(acc, table1[0], ins[6]);
+    acc = Mixer_AdpcmMultiplyAdd(acc, table0[7], prev2);
+    acc = Mixer_AdpcmMultiplyAdd(acc, table1[7], prev1);
+    acc = Mixer_AdpcmMultiplyAdd(acc, table1[6], ins[0]);
+    acc = Mixer_AdpcmMultiplyAdd(acc, table1[5], ins[1]);
+    acc = Mixer_AdpcmMultiplyAdd(acc, table1[4], ins[2]);
+    acc = Mixer_AdpcmMultiplyAdd(acc, table1[3], ins[3]);
+    acc = Mixer_AdpcmMultiplyAdd(acc, table1[2], ins[4]);
+    acc = Mixer_AdpcmMultiplyAdd(acc, table1[1], ins[5]);
+    acc = Mixer_AdpcmMultiplyAdd(acc, table1[0], ins[6]);
     *out++ = OotPortMixer_Clamp16(acc >> 11);
 
     *outPtr = out;
 }
 
 static void OotPortMixer_DecodeAdpcmHalf(s16** outPtr, const s16 table[2][8], const s32* ins) {
-    OotPs2Mixer_DecodeAdpcmHalf(outPtr, table, ins);
+    Mixer_DecodeAdpcmHalf(outPtr, table, ins);
 }
 
 void OotPortMixer_ClearBuffer(u16 dmem, s32 nbytes) {
@@ -763,14 +763,14 @@ static void OotPortMixer_EnvMixerProducts(s16 sample, u16 volLeft, u16 volRight,
     *wetRightOut = wetRight;
 }
 
-static s32 OotPs2Audio_CanVectorizeEnvelope(u16 volumeLeft, u16 volumeRight, u16 reverb) {
+static s32 Audio_CanVectorizeEnvelope(u16 volumeLeft, u16 volumeRight, u16 reverb) {
     return ((volumeLeft | volumeRight | reverb) & 0x8000U) == 0;
 }
 
-static void OotPs2Audio_RunEnvelopeBlock8(const s16* input, s16* dryLeft, s16* dryRight, s16* wetLeft,
+static void Audio_RunEnvelopeBlock8(const s16* input, s16* dryLeft, s16* dryRight, s16* wetLeft,
                                           s16* wetRight, u16 volumeLeft, u16 volumeRight, u16 reverb,
                                           s32 swapWetChannels) {
-    OotPs2AudioEnvBlock block = {
+    AudioEnvBlock block = {
         .input = input,
         .dryLeft = dryLeft,
         .dryRight = dryRight,
@@ -782,7 +782,7 @@ static void OotPs2Audio_RunEnvelopeBlock8(const s16* input, s16* dryLeft, s16* d
         .swapWetChannels = (u16)(swapWetChannels != 0),
     };
 
-    OotPs2Audio_MixEnvelopeBlock8(&block);
+    Audio_MixEnvelopeBlock8(&block);
 }
 
 
@@ -811,11 +811,11 @@ static void OotPortMixer_EnvMixerCpu(u16 dmemSrc, s32 aiBufLen, s32 swapLR, s32 
     s32 remaining = ROUND_UP_16(aiBufLen);
 
     while (remaining > 0) {
-        if ((applyMasks == 0) && OotPs2Audio_CanVectorizeEnvelope(volLeft0, volRight0, reverb0) &&
-            OotPs2Audio_CanVectorizeEnvelope(volLeft1, volRight1, reverb1)) {
-            OotPs2Audio_RunEnvelopeBlock8(in, dryLeft, dryRight, wetLeft, wetRight, volLeft0, volRight0, reverb0,
+        if ((applyMasks == 0) && Audio_CanVectorizeEnvelope(volLeft0, volRight0, reverb0) &&
+            Audio_CanVectorizeEnvelope(volLeft1, volRight1, reverb1)) {
+            Audio_RunEnvelopeBlock8(in, dryLeft, dryRight, wetLeft, wetRight, volLeft0, volRight0, reverb0,
                                           swapLR);
-            OotPs2Audio_RunEnvelopeBlock8(in + 8, dryLeft + 8, dryRight + 8, wetLeft + 8, wetRight + 8,
+            Audio_RunEnvelopeBlock8(in + 8, dryLeft + 8, dryRight + 8, wetLeft + 8, wetRight + 8,
                                           volLeft1, volRight1, reverb1, swapLR);
             in += 16;
             dryLeft += 16;
@@ -880,7 +880,7 @@ void OotPortMixer_Mix(s32 countQuads, s16 gain, u16 dmemIn, u16 dmemOut) {
     s32 samples = ROUND_UP_32((countQuads & 0xFF) << 4) / sizeof(s16);
 
     if (samples > 0) {
-        OotPs2Audio_MixSamples(in, out, gain, samples);
+        Audio_MixSamples(in, out, gain, samples);
     }
 }
 

@@ -6,22 +6,22 @@
 
 #include "ultra64/ultratypes.h"
 
-typedef s32 OotPs2Handle;
-typedef s64 OotPs2Offset;
-typedef u32 OotPs2ThreadArgSize;
-typedef s32 (*OotPs2ThreadEntry)(OotPs2ThreadArgSize args, void* argp);
+typedef s32 Handle;
+typedef s64 Offset;
+typedef u32 ThreadArgSize;
+typedef s32 (*ThreadEntry)(ThreadArgSize args, void* argp);
 
-typedef struct OotPs2ThreadInfo {
+typedef struct ThreadInfo {
     void* stack;
     s32 stackSize;
     s32 currentPriority;
-} OotPs2ThreadInfo;
+} ThreadInfo;
 
-typedef struct OotPs2PadState {
+typedef struct PadState {
     u32 buttons;
     u8 lx;
     u8 ly;
-} OotPs2PadState;
+} PadState;
 
 enum {
     OOT_PS2_BUTTON_SELECT   = 1u << 0,
@@ -55,45 +55,45 @@ enum {
     OOT_PS2_SEEK_END = 2,
 };
 
-OotPs2Handle OotPs2Thread_Create(const char* name, OotPs2ThreadEntry entry, s32 priority, s32 stackSize);
-s32 OotPs2Thread_Start(OotPs2Handle id, OotPs2ThreadArgSize args, void* argp);
-s32 OotPs2Thread_Delete(OotPs2Handle id);
-s32 OotPs2Thread_TerminateDelete(OotPs2Handle id);
-void OotPs2Thread_ExitDelete(void);
-s32 OotPs2Thread_ChangePriority(OotPs2Handle id, s32 priority);
-OotPs2Handle OotPs2Thread_GetId(void);
-s32 OotPs2Thread_GetInfo(OotPs2Handle id, OotPs2ThreadInfo* out);
-void OotPs2Thread_Delay(u32 usec);
-void OotPs2Thread_ExitGame(void);
+Handle Thread_Create(const char* name, ThreadEntry entry, s32 priority, s32 stackSize);
+s32 Thread_Start(Handle id, ThreadArgSize args, void* argp);
+s32 Thread_Delete(Handle id);
+s32 Thread_TerminateDelete(Handle id);
+void Thread_ExitDelete(void);
+s32 Thread_ChangePriority(Handle id, s32 priority);
+Handle Thread_GetId(void);
+s32 Thread_GetInfo(Handle id, ThreadInfo* out);
+void Thread_Delay(u32 usec);
+void Thread_ExitGame(void);
 
-OotPs2Handle OotPs2Sema_Create(s32 initialCount, s32 maxCount);
-s32 OotPs2Sema_Wait(OotPs2Handle id);
-s32 OotPs2Sema_Signal(OotPs2Handle id);
-s32 OotPs2Sema_Delete(OotPs2Handle id);
+Handle Sema_Create(s32 initialCount, s32 maxCount);
+s32 Sema_Wait(Handle id);
+s32 Sema_Signal(Handle id);
+s32 Sema_Delete(Handle id);
 
-u64 OotPs2Time_GetUsec(void);
-u32 OotPs2Time_GetUsecLow(void);
+u64 Time_GetUsec(void);
+u32 Time_GetUsecLow(void);
 
-OotPs2Handle OotPs2File_Open(const char* path, s32 flags, s32 mode);
-s32 OotPs2File_Close(OotPs2Handle fd);
-s32 OotPs2File_Read(OotPs2Handle fd, void* buffer, u32 size);
-s32 OotPs2File_Write(OotPs2Handle fd, const void* buffer, u32 size);
-OotPs2Offset OotPs2File_Seek(OotPs2Handle fd, OotPs2Offset offset, s32 whence);
-s32 OotPs2File_Mkdir(const char* path, s32 mode);
-s32 OotPs2File_Remove(const char* path);
-s32 OotPs2File_Rename(const char* from, const char* to);
+Handle File_Open(const char* path, s32 flags, s32 mode);
+s32 File_Close(Handle fd);
+s32 File_Read(Handle fd, void* buffer, u32 size);
+s32 File_Write(Handle fd, const void* buffer, u32 size);
+Offset File_Seek(Handle fd, Offset offset, s32 whence);
+s32 File_Mkdir(const char* path, s32 mode);
+s32 File_Remove(const char* path);
+s32 File_Rename(const char* from, const char* to);
 
-void OotPs2Platform_SetDiscBoot(s32 discBoot);
-s32 OotPs2Platform_IsDiscBoot(void);
+void Platform_SetDiscBoot(s32 discBoot);
+s32 Platform_IsDiscBoot(void);
 
-void OotPs2Cache_WritebackInvalidateAll(void);
-void OotPs2Cache_WritebackRange(const void* address, size_t size);
-void OotPs2Cache_InvalidateRange(void* address, size_t size);
-void OotPs2Cache_InvalidateInstruction(void);
+void Cache_WritebackInvalidateAll(void);
+void Cache_WritebackRange(const void* address, size_t size);
+void Cache_InvalidateRange(void* address, size_t size);
+void Cache_InvalidateInstruction(void);
 
-void OotPs2Pad_Init(void);
-s32 OotPs2Pad_Read(OotPs2PadState* out);
-void OotPs2_GetRightStick(int* x, int* y);
-void OotPs2Input_SetPlayState(void* playState);
+void Pad_Init(void);
+s32 Pad_Read(PadState* out);
+void _GetRightStick(int* x, int* y);
+void Input_SetPlayState(void* playState);
 
 #endif

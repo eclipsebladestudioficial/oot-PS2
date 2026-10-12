@@ -49,17 +49,17 @@ static u32 sLastPolledButtons;
 static u32 sMenuInputLockoutStartUsec;
 static u32 sLastMenuInputUsec;
 static char sStatusMessage[64];
-static OotPs2PadState padState;
+static PadState padState;
 
-static u32 OotPs2HomeMenu_ReadButtons(void) {
+static u32 HomeMenu_ReadButtons(void) {
 
-    OotPs2Pad_Read(&padState);
+    Pad_Read(&padState);
     sCurrentButtons = padState.buttons;
 
     return sCurrentButtons;
 }
 
-static void OotPs2HomeMenu_Open(void) {
+static void HomeMenu_Open(void) {
     sActive = true;
     sMenuInputLockoutStartUsec = GetTimerSystemTime(); //sceKernelGetSystemTimeLow();
     sSelectedIndex = OOT_PS2_HOME_MENU_ITEM_RESUME_GAME;
@@ -72,48 +72,48 @@ static void OotPs2HomeMenu_Open(void) {
     sLastButtons = sCurrentButtons;
     sLastMenuInputUsec = sMenuInputLockoutStartUsec;
 
-    OotPs2Renderer_SetHomeMenuBackgroundActive(true);
-    OotPs2Renderer_RequestHomeMenuBackground();
+    Renderer_SetHomeMenuBackgroundActive(true);
+    Renderer_RequestHomeMenuBackground();
 }
 
-static void OotPs2HomeMenu_Close(void) {
+static void HomeMenu_Close(void) {
     sActive = false;
     sScreen = OOT_PS2_HOME_MENU_SCREEN_MAIN;
     sStatusTimer = 0;
-    OotPs2Renderer_SetHomeMenuBackgroundActive(false);
+    Renderer_SetHomeMenuBackgroundActive(false);
 }
 
-static int OotPs2HomeMenu_ControlDeadzoneRow(void) {
+static int HomeMenu_ControlDeadzoneRow(void) {
     return OotPortControls_GetBindingCount();
 }
 
-static int OotPs2HomeMenu_ControlN64StickScalingRow(void) {
+static int HomeMenu_ControlN64StickScalingRow(void) {
     return OotPortControls_GetBindingCount() + 1;
 }
 
-static int OotPs2HomeMenu_ControlSaveRow(void) {
+static int HomeMenu_ControlSaveRow(void) {
     return OotPortControls_GetBindingCount() + 2;
 }
 
-static int OotPs2HomeMenu_ControlResetRow(void) {
+static int HomeMenu_ControlResetRow(void) {
     return OotPortControls_GetBindingCount() + 3;
 }
 
-static int OotPs2HomeMenu_ControlBackRow(void) {
+static int HomeMenu_ControlBackRow(void) {
     return OotPortControls_GetBindingCount() + 4;
 }
 
-static int OotPs2HomeMenu_ControlRowCount(void) {
+static int HomeMenu_ControlRowCount(void) {
     return OotPortControls_GetBindingCount() + 5;
 }
 
-static void OotPs2HomeMenu_SetStatus(const char* message) {
+static void HomeMenu_SetStatus(const char* message) {
     snprintf(sStatusMessage, sizeof(sStatusMessage), "%s", message);
     sStatusTimer = 120;
 }
 
-static void OotPs2HomeMenu_MoveControlSelection(int direction) {
-    int rowCount = OotPs2HomeMenu_ControlRowCount();
+static void HomeMenu_MoveControlSelection(int direction) {
+    int rowCount = HomeMenu_ControlRowCount();
 
     sControlSelectedIndex += direction;
     if (sControlSelectedIndex < 0) {
@@ -123,44 +123,44 @@ static void OotPs2HomeMenu_MoveControlSelection(int direction) {
     }
 }
 
-static void OotPs2HomeMenu_AdjustControlRow(int direction) {
+static void HomeMenu_AdjustControlRow(int direction) {
     int bindingCount = OotPortControls_GetBindingCount();
 
     if (sControlSelectedIndex < bindingCount) {
         OotPortControls_CycleBinding(sControlSelectedIndex, direction);
-    } else if (sControlSelectedIndex == OotPs2HomeMenu_ControlDeadzoneRow()) {
+    } else if (sControlSelectedIndex == HomeMenu_ControlDeadzoneRow()) {
         OotPortControls_AdjustDeadzone(direction * 2);
-    } else if (sControlSelectedIndex == OotPs2HomeMenu_ControlN64StickScalingRow()) {
+    } else if (sControlSelectedIndex == HomeMenu_ControlN64StickScalingRow()) {
         OotPortControls_SetN64StickScalingEnabled(!OotPortControls_IsN64StickScalingEnabled());
     }
 }
 
-static void OotPs2HomeMenu_ActivateControlRow(void) {
+static void HomeMenu_ActivateControlRow(void) {
     if (sControlSelectedIndex < OotPortControls_GetBindingCount()) {
         OotPortControls_CycleBinding(sControlSelectedIndex, 1);
-    } else if (sControlSelectedIndex == OotPs2HomeMenu_ControlDeadzoneRow()) {
+    } else if (sControlSelectedIndex == HomeMenu_ControlDeadzoneRow()) {
         OotPortControls_AdjustDeadzone(2);
-    } else if (sControlSelectedIndex == OotPs2HomeMenu_ControlN64StickScalingRow()) {
+    } else if (sControlSelectedIndex == HomeMenu_ControlN64StickScalingRow()) {
         OotPortControls_SetN64StickScalingEnabled(!OotPortControls_IsN64StickScalingEnabled());
-    } else if (sControlSelectedIndex == OotPs2HomeMenu_ControlSaveRow()) {
+    } else if (sControlSelectedIndex == HomeMenu_ControlSaveRow()) {
         if (OotPortControls_Save() == 0) {
-            OotPs2HomeMenu_SetStatus("Saved controls.ini");
+            HomeMenu_SetStatus("Saved controls.ini");
         } else {
-            OotPs2HomeMenu_SetStatus("Save failed");
+            HomeMenu_SetStatus("Save failed");
         }
-    } else if (sControlSelectedIndex == OotPs2HomeMenu_ControlResetRow()) {
+    } else if (sControlSelectedIndex == HomeMenu_ControlResetRow()) {
         OotPortControls_ResetDefaults();
         if (OotPortControls_Save() == 0) {
-            OotPs2HomeMenu_SetStatus("Defaults saved");
+            HomeMenu_SetStatus("Defaults saved");
         } else {
-            OotPs2HomeMenu_SetStatus("Defaults restored");
+            HomeMenu_SetStatus("Defaults restored");
         }
-    } else if (sControlSelectedIndex == OotPs2HomeMenu_ControlBackRow()) {
+    } else if (sControlSelectedIndex == HomeMenu_ControlBackRow()) {
         sScreen = OOT_PS2_HOME_MENU_SCREEN_MAIN;
     }
 }
 
-static void OotPs2HomeMenu_MoveVideoSelection(int direction) {
+static void HomeMenu_MoveVideoSelection(int direction) {
     sVideoSelectedIndex += direction;
     if (sVideoSelectedIndex < 0) {
         sVideoSelectedIndex = OOT_PS2_VIDEO_MENU_ROW_COUNT - 1;
@@ -169,50 +169,50 @@ static void OotPs2HomeMenu_MoveVideoSelection(int direction) {
     }
 }
 
-static void OotPs2HomeMenu_AdjustVideoRow(int direction) {
+static void HomeMenu_AdjustVideoRow(int direction) {
     if (sVideoSelectedIndex == OOT_PS2_VIDEO_MENU_ROW_OUTPUT) {
-        OotPs2Video_CycleOutput(direction);
+        Video_CycleOutput(direction);
     } else if (sVideoSelectedIndex == OOT_PS2_VIDEO_MENU_ROW_RESOLUTION) {
-        OotPs2Video_CycleResolution(direction);
+        Video_CycleResolution(direction);
     } else if (sVideoSelectedIndex == OOT_PS2_VIDEO_MENU_ROW_ASPECT) {
-        OotPs2Video_CycleAspect(direction);
+        Video_CycleAspect(direction);
     }
 }
 
-static void OotPs2HomeMenu_ActivateVideoRow(void) {
+static void HomeMenu_ActivateVideoRow(void) {
     if (sVideoSelectedIndex <= OOT_PS2_VIDEO_MENU_ROW_ASPECT) {
-        OotPs2HomeMenu_AdjustVideoRow(1);
+        HomeMenu_AdjustVideoRow(1);
     } else if (sVideoSelectedIndex == OOT_PS2_VIDEO_MENU_ROW_APPLY) {
         int result;
 
-        result = OotPs2Renderer_ApplyVideoSettings();
+        result = Renderer_ApplyVideoSettings();
         if (result == 0) {
-            OotPs2HomeMenu_SetStatus("Video mode applied");
+            HomeMenu_SetStatus("Video mode applied");
         } else {
             char message[64];
 
             snprintf(message, sizeof(message), "Video mode failed: %d", result);
-            OotPs2HomeMenu_SetStatus(message);
+            HomeMenu_SetStatus(message);
         }
     } else if (sVideoSelectedIndex == OOT_PS2_VIDEO_MENU_ROW_SAVE) {
-        if (OotPs2Video_Save() == 0) {
-            OotPs2HomeMenu_SetStatus("Saved video.ini");
+        if (Video_Save() == 0) {
+            HomeMenu_SetStatus("Saved video.ini");
         } else {
-            OotPs2HomeMenu_SetStatus("Save failed");
+            HomeMenu_SetStatus("Save failed");
         }
     } else if (sVideoSelectedIndex == OOT_PS2_VIDEO_MENU_ROW_RESET) {
-        OotPs2Video_ResetDefaults();
-        if (OotPs2Renderer_ApplyVideoSettings() == 0) {
-            OotPs2HomeMenu_SetStatus("Video defaults restored");
+        Video_ResetDefaults();
+        if (Renderer_ApplyVideoSettings() == 0) {
+            HomeMenu_SetStatus("Video defaults restored");
         } else {
-            OotPs2HomeMenu_SetStatus("Defaults unavailable");
+            HomeMenu_SetStatus("Defaults unavailable");
         }
     } else if (sVideoSelectedIndex == OOT_PS2_VIDEO_MENU_ROW_BACK) {
         sScreen = OOT_PS2_HOME_MENU_SCREEN_MAIN;
     }
 }
 
-void OotPs2HomeMenu_Init(void) {
+void HomeMenu_Init(void) {
     sOpenRequested = false;
     sActive = false;
     sSelectedIndex = OOT_PS2_HOME_MENU_ITEM_RESUME_GAME;
@@ -223,7 +223,7 @@ void OotPs2HomeMenu_Init(void) {
     sStatusTimer = 0;
     sCurrentButtons = 0;
     sLastButtons = 0;
-    sLastPolledButtons = OotPs2HomeMenu_ReadButtons();
+    sLastPolledButtons = HomeMenu_ReadButtons();
     sMenuInputLockoutStartUsec = 0;
     sLastMenuInputUsec = 0;
     sStatusMessage[0] = '\0';
@@ -232,11 +232,11 @@ void OotPs2HomeMenu_Init(void) {
     //sceImposeSetHomePopup(0);
 }
 
-static void OotPs2HomeMenu_RequestOpen(void) {
+static void HomeMenu_RequestOpen(void) {
     sOpenRequested = true;
 }
 
-static void OotPs2HomeMenu_MoveAboutScroll(int direction) {
+static void HomeMenu_MoveAboutScroll(int direction) {
     sAboutScrollOffset += direction;
     if (sAboutScrollOffset < 0) {
         sAboutScrollOffset = 0;
@@ -245,7 +245,7 @@ static void OotPs2HomeMenu_MoveAboutScroll(int direction) {
     }
 }
 
-static void OotPs2HomeMenu_Render(const char* statusMessage, const Color_RGB8* tunicColor) {
+static void HomeMenu_Render(const char* statusMessage, const Color_RGB8* tunicColor) {
     u8 highlightRed = OOT_PS2_HOME_MENU_FALLBACK_HIGHLIGHT_RED;
     u8 highlightGreen = OOT_PS2_HOME_MENU_FALLBACK_HIGHLIGHT_GREEN;
     u8 highlightBlue = OOT_PS2_HOME_MENU_FALLBACK_HIGHLIGHT_BLUE;
@@ -263,30 +263,30 @@ static void OotPs2HomeMenu_Render(const char* statusMessage, const Color_RGB8* t
         submenuSelectedIndex = sAboutScrollOffset;
     }
 
-    OotPs2Renderer_RenderHomeMenu(sSelectedIndex, sScreen, submenuSelectedIndex,
+    Renderer_RenderHomeMenu(sSelectedIndex, sScreen, submenuSelectedIndex,
                                   statusMessage, highlightRed, highlightGreen, highlightBlue);
 }
 
-void OotPs2HomeMenu_PollHomeButton(void) {
-    u32 buttons = OotPs2HomeMenu_ReadButtons();
+void HomeMenu_PollHomeButton(void) {
+    u32 buttons = HomeMenu_ReadButtons();
     u32 pressed = buttons & ~sLastPolledButtons;
 
     sLastPolledButtons = buttons;
 
     if (((pressed & OOT_PS2_BUTTON_START) && (pressed & OOT_PS2_BUTTON_UP)) && !sActive) { // home btn
-        OotPs2HomeMenu_RequestOpen();
+        HomeMenu_RequestOpen();
     }
 }
 
-bool OotPs2HomeMenu_IsOpen(void) {
+bool HomeMenu_IsOpen(void) {
     return sActive || sOpenRequested;
 }
 
-bool OotPs2HomeMenu_PollToggle(void) {
+bool HomeMenu_PollToggle(void) {
     return false;
 }
 
-OotPs2HomeMenuResult OotPs2HomeMenu_RunFrame(const Color_RGB8* tunicColor) {
+HomeMenuResult HomeMenu_RunFrame(const Color_RGB8* tunicColor) {
     u32 buttons;
     u32 pressed;
     u32 now;
@@ -295,7 +295,7 @@ OotPs2HomeMenuResult OotPs2HomeMenu_RunFrame(const Color_RGB8* tunicColor) {
         sOpenRequested = false;
 
         if (!sActive) {
-            OotPs2HomeMenu_Open();
+            HomeMenu_Open();
         }
     }
 
@@ -314,7 +314,7 @@ OotPs2HomeMenuResult OotPs2HomeMenu_RunFrame(const Color_RGB8* tunicColor) {
 
     now = GetTimerSystemTime(); //now = sceKernelGetSystemTimeLow();
     if ((now - sMenuInputLockoutStartUsec) < OOT_PS2_HOME_MENU_INPUT_LOCKOUT_US) {
-        OotPs2HomeMenu_Render(NULL, tunicColor);
+        HomeMenu_Render(NULL, tunicColor);
         return OOT_PS2_HOME_MENU_RESULT_NONE;
     }
 
@@ -331,37 +331,37 @@ OotPs2HomeMenuResult OotPs2HomeMenu_RunFrame(const Color_RGB8* tunicColor) {
         if (pressed & OOT_PS2_BUTTON_CIRCLE) {
             sScreen = OOT_PS2_HOME_MENU_SCREEN_MAIN;
         } else if (pressed & OOT_PS2_BUTTON_UP) {
-            OotPs2HomeMenu_MoveControlSelection(-1);
+            HomeMenu_MoveControlSelection(-1);
         } else if (pressed & OOT_PS2_BUTTON_DOWN) {
-            OotPs2HomeMenu_MoveControlSelection(1);
+            HomeMenu_MoveControlSelection(1);
         } else if (pressed & OOT_PS2_BUTTON_LEFT) {
-            OotPs2HomeMenu_AdjustControlRow(-1);
+            HomeMenu_AdjustControlRow(-1);
         } else if (pressed & OOT_PS2_BUTTON_RIGHT) {
-            OotPs2HomeMenu_AdjustControlRow(1);
+            HomeMenu_AdjustControlRow(1);
         } else if (pressed & (OOT_PS2_BUTTON_CROSS | OOT_PS2_BUTTON_START)) {
-            OotPs2HomeMenu_ActivateControlRow();
+            HomeMenu_ActivateControlRow();
         }
     } else if (sScreen == OOT_PS2_HOME_MENU_SCREEN_VIDEO_SETTINGS) {
         if (pressed & OOT_PS2_BUTTON_CIRCLE) {
             sScreen = OOT_PS2_HOME_MENU_SCREEN_MAIN;
         } else if (pressed & OOT_PS2_BUTTON_UP) {
-            OotPs2HomeMenu_MoveVideoSelection(-1);
+            HomeMenu_MoveVideoSelection(-1);
         } else if (pressed & OOT_PS2_BUTTON_DOWN) {
-            OotPs2HomeMenu_MoveVideoSelection(1);
+            HomeMenu_MoveVideoSelection(1);
         } else if (pressed & OOT_PS2_BUTTON_LEFT) {
-            OotPs2HomeMenu_AdjustVideoRow(-1);
+            HomeMenu_AdjustVideoRow(-1);
         } else if (pressed & OOT_PS2_BUTTON_RIGHT) {
-            OotPs2HomeMenu_AdjustVideoRow(1);
+            HomeMenu_AdjustVideoRow(1);
         } else if (pressed & (OOT_PS2_BUTTON_CROSS | OOT_PS2_BUTTON_START)) {
-            OotPs2HomeMenu_ActivateVideoRow();
+            HomeMenu_ActivateVideoRow();
         }
     } else if (sScreen == OOT_PS2_HOME_MENU_SCREEN_ABOUT) {
         if (pressed & (OOT_PS2_BUTTON_CIRCLE | OOT_PS2_BUTTON_CROSS | OOT_PS2_BUTTON_START)) {
             sScreen = OOT_PS2_HOME_MENU_SCREEN_MAIN;
         } else if (pressed & OOT_PS2_BUTTON_UP) {
-            OotPs2HomeMenu_MoveAboutScroll(-1);
+            HomeMenu_MoveAboutScroll(-1);
         } else if (pressed & OOT_PS2_BUTTON_DOWN) {
-            OotPs2HomeMenu_MoveAboutScroll(1);
+            HomeMenu_MoveAboutScroll(1);
         }
     } else {
         if (pressed & OOT_PS2_BUTTON_UP) {
@@ -372,10 +372,10 @@ OotPs2HomeMenuResult OotPs2HomeMenu_RunFrame(const Color_RGB8* tunicColor) {
 
         if (pressed & (OOT_PS2_BUTTON_CROSS | OOT_PS2_BUTTON_START)) {
             if (sSelectedIndex == OOT_PS2_HOME_MENU_ITEM_RESUME_GAME) {
-                OotPs2HomeMenu_Close();
+                HomeMenu_Close();
                 return OOT_PS2_HOME_MENU_RESULT_NONE;
             } else if (sSelectedIndex == OOT_PS2_HOME_MENU_ITEM_EXIT_GAME) {
-                OotPs2HomeMenu_Close();
+                HomeMenu_Close();
                 return OOT_PS2_HOME_MENU_RESULT_EXIT_GAME;
             } else if (sSelectedIndex == OOT_PS2_HOME_MENU_ITEM_VIDEO_SETTINGS) {
                 sScreen = OOT_PS2_HOME_MENU_SCREEN_VIDEO_SETTINGS;
@@ -389,6 +389,6 @@ OotPs2HomeMenuResult OotPs2HomeMenu_RunFrame(const Color_RGB8* tunicColor) {
         }
     }
 
-    OotPs2HomeMenu_Render((sStatusTimer > 0) ? sStatusMessage : NULL, tunicColor);
+    HomeMenu_Render((sStatusTimer > 0) ? sStatusMessage : NULL, tunicColor);
     return OOT_PS2_HOME_MENU_RESULT_NONE;
 }

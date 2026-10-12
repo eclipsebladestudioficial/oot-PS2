@@ -8,16 +8,16 @@
 #include "oot_ps2_video.h"
 #include "play_state.h"
 
-typedef enum OotPs2HomeMenuResult {
+typedef enum HomeMenuResult {
     OOT_PS2_HOME_MENU_RESULT_NONE,
     OOT_PS2_HOME_MENU_RESULT_MAP_SELECT,
     OOT_PS2_HOME_MENU_RESULT_EXIT_GAME,
-} OotPs2HomeMenuResult;
+} HomeMenuResult;
 
-void OotPs2HomeMenu_Init(void);
-bool OotPs2HomeMenu_PollToggle(void);
-bool OotPs2HomeMenu_IsOpen(void);
-void OotPs2HomeMenu_PollHomeButton(void);
-OotPs2HomeMenuResult OotPs2HomeMenu_RunFrame(const Color_RGB8* tunicColor);
+void HomeMenu_Init(void);
+bool HomeMenu_PollToggle(void);
+bool HomeMenu_IsOpen(void);
+void HomeMenu_PollHomeButton(void);
+HomeMenuResult HomeMenu_RunFrame(const Color_RGB8* tunicColor);
 
 #endif
