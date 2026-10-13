@@ -1472,10 +1472,7 @@ PS2_PORT_ASM_FLAGS := -G0 $(PS2_PORT_ASM_DEFINES) -I$(PS2_PORT_INCLUDE_DIR)/libc
 PS2_PORT_LIBS := -L$(GSKIT)/lib -L$(PS2SDK)/ee/lib -L$(PS2SDK)/ports/lib \
 	-lgskit -ldmakit -lps2_drivers -laudsrv -lpad -lmc -lpatches -lz -ljpeg -leedebug -ldebug -lm
 PS2_PORT_LDFLAGS := -Wl,-zmax-page-size=128 -T$(PS2SDK)/ee/startup/linkfile -Wl,--gc-sections \
-	-Wl,--wrap=SetGsCrt -Wl,--wrap=dmaKit_wait_fast -Wl,--wrap=dmaKit_send_ucab -Wl,--wrap=DIntr \
-	-Wl,--wrap=EIntr -Wl,--wrap=GsPutIMR -Wl,--wrap=gsKit_vram_alloc -Wl,--wrap=gsKit_texture_size \
-	-Wl,--wrap=gsKit_TexManager_init -Wl,--wrap=gsKit_clear -Wl,--wrap=gsKit_queue_exec \
-	-Wl,--wrap=gsKit_sync_flip -Wl,--wrap=gsKit_finish -Wl,--wrap=gsKit_queue_reset $(PS2_PORT_LIBS)
+	-Wl,--wrap=dmaKit_wait_fast -Wl,--wrap=DIntr -Wl,--wrap=EIntr -Wl,--wrap=gsKit_finish $(PS2_PORT_LIBS)
 
 ps2-port: $(PS2_PORT_ELF)
 	@echo "PS2 port is up to date: $(PS2_PORT_ELF)"

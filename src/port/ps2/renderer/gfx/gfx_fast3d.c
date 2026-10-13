@@ -14,6 +14,7 @@
 
 #include "gfx_fast3d.h"
 #include "gfx_cc.h"
+#include "gfx_window_ps2.h"
 #include "gfx_window_manager_api.h"
 #include "gfx_rendering_api.h"
 #include "gfx_screen_config.h"
@@ -187,7 +188,6 @@ static inline bool gfx_ps2_same_frame_texture_load(int slot, const uint8_t* addr
 #define OOT_PS2_PRERENDER_DEPTH_END   0x505332D1U
 static bool sPs2ForceDepthOnly;
 extern void gfx_ps2_set_prerender_depth_only(bool enabled);
-extern void gfx_ps2_capture_pause_background_current(void);
 
 struct ColorCombiner {
     uint32_t cc_id;
@@ -6332,9 +6332,6 @@ static void gfx_dp_set_other_mode(uint32_t mode_h, uint32_t mode_l) {
     rdp.other_mode_l = mode_l;
     gfx_mark_tri_pipeline_dirty();
 }
-
-extern void gfx_ps2_apply_vismono(uint8_t primR, uint8_t primG, uint8_t primB, uint8_t alpha,
-                                   uint8_t envR, uint8_t envG, uint8_t envB);
 
 static void gfx_dp_noop(uint32_t tag) {
     if (tag == OOT_PS2_VISMONO_TAG) {

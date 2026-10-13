@@ -10,6 +10,7 @@
 #include <dmaKit.h>
 #include "gfx_rendering_api.h"
 #include "gfx_cc.h"
+#include "gfx_window_ps2.h"
 #include "gfx_window_manager_api.h"
 #include "platform.h"
 #include "controls/controls.h"
@@ -26,11 +27,8 @@
 
 #define PS2_SETREG_FOGCOL(R,G,B) ((u64)((R)&0xff) | ((u64)((G)&0xff)<<8) | ((u64)((B)&0xff)<<16))
 
-extern GSGLOBAL *gs_global;
 extern void gfx_set_ps2_widescreen(bool enabled);
 
-void gfx_ps2_restore_pause_background(void);
-bool gfx_ps2_pause_background_active(void);
 static void ps2_restore_prerender_fallback(void);
 void texman_clear(void);
 

@@ -4,11 +4,11 @@
 
 #include "gfx/gfx_fast3d.h"
 #include "gfx/gfx_rendering_api.h"
+#include "gfx/gfx_window_ps2.h"
 #include "gfx/gfx_window_manager_api.h"
 #include "platform.h"
 
 extern struct GfxRenderingAPI gfx_ps2_rapi;
-extern struct GfxWindowManagerAPI gfx_ps2_wapi;
 
 extern void gfx_ps2_render_home_menu(int selectedIndex, int screen, int submenuSelectedIndex, const char* statusMessage,
                                 uint8_t highlightRed, uint8_t highlightGreen, uint8_t highlightBlue);
@@ -18,16 +18,11 @@ extern int gfx_ps2_apply_video_mode(void);
 
 void gfx_ps2_render_menu(const char* title, const char* const* lines, int lineCount, int selectedIndex,
                          const char* statusMessage, int firstRow, int totalRows);
-void gfx_ps2_request_pause_background(void);
-bool gfx_ps2_pause_background_active(void);
-void gfx_ps2_set_pause_background_active(bool active);
 void gfx_ps2_set_boot_progress(int code, const char* label);
 void gfx_ps2_render_boot_progress(int code, const char* label);
 void gfx_ps2_set_fps_overlay_enabled(bool enabled);
 bool gfx_ps2_get_fps_overlay_enabled(void);
 void gfx_ps2_set_prerender_room_state(bool active, u32 roomKey);
-void gfx_ps2_depth_query_begin(void);
-bool gfx_ps2_depth_read(int32_t x, int32_t y, uint16_t* depth);
 void Renderer_RenderHomeMenu(int selectedIndex, int screen, int submenuSelectedIndex, const char* statusMessage, uint8_t highlightRed, uint8_t highlightGreen, uint8_t highlightBlue);
 
 
