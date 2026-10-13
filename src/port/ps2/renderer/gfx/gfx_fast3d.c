@@ -894,13 +894,17 @@ static uint32_t sPs2FlameColorLut[256 * 16] __attribute__((aligned(64)));
 
 static uint8_t sPs2FlameDecodedI8[GFX_FLAME_ATLAS_FRAME_WIDTH * GFX_FLAME_ATLAS_FRAME_HEIGHT]
     __attribute__((aligned(64)));
+static uint8_t sPs2FlameDecodedI8Second[GFX_FLAME_ATLAS_FRAME_WIDTH * GFX_FLAME_ATLAS_FRAME_HEIGHT]
+    __attribute__((aligned(64)));
 static uint8_t sPs2FlameDecodedI4[GFX_FLAME_ATLAS_FRAME_WIDTH * 128] __attribute__((aligned(64)));
 
 static uint16_t sPs2FlameIndexAtlas[GFX_FLAME_ATLAS_SIZE] __attribute__((aligned(64)));
 static bool sPs2FlameIndexAtlasValid;
 static const uint8_t* sPs2FlameDecodedI8Addr;
+static const uint8_t* sPs2FlameDecodedI8SecondAddr;
 static const uint8_t* sPs2FlameDecodedI4Addr;
 static uint32_t sPs2FlameDecodedI8Serial;
+static uint32_t sPs2FlameDecodedI8SecondSerial;
 static uint32_t sPs2FlameDecodedI4Serial;
 
 #define GFX_TWO_I4_PRECOMBINE_WIDTH 32
@@ -2768,19 +2772,24 @@ static bool gfx_get_two_texture_prim_lod_tint_colors(struct RGBA* primColor, str
 static bool gfx_flame_atlas_material_is_supported(void) {
     const TextureTileState* texture0 = gfx_get_texture_tile(0);
     const TextureTileState* texture1 = gfx_get_texture_tile(1);
+    const bool secondI4 = (texture1->fmt == G_IM_FMT_I) && (texture1->siz == G_IM_SIZ_4b) &&
+                          (gfx_texture_import_width(1) == GFX_FLAME_ATLAS_FRAME_WIDTH) &&
+                          (gfx_texture_import_height(1) == 128U);
+    const bool secondI8 = (texture1->fmt == G_IM_FMT_I) && (texture1->siz == G_IM_SIZ_8b) &&
+                          (gfx_texture_import_width(1) == GFX_FLAME_ATLAS_FRAME_WIDTH) &&
+                          (gfx_texture_import_height(1) == GFX_FLAME_ATLAS_FRAME_HEIGHT);
+
     return (texture0->fmt == G_IM_FMT_I) && (texture0->siz == G_IM_SIZ_8b) &&
-           (texture1->fmt == G_IM_FMT_I) && (texture1->siz == G_IM_SIZ_4b) &&
            (gfx_texture_import_width(0) == GFX_FLAME_ATLAS_FRAME_WIDTH) &&
            (gfx_texture_import_height(0) == GFX_FLAME_ATLAS_FRAME_HEIGHT) &&
-           (gfx_texture_import_width(1) == GFX_FLAME_ATLAS_FRAME_WIDTH) &&
-           (gfx_texture_import_height(1) == (GFX_FLAME_ATLAS_PHASE_STEP * GFX_FLAME_ATLAS_COLUMNS * GFX_FLAME_ATLAS_ROWS));
+           (secondI4 || secondI8);
 }
+
 static inline uint8_t gfx_ps2_clamp_u8_i32(int32_t v) {
     return (uint8_t)(v < 0 ? 0 : (v > 255 ? 255 : v));
 }
 
 static inline int32_t gfx_ps2_div255_round(int32_t v) {
-
     if (v >= 0) {
         const uint32_t x = (uint32_t)v + 128U;
         return (int32_t)((x + (x >> 8)) >> 8);
@@ -2791,9 +2800,31 @@ static inline int32_t gfx_ps2_div255_round(int32_t v) {
     }
 }
 
+static inline uint32_t gfx_ps2_flame_rgba(uint32_t t0, uint32_t t1, int32_t pr, int32_t pg,
+                                          int32_t pb, int32_t er, int32_t eg, int32_t eb,
+                                          int32_t lod) {
+    int32_t cr = ((int32_t)t0 * 256 + ((int32_t)t1 - pr) * lod + 128) >> 8;
+    int32_t cg = ((int32_t)t0 * 256 + ((int32_t)t1 - pg) * lod + 128) >> 8;
+    int32_t cb = ((int32_t)t0 * 256 + ((int32_t)t1 - pb) * lod + 128) >> 8;
+    cr = gfx_ps2_clamp_u8_i32(cr);
+    cg = gfx_ps2_clamp_u8_i32(cg);
+    cb = gfx_ps2_clamp_u8_i32(cb);
+    const uint8_t r = gfx_ps2_clamp_u8_i32(er + gfx_ps2_div255_round((pr - er) * cr));
+    const uint8_t g = gfx_ps2_clamp_u8_i32(eg + gfx_ps2_div255_round((pg - eg) * cg));
+    const uint8_t b = gfx_ps2_clamp_u8_i32(eb + gfx_ps2_div255_round((pb - eb) * cb));
+    const int32_t ca = ((int32_t)t0 * 256 + ((int32_t)t1 - 255) * lod + 128) >> 8;
+    const uint8_t alpha = gfx_ps2_clamp_u8_i32(ca);
+    const uint8_t gsAlpha = (uint8_t)((alpha + 1U) >> 1);
+
+    return (uint32_t)r | ((uint32_t)g << 8) | ((uint32_t)b << 16) | ((uint32_t)gsAlpha << 24);
+}
+
 static void gfx_build_flame_atlas(FlameAtlasCacheEntry* entry) {
+    const TextureTileState* texture1 = gfx_get_texture_tile(1);
+    const bool secondI8 = texture1->siz == G_IM_SIZ_8b;
     const uint32_t row0 = gfx_texture_row_bytes(GFX_FLAME_ATLAS_FRAME_WIDTH, G_IM_SIZ_8b);
-    const uint32_t row1 = gfx_texture_row_bytes(GFX_FLAME_ATLAS_FRAME_WIDTH, G_IM_SIZ_4b);
+    const uint32_t row1 = gfx_texture_row_bytes(GFX_FLAME_ATLAS_FRAME_WIDTH,
+                                                 secondI8 ? G_IM_SIZ_8b : G_IM_SIZ_4b);
     const uint32_t span0 = gfx_texture_source_span_size(0);
     const uint32_t span1 = gfx_texture_source_span_size(1);
     const uint8_t* addr0 = rdp.loaded_texture[0].addr;
@@ -2834,7 +2865,25 @@ static void gfx_build_flame_atlas(FlameAtlasCacheEntry* entry) {
         sPs2FlameDecodedI8Serial = sourceKey0;
     }
 
-    if (sPs2FlameDecodedI4Addr != addr1 || sPs2FlameDecodedI4Serial != sourceKey1) {
+    if (secondI8) {
+        if (sPs2FlameDecodedI8SecondAddr != addr1 || sPs2FlameDecodedI8SecondSerial != sourceKey1) {
+            sourceChanged = true;
+            GfxTextureSwapState swap1 = gfx_texture_source_swap_state(addr1, span1);
+            for (uint32_t y = 0; y < GFX_FLAME_ATLAS_FRAME_HEIGHT; y++) {
+                const uint8_t* src = gfx_texture_row(1, y, row1);
+                uint8_t* dst = &sPs2FlameDecodedI8Second[y * GFX_FLAME_ATLAS_FRAME_WIDTH];
+                if (swap1.mode == GFX_TEXTURE_SWAP_NONE) {
+                    memcpy(dst, src, GFX_FLAME_ATLAS_FRAME_WIDTH);
+                } else {
+                    for (uint32_t x = 0; x < GFX_FLAME_ATLAS_FRAME_WIDTH; x++) {
+                        dst[x] = gfx_read_texture_source_u8(src, x, &swap1);
+                    }
+                }
+            }
+            sPs2FlameDecodedI8SecondAddr = addr1;
+            sPs2FlameDecodedI8SecondSerial = sourceKey1;
+        }
+    } else if (sPs2FlameDecodedI4Addr != addr1 || sPs2FlameDecodedI4Serial != sourceKey1) {
         sourceChanged = true;
         GfxTextureSwapState swap1 = gfx_texture_source_swap_state(addr1, span1);
         for (uint32_t y = 0; y < 128U; y++) {
@@ -2857,29 +2906,31 @@ static void gfx_build_flame_atlas(FlameAtlasCacheEntry* entry) {
         sPs2FlameDecodedI4Serial = sourceKey1;
     }
 
-    for (uint32_t t0 = 0; t0 < 256U; t0++) {
-        for (uint32_t noise = 0; noise < 16U; noise++) {
-            const int32_t t1 = (int32_t)(noise * 0x11U);
-            int32_t cr = ((int32_t)t0 * 256 + (t1 - pr) * lod + 128) >> 8;
-            int32_t cg = ((int32_t)t0 * 256 + (t1 - pg) * lod + 128) >> 8;
-            int32_t cb = ((int32_t)t0 * 256 + (t1 - pb) * lod + 128) >> 8;
-            cr = gfx_ps2_clamp_u8_i32(cr);
-            cg = gfx_ps2_clamp_u8_i32(cg);
-            cb = gfx_ps2_clamp_u8_i32(cb);
-            const uint8_t r = gfx_ps2_clamp_u8_i32(er + gfx_ps2_div255_round((pr - er) * cr));
-            const uint8_t g = gfx_ps2_clamp_u8_i32(eg + gfx_ps2_div255_round((pg - eg) * cg));
-            const uint8_t bl = gfx_ps2_clamp_u8_i32(eb + gfx_ps2_div255_round((pb - eb) * cb));
-            const int32_t ca = ((int32_t)t0 * 256 + (t1 - 255) * lod + 128) >> 8;
-            const uint8_t alpha = gfx_ps2_clamp_u8_i32(ca);
-
-            const uint8_t gsAlpha = (uint8_t)((alpha + 1U) >> 1);
-            sPs2FlameColorLut[(t0 << 4) | noise] =
-                (uint32_t)r | ((uint32_t)g << 8) | ((uint32_t)bl << 16) | ((uint32_t)gsAlpha << 24);
+    if (!secondI8) {
+        for (uint32_t t0 = 0; t0 < 256U; t0++) {
+            for (uint32_t noise = 0; noise < 16U; noise++) {
+                sPs2FlameColorLut[(t0 << 4) | noise] =
+                    gfx_ps2_flame_rgba(t0, noise * 0x11U, pr, pg, pb, er, eg, eb, lod);
+            }
         }
     }
 
-    if (sourceChanged || !sPs2FlameIndexAtlasValid) {
-
+    if (secondI8) {
+        for (uint32_t phase = 0; phase < GFX_FLAME_ATLAS_COLUMNS * GFX_FLAME_ATLAS_ROWS; phase++) {
+            const uint32_t ax = (phase % GFX_FLAME_ATLAS_COLUMNS) * GFX_FLAME_ATLAS_FRAME_WIDTH;
+            const uint32_t ay = (phase / GFX_FLAME_ATLAS_COLUMNS) * GFX_FLAME_ATLAS_FRAME_HEIGHT;
+            const uint32_t off = phase * GFX_FLAME_ATLAS_PHASE_STEP;
+            for (uint32_t y = 0; y < GFX_FLAME_ATLAS_FRAME_HEIGHT; y++) {
+                const uint8_t* a = &sPs2FlameDecodedI8[y * GFX_FLAME_ATLAS_FRAME_WIDTH];
+                const uint8_t* b = &sPs2FlameDecodedI8Second[
+                    ((y - off) & (GFX_FLAME_ATLAS_FRAME_HEIGHT - 1U)) * GFX_FLAME_ATLAS_FRAME_WIDTH];
+                uint32_t* dst = &entry->pixels[(ay + y) * GFX_FLAME_ATLAS_WIDTH + ax];
+                for (uint32_t x = 0; x < GFX_FLAME_ATLAS_FRAME_WIDTH; x++) {
+                    dst[x] = gfx_ps2_flame_rgba(a[x], b[x], pr, pg, pb, er, eg, eb, lod);
+                }
+            }
+        }
+    } else if (sourceChanged || !sPs2FlameIndexAtlasValid) {
         for (uint32_t phase = 0; phase < GFX_FLAME_ATLAS_COLUMNS * GFX_FLAME_ATLAS_ROWS; phase++) {
             const uint32_t ax = (phase % GFX_FLAME_ATLAS_COLUMNS) * GFX_FLAME_ATLAS_FRAME_WIDTH;
             const uint32_t ay = (phase / GFX_FLAME_ATLAS_COLUMNS) * GFX_FLAME_ATLAS_FRAME_HEIGHT;
