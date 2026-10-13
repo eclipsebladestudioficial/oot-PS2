@@ -19,6 +19,13 @@
 
 #define WINDOW_WIDTH 640
 #define WINDOW_HEIGHT 448
+
+/*
+antes voce falar alguma coisa pequeno garfanhoto a resolução interna do jogo continua a mesma que é 640 x 448
+ a logical width é só resolução logica que veio herdada do n64 então eu preciso por ela pra eu pegar as cordenadas
+e converter pro ps2 antes de falar bosta leia o codigo seu dumbo
+*/
+
 #define LOGICAL_WIDTH 320
 #define LOGICAL_HEIGHT 240
 
