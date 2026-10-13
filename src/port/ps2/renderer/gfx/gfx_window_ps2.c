@@ -29,6 +29,11 @@ e converter pro ps2 antes de falar bosta leia o codigo seu dumbo
 #define LOGICAL_WIDTH 320
 #define LOGICAL_HEIGHT 240
 
+/*
+isso aqui nao e delay porra nenhuma
+esses numeros so evitam que o jogo espere pra sempre se o gif o gs ou o vif1 der merda
+*/
+
 #define GIF_DMA_TIMEOUT_ITERATIONS 8000000U
 #define GS_FINISH_TIMEOUT_ITERATIONS 8000000U
 #define FRAME_FINISH_TIMEOUT_ITERATIONS 12000000U
@@ -81,6 +86,12 @@ void __real_gsKit_finish(void);
 static inline void GfxPipelineSync(void) {
     __asm__ volatile("sync.p; nop;");
 }
+
+/*
+se o dma do gif travou nao adianta mandar mais coisa e rezar porque essa porra nao vai andar sozinha
+eu paro o canal limpo o gif e inicio o canal de novo
+o gs todo so leva reset na tela de crash porque fazer isso no meio do jogo foderia tudo que ja foi desenhado
+*/
 
 static void GfxRecoverGifDma(bool resetGs) {
     *R_EE_D2_CHCR = 0;
@@ -165,6 +176,12 @@ static bool GfxWaitVif1Bounded(void) {
     }
     return (*R_EE_D1_CHCR & DMA_CHCR_STR_MASK) == 0U;
 }
+
+/*
+isso pega um pedaco que ja esta na vram e traz de volta pra memoria do ee
+o pedido vai pelo gif e os dados voltam pelo vif1 ao contrario por isso tem busdir e fdr nessa bagunca
+nao e screenshot de enfeite isso serve pro zbuffer e pro efeito de vismono
+*/
 
 static bool GfxWindow_ReadLocalRect(void* dst, size_t dstBytes, u32 sourceAddr, u32 sourcePsm, u32 sourceWidth, u32 x,
                                     u32 y, u32 width, u32 height) {
@@ -282,6 +299,12 @@ void gfx_ps2_depth_query_begin(void) {
     sDepthReadbackY = -1;
 }
 
+/*
+a coordenada chega aqui em 320 x 240 mas o zbuffer de verdade esta em 640 x 448
+o y usa a altura real e o x usa a mesma conta mas fica no meio da tela pra imagem nao entortar
+eu leio um bloco de 16 x 4 e guardo porque buscar um pixel sozinho na vram toda hora seria lento pra cacete
+*/
+
 bool gfx_ps2_depth_read(int32_t x, int32_t y, uint16_t* depth) {
     const int blockW = 16;
     const int blockH = 4;
@@ -326,6 +349,12 @@ bool gfx_ps2_depth_read(int32_t x, int32_t y, uint16_t* depth) {
     *depth = sDepthReadback[(screenY - baseY) * blockW + (screenX - baseX)];
     return true;
 }
+
+/*
+o vismono precisa da cor que ja foi desenhada entao eu leio o buffer da tela e faco a conta no ee
+depois misturo environment e primitive usando o alpha e mando tudo de volta pro mesmo buffer
+isso e pesado pra porra mas so roda quando o jogo pede o efeito nao em todo frame
+*/
 
 void gfx_ps2_apply_vismono(uint8_t primR, uint8_t primG, uint8_t primB, uint8_t alpha, uint8_t envR, uint8_t envG,
                            uint8_t envB) {
@@ -423,6 +452,11 @@ static bool GfxAllocateSystemVram(GSGLOBAL* g, u32 bytes, u32* address) {
     *address = allocation;
     return true;
 }
+
+/*
+no boot por disco eu inicio a tela aqui porque esse caminho precisa cuidar dos interrupts e nao pode esperar o gif pra sempre
+fora do disco eu uso o gskit_init_screen normal entao nao junta essas duas merdas achando que da na mesma
+*/
 
 static bool GfxInitScreenDisc(GSGLOBAL* g) {
     u64* pData;
@@ -612,6 +646,11 @@ static void GfxWindow_Init(const char* gameName, bool startInFullscreen) {
     gsKit_TexManager_init(gs_global);
 }
 
+/*
+nao tem uma terceira copia pro fundo do pause porque a vram do ps2 nao esta sobrando
+eu seguro o buffer que ja esta na tela e enquanto o pause fica aberto desenho so no outro
+*/
+
 static bool GfxWindow_PinPauseBackgroundCurrent(void) {
     if (sPauseBackgroundState != PAUSE_BACKGROUND_CAPTURE_PENDING || !sDisplayedFrameValid || gs_global == NULL) {
         return false;
@@ -721,6 +760,11 @@ void gfx_ps2_restore_pause_background(void) {
     *p++ = GS_TRXDIR;
     gfx_ps2_invalidate_register_cache();
 }
+
+/*
+eu mando o frame no final sem ficar parado esperando e confiro ele no comeco do proximo
+so depois do finish eu mostro o buffer pronto e libero o outro pra desenhar senao aparece frame pela metade
+*/
 
 static bool GfxWindow_StartFrame(void) {
     sDepthReadbackX = -1;
