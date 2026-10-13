@@ -1000,9 +1000,12 @@ static inline bool gfx_ps2_axis_is_clamped(uint32_t mode, uint32_t mask) {
 
 static inline uint32_t gfx_ps2_physical_upload_extent(uint32_t extent, bool mirror, uint32_t mask,
                                                        bool clamp) {
-    const uint32_t base = gfx_ps2_mirror_base_extent(extent, mirror, mask);
-    (void)clamp;
 
+    if (clamp) {
+        return gfx_ps2_upload_next_power_of_two(extent);
+    }
+
+    const uint32_t base = gfx_ps2_mirror_base_extent(extent, mirror, mask);
     return gfx_ps2_upload_next_power_of_two(base) * (mirror ? 2U : 1U);
 }
 static inline size_t gfx_ps2_texture_bytes_per_pixel(unsigned int type) {
@@ -1064,14 +1067,16 @@ static inline void gfx_upload_texture(int tile, const uint8_t* buf, uint32_t wid
     const TextureTileState* tileState = gfx_get_texture_tile(tile);
     const bool mirror_s = (tileState->cms & G_TX_MIRROR) != 0 && tileState->masks != G_TX_NOMASK;
     const bool mirror_t = (tileState->cmt & G_TX_MIRROR) != 0 && tileState->maskt != G_TX_NOMASK;
-    const uint32_t base_width = gfx_ps2_mirror_base_extent(width, mirror_s, tileState->masks);
-    const uint32_t base_height = gfx_ps2_mirror_base_extent(height, mirror_t, tileState->maskt);
     const bool clamp_s = gfx_ps2_axis_is_clamped(tileState->cms, tileState->masks);
     const bool clamp_t = gfx_ps2_axis_is_clamped(tileState->cmt, tileState->maskt);
+    const bool physical_mirror_s = mirror_s && !clamp_s;
+    const bool physical_mirror_t = mirror_t && !clamp_t;
+    const uint32_t base_width = gfx_ps2_mirror_base_extent(width, physical_mirror_s, tileState->masks);
+    const uint32_t base_height = gfx_ps2_mirror_base_extent(height, physical_mirror_t, tileState->maskt);
     const uint32_t uploadWidth = gfx_ps2_physical_upload_extent(width, mirror_s, tileState->masks, clamp_s);
     const uint32_t uploadHeight = gfx_ps2_physical_upload_extent(height, mirror_t, tileState->maskt, clamp_t);
-    const uint32_t pad_width = mirror_s ? (uploadWidth / 2U) : uploadWidth;
-    const uint32_t pad_height = mirror_t ? (uploadHeight / 2U) : uploadHeight;
+    const uint32_t pad_width = physical_mirror_s ? (uploadWidth / 2U) : uploadWidth;
+    const uint32_t pad_height = physical_mirror_t ? (uploadHeight / 2U) : uploadHeight;
 
     if (!mirror_s && !mirror_t && uploadWidth == width && uploadHeight == height) {
         gfx_rapi->upload_texture(buf, width, height, type);
@@ -1095,7 +1100,7 @@ static inline void gfx_upload_texture(int tile, const uint8_t* buf, uint32_t wid
         memcpy(dstBase, src, copyRowBytes);
 
         gfx_fill_ps2_texture_horizontal_padding(dstBase, base_width, pad_width, bpp);
-        if (mirror_s) {
+        if (physical_mirror_s) {
             for (uint32_t x = 0; x < pad_width; x++) {
                 memcpy(dstBase + (size_t)(pad_width + x) * bpp,
                        dstBase + (size_t)(pad_width - 1U - x) * bpp, bpp);
@@ -1105,7 +1110,7 @@ static inline void gfx_upload_texture(int tile, const uint8_t* buf, uint32_t wid
 
     gfx_fill_ps2_texture_vertical_padding(sPs2UploadScratch, base_height, pad_height, rowBytes);
 
-    if (mirror_t) {
+    if (physical_mirror_t) {
         for (uint32_t y = 0; y < pad_height; y++) {
             memcpy(sPs2UploadScratch + (size_t)(pad_height + y) * rowBytes,
                    sPs2UploadScratch + (size_t)(pad_height - 1U - y) * rowBytes, rowBytes);
