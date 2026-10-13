@@ -837,8 +837,10 @@ static GfxTextureSwapState gfx_texture_source_swap_state(const uint8_t* addr, ui
 
     if (OotPort_GetLoadedExternalAssetRangeFlags(addr, sizeBytes, &loadedFlags) ||
         OotPort_GetLoadedExternalAssetRangeFlags(addr, 1, &loadedFlags)) {
-        state.mode =
-            ((loadedFlags & OOT_PORT_EXTERNAL_ASSET_NATIVE) != 0) ? GFX_TEXTURE_SWAP_MAPPED : GFX_TEXTURE_SWAP_NONE;
+        const u32 textureWordFlags = OOT_PORT_EXTERNAL_ASSET_NATIVE | OOT_PORT_EXTERNAL_ASSET_TEXTURE_WORDS;
+
+        state.mode = ((loadedFlags & textureWordFlags) == textureWordFlags) ? GFX_TEXTURE_SWAP_MAPPED
+                                                                           : GFX_TEXTURE_SWAP_NONE;
         if (state.mode == GFX_TEXTURE_SWAP_MAPPED) {
             OotPort_GetNativeExternalTextureMappingRange(addr, &state.rangeStart, &state.rangeEnd);
         }

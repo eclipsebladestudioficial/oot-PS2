@@ -29,6 +29,7 @@
 #define OOT_PS2_PACKED_CACHE_LOOKUP_COUNT     256
 #define OOT_PS2_NATIVE_TEXTURE_RANGE_CACHE_COUNT 8
 #define OOT_PS2_NATIVE_ASSET_RANGE_CACHE_COUNT   8
+#define OOT_PS2_CANONICAL_TEXTURE_RANGE_CACHE_COUNT 64
 #define OOT_PS2_NATIVE_BYTE_RANGE_PAGE_SHIFT     10
 #define OOT_PS2_NATIVE_BYTE_RANGE_CACHE_COUNT    256
 #define OOT_PS2_ASSET_RANGE_SERIAL_CACHE_SET_COUNT 128
@@ -149,6 +150,8 @@ static const LoadedAssetRange* sOotPs2NativeTextureRangeCache[OOT_PS2_NATIVE_TEX
 static const LoadedAssetRange* sOotPs2LastNativeTextureRange;
 static const LoadedAssetRange* sOotPs2NativeAssetRangeCache[OOT_PS2_NATIVE_ASSET_RANGE_CACHE_COUNT];
 static const LoadedAssetRange* sOotPs2LastNativeAssetRange;
+static const LoadedAssetRange* sOotPs2CanonicalTextureRangeCache[OOT_PS2_CANONICAL_TEXTURE_RANGE_CACHE_COUNT];
+static const LoadedAssetRange* sOotPs2LastCanonicalTextureRange;
 static NativeByteRangeCacheEntry sOotPs2NativeByteRangeCache[OOT_PS2_NATIVE_BYTE_RANGE_CACHE_COUNT];
 static u32 sOotPs2NativeByteRangeCacheGeneration = 1;
 static AssetRangeSerialCacheEntry sOotPs2AssetRangeSerialCache[OOT_PS2_ASSET_RANGE_SERIAL_CACHE_SET_COUNT]
@@ -159,6 +162,7 @@ static size_t sOotPs2LoadedAssetSerialRangeCount;
 static s32 sOotPs2LoadedAssetSerialRangeIndexComplete = true;
 static size_t sOotPs2NativeTextureRangeCacheNext;
 static size_t sOotPs2NativeAssetRangeCacheNext;
+static size_t sOotPs2CanonicalTextureRangeCacheNext;
 static size_t sOotPs2LoadedAssetRangeNext;
 static size_t sOotPs2LoadedAssetRangeHighWater;
 
@@ -194,6 +198,7 @@ static void OotPort_ClearPackedAssetCache(void);
 static void OotPort_ClosePackedAssetFile(void);
 static void OotPort_PreloadPersistentAssets(void);
 static void OotPort_ForgetNativeTextureRangeCache(const LoadedAssetRange* range);
+static void OotPort_RememberCanonicalTextureRange(const LoadedAssetRange* range);
 static void OotPort_ClearNativeByteRangeCache(void);
 static s32 OotPort_NormalizeVromRange(uintptr_t vromStart, uintptr_t vromEnd, uintptr_t* normalizedStart,
                                      uintptr_t* normalizedEnd);
@@ -1554,7 +1559,7 @@ static void OotPort_StoreLoadedAssetSerialRange(uintptr_t ramStart, uintptr_t ra
     while (left < right) {
         size_t mid = left + ((right - left) / 2);
 
-        if (sOotPs2LoadedAssetSerialRanges[mid].ramStart < ramStart) {
+        if (sOotPs2LoadedAssetSerialRanges[mid].ramStart <= ramStart) {
             left = mid + 1;
         } else {
             right = mid;
@@ -1630,6 +1635,17 @@ static void OotPort_ClearLoadedAssetRange(void* ram, size_t size) {
     }
 }
 
+static void OotPort_RememberCanonicalTextureRange(const LoadedAssetRange* range) {
+    if ((range == NULL) || ((range->flags & OOT_PORT_EXTERNAL_ASSET_CANONICAL_TEXTURE) == 0)) {
+        return;
+    }
+
+    sOotPs2LastCanonicalTextureRange = range;
+    sOotPs2CanonicalTextureRangeCache[sOotPs2CanonicalTextureRangeCacheNext] = range;
+    sOotPs2CanonicalTextureRangeCacheNext =
+        (sOotPs2CanonicalTextureRangeCacheNext + 1) % OOT_PS2_CANONICAL_TEXTURE_RANGE_CACHE_COUNT;
+}
+
 static void OotPort_StoreLoadedAssetRange(void* ram, size_t size, uintptr_t assetOffsetStart, u32 flags, u32 serial) {
     LoadedAssetRange* range;
     uintptr_t ramStart;
@@ -1671,6 +1687,11 @@ static void OotPort_StoreLoadedAssetRange(void* ram, size_t size, uintptr_t asse
     range->assetOffsetStart = assetOffsetStart;
     range->flags = flags;
     range->serial = serial;
+    OotPort_RememberCanonicalTextureRange(range);
+
+    if ((flags & OOT_PORT_EXTERNAL_ASSET_CANONICAL_TEXTURE) != 0) {
+        OotPort_StoreLoadedAssetSerialRange(ramStart, ramEnd, serial, flags);
+    }
 }
 
 static void OotPort_ForgetNativeTextureRangeCache(const LoadedAssetRange* range) {
@@ -1682,6 +1703,9 @@ static void OotPort_ForgetNativeTextureRangeCache(const LoadedAssetRange* range)
     if (sOotPs2LastNativeAssetRange == range) {
         sOotPs2LastNativeAssetRange = NULL;
     }
+    if (sOotPs2LastCanonicalTextureRange == range) {
+        sOotPs2LastCanonicalTextureRange = NULL;
+    }
 
     for (i = 0; i < OOT_PS2_NATIVE_TEXTURE_RANGE_CACHE_COUNT; i++) {
         if (sOotPs2NativeTextureRangeCache[i] == range) {
@@ -1692,6 +1716,12 @@ static void OotPort_ForgetNativeTextureRangeCache(const LoadedAssetRange* range)
     for (i = 0; i < OOT_PS2_NATIVE_ASSET_RANGE_CACHE_COUNT; i++) {
         if (sOotPs2NativeAssetRangeCache[i] == range) {
             sOotPs2NativeAssetRangeCache[i] = NULL;
+        }
+    }
+
+    for (i = 0; i < OOT_PS2_CANONICAL_TEXTURE_RANGE_CACHE_COUNT; i++) {
+        if (sOotPs2CanonicalTextureRangeCache[i] == range) {
+            sOotPs2CanonicalTextureRangeCache[i] = NULL;
         }
     }
 }
@@ -2105,6 +2135,7 @@ s32 OotPort_MarkLoadedExternalAssetRangeFlags(const void* ptr, size_t size, u32 
         if ((range->serial != 0) && OotPort_RangeContains(range->ramStart, range->ramEnd, ramStart, ramEnd)) {
             OotPort_ForgetNativeTextureRangeCache(range);
             range->flags |= flags;
+            OotPort_RememberCanonicalTextureRange(range);
             marked = true;
         }
     }
@@ -2153,8 +2184,35 @@ s32 OotPort_IsCanonicalExternalTextureRange(const void* ptr, size_t size) {
     uintptr_t ramStart;
     uintptr_t ramEnd;
     size_t i;
+    const LoadedAssetSerialRange* indexedRange;
 
     if (!OotPort_RamRangeFromPtr(ptr, size, &ramStart, &ramEnd)) {
+        return false;
+    }
+
+    if ((sOotPs2LastCanonicalTextureRange != NULL) &&
+        OotPort_RangeContains(sOotPs2LastCanonicalTextureRange->ramStart,
+                              sOotPs2LastCanonicalTextureRange->ramEnd, ramStart, ramEnd)) {
+        return true;
+    }
+
+    for (i = 0; i < OOT_PS2_CANONICAL_TEXTURE_RANGE_CACHE_COUNT; i++) {
+        const LoadedAssetRange* range = sOotPs2CanonicalTextureRangeCache[i];
+
+        if ((range != NULL) && (range->serial != 0) &&
+            OotPort_RangeContains(range->ramStart, range->ramEnd, ramStart, ramEnd)) {
+            sOotPs2LastCanonicalTextureRange = range;
+            return true;
+        }
+    }
+
+    indexedRange = OotPort_FindLoadedAssetSerialRange(ramStart);
+    if ((indexedRange != NULL) &&
+        OotPort_RangeContains(indexedRange->ramStart, indexedRange->ramEnd, ramStart, ramEnd)) {
+        return (indexedRange->flags & OOT_PORT_EXTERNAL_ASSET_CANONICAL_TEXTURE) != 0;
+    }
+
+    if (sOotPs2LoadedAssetSerialRangeIndexComplete) {
         return false;
     }
 
