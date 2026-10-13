@@ -84,6 +84,7 @@ static void Drivers_Init(const char* executablePath) {
     }
 
     init_joystick_driver(true);
+    init_memcard_driver(false);
 }
 
 int main(int argc, char** argv) {

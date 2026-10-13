@@ -1382,7 +1382,8 @@ PS2_PORT_RUNTIME_ASM_SOURCES := \
 	src/code/kanread.s \
 	src/port/ps2/assets/transform.s \
 	src/port/ps2/assets/ucode_assets.s \
-	src/port/ps2/audio/mix.s
+	src/port/ps2/audio/mix.s \
+	src/port/ps2/save_icon.s
 PS2_PORT_ASSET_SNAPSHOT := assets/ps2/$(VERSION)/generated.zip
 PS2_PORT_ASSET_TRANSFORM := assets/ps2/$(VERSION)/asset_transform.z
 PS2_PORT_RUNTIME_PATCH_MANIFEST := assets/ps2/$(VERSION)/runtime_patches.z

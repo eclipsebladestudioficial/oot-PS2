@@ -87,7 +87,11 @@ s32 gCurrentRegion = REGION_US;
 #define OOT_PS2_NATIVE_ADDR_END 0x02000000U
 #define OOT_PS2_SEGMENTED_COLLISION_OFFSET_MAX 0x00010000U
 #define OOT_PS2_SAVE_PATH "oot-ps2-save.bin"
+#define OOT_PS2_SAVE_DIR "mc0:/OOTPS2"
+#define OOT_PS2_SAVE_ICON_SYS_PATH "mc0:/OOTPS2/icon.sys"
+#define OOT_PS2_SAVE_ICON_DATA_PATH "mc0:/OOTPS2/LinkView.icn"
 #define OOT_PS2_SAVE_IO_CHUNK_SIZE 0x4000
+#define OOT_PS2_SAVE_ICON_IO_CHUNK_SIZE 1024
 
 volatile OSTime gAudioThreadUpdateTimeTotalPerGfxTask = 0;
 volatile OSTime gGfxTaskSentToNextReadyMinusAudioThreadUpdateTime = 0;
@@ -160,27 +164,113 @@ static uintptr_t sPs2StackStart;
 static uintptr_t sPs2StackEnd;
 static uintptr_t sPs2StackAltStart;
 static uintptr_t sPs2StackAltEnd;
+static u8 sPs2SaveIconCompareBuffer[OOT_PS2_SAVE_ICON_IO_CHUNK_SIZE] __attribute__((aligned(64)));
+static s32 sPs2SaveIconReady;
 
-static const char* OotPort_GetSavePath(const char* filename, char* buffer, size_t bufferSize) {
-    if (OotPort_IsDiscBoot()) {
-        File_Mkdir("mc0:/OOTPS2", 0777);
-        if (snprintf(buffer, bufferSize, "mc0:/OOTPS2/%s", filename) >= (s32)bufferSize) {
-            return filename;
-        }
-        return buffer;
+extern const u8 gOotPs2SaveIconSys[];
+extern const u8 gOotPs2SaveIconSysEnd[];
+extern const u8 gOotPs2SaveIconData[];
+extern const u8 gOotPs2SaveIconDataEnd[];
+
+static s32 OotPort_SaveFileMatches(const char* path, const u8* data, size_t size) {
+    Handle fd = File_Open(path, OOT_PS2_FILE_RDONLY, 0);
+    size_t offset = 0;
+
+    if (fd < 0) {
+        return false;
     }
-    return OotPort_ResolveRootPath(filename, buffer, bufferSize);
+
+    while (offset < size) {
+        size_t remaining = size - offset;
+        u32 chunk = remaining > sizeof(sPs2SaveIconCompareBuffer) ? sizeof(sPs2SaveIconCompareBuffer) : (u32)remaining;
+        s32 read = File_Read(fd, sPs2SaveIconCompareBuffer, chunk);
+
+        if ((read != (s32)chunk) || (memcmp(sPs2SaveIconCompareBuffer, data + offset, chunk) != 0)) {
+            File_Close(fd);
+            return false;
+        }
+        offset += chunk;
+    }
+
+    if (File_Read(fd, sPs2SaveIconCompareBuffer, 1) != 0) {
+        File_Close(fd);
+        return false;
+    }
+
+    File_Close(fd);
+    return true;
+}
+
+static s32 OotPort_WriteSaveSupportFile(const char* path, const u8* data, size_t size) {
+    Handle fd = File_Open(path, OOT_PS2_FILE_WRONLY | OOT_PS2_FILE_CREAT | OOT_PS2_FILE_TRUNC, 0777);
+    size_t offset = 0;
+
+    if (fd < 0) {
+        printf("oot-ps2 save support open failed path=%s err=%d\n", path, (int)fd);
+        return false;
+    }
+
+    while (offset < size) {
+        size_t remaining = size - offset;
+        u32 chunk = remaining > OOT_PS2_SAVE_IO_CHUNK_SIZE ? OOT_PS2_SAVE_IO_CHUNK_SIZE : (u32)remaining;
+        s32 written = File_Write(fd, data + offset, chunk);
+
+        if (written <= 0) {
+            printf("oot-ps2 save support write failed path=%s written=%d\n", path, (int)written);
+            File_Close(fd);
+            return false;
+        }
+        offset += (size_t)written;
+    }
+
+    File_Close(fd);
+    return true;
+}
+
+static s32 OotPort_EnsureSaveIconFiles(void) {
+    const size_t iconSysSize = (size_t)(gOotPs2SaveIconSysEnd - gOotPs2SaveIconSys);
+    const size_t iconDataSize = (size_t)(gOotPs2SaveIconDataEnd - gOotPs2SaveIconData);
+
+    if (sPs2SaveIconReady) {
+        return true;
+    }
+
+    if (!OotPort_SaveFileMatches(OOT_PS2_SAVE_ICON_DATA_PATH, gOotPs2SaveIconData, iconDataSize) &&
+        !OotPort_WriteSaveSupportFile(OOT_PS2_SAVE_ICON_DATA_PATH, gOotPs2SaveIconData, iconDataSize)) {
+        return false;
+    }
+
+    if (!OotPort_SaveFileMatches(OOT_PS2_SAVE_ICON_SYS_PATH, gOotPs2SaveIconSys, iconSysSize) &&
+        !OotPort_WriteSaveSupportFile(OOT_PS2_SAVE_ICON_SYS_PATH, gOotPs2SaveIconSys, iconSysSize)) {
+        return false;
+    }
+
+    sPs2SaveIconReady = true;
+    return true;
+}
+
+static const char* OotPort_GetMemoryCardSavePath(const char* filename, char* buffer, size_t bufferSize) {
+    if (snprintf(buffer, bufferSize, OOT_PS2_SAVE_DIR "/%s", filename) >= (s32)bufferSize) {
+        return filename;
+    }
+    return buffer;
 }
 
 static void OotPort_LoadSram(void) {
     char pathBuffer[384];
-    const char* path = OotPort_GetSavePath(OOT_PS2_SAVE_PATH, pathBuffer, sizeof(pathBuffer));
+    char fallbackPathBuffer[384];
+    const char* path = OotPort_GetMemoryCardSavePath(OOT_PS2_SAVE_PATH, pathBuffer, sizeof(pathBuffer));
     Handle fd = File_Open(path, OOT_PS2_FILE_RDONLY, 0);
     u8* out = sPs2Sram;
     size_t remaining = sizeof(sPs2Sram);
+    s32 loadedFromMemoryCard = fd >= 0;
 
     if (fd < 0) {
-        return;
+        path = OotPort_ResolveRootPath(OOT_PS2_SAVE_PATH, fallbackPathBuffer, sizeof(fallbackPathBuffer));
+        fd = File_Open(path, OOT_PS2_FILE_RDONLY, 0);
+        if (fd < 0) {
+            return;
+        }
     }
 
     while (remaining != 0) {
@@ -204,14 +294,29 @@ static void OotPort_LoadSram(void) {
     if (remaining != 0) {
         memset(out, 0, remaining);
     }
+    if (loadedFromMemoryCard) {
+        OotPort_EnsureSaveIconFiles();
+    }
 }
 
 static s32 OotPort_FlushSram(void) {
     char pathBuffer[384];
-    const char* path = OotPort_GetSavePath(OOT_PS2_SAVE_PATH, pathBuffer, sizeof(pathBuffer));
-    Handle fd = File_Open(path, OOT_PS2_FILE_WRONLY | OOT_PS2_FILE_CREAT | OOT_PS2_FILE_TRUNC, 0777);
+    char fallbackPathBuffer[384];
+    const char* path;
+    Handle fd;
     const u8* in = sPs2Sram;
     size_t remaining = sizeof(sPs2Sram);
+    s32 savedToMemoryCard = false;
+
+    File_Mkdir(OOT_PS2_SAVE_DIR, 0777);
+    path = OotPort_GetMemoryCardSavePath(OOT_PS2_SAVE_PATH, pathBuffer, sizeof(pathBuffer));
+    fd = File_Open(path, OOT_PS2_FILE_WRONLY | OOT_PS2_FILE_CREAT | OOT_PS2_FILE_TRUNC, 0777);
+    if (fd >= 0) {
+        savedToMemoryCard = true;
+    } else {
+        path = OotPort_ResolveRootPath(OOT_PS2_SAVE_PATH, fallbackPathBuffer, sizeof(fallbackPathBuffer));
+        fd = File_Open(path, OOT_PS2_FILE_WRONLY | OOT_PS2_FILE_CREAT | OOT_PS2_FILE_TRUNC, 0777);
+    }
 
     if (fd < 0) {
         printf("oot-ps2 save open failed path=%s err=%d\n", path, (int)fd);
@@ -233,6 +338,9 @@ static s32 OotPort_FlushSram(void) {
     }
 
     File_Close(fd);
+    if (savedToMemoryCard) {
+        OotPort_EnsureSaveIconFiles();
+    }
     return true;
 }
 
@@ -288,11 +396,14 @@ static void OotPort_UpdateCurrentThreadStackRange(void) {
     }
 }
 
+extern s32 Asset_IsMutableTextureRange(uintptr_t start, uintptr_t end);
+
 int OotPort_IsRuntimeByteRangeSlow(uintptr_t start, uintptr_t end) {
     OotPort_UpdateCurrentThreadStackRange();
 
     return ((start >= sPs2StackStart) && (end <= sPs2StackEnd)) ||
-           ((start >= sPs2StackAltStart) && (end <= sPs2StackAltEnd));
+           ((start >= sPs2StackAltStart) && (end <= sPs2StackAltEnd)) ||
+           Asset_IsMutableTextureRange(start, end);
 }
 
 static s32 OotPort_IsNativeUserRange(uintptr_t addr, size_t size) {
