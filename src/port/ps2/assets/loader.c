@@ -162,8 +162,6 @@ static size_t sOotPs2NativeAssetRangeCacheNext;
 static size_t sOotPs2LoadedAssetRangeNext;
 static size_t sOotPs2LoadedAssetRangeHighWater;
 
-static uintptr_t sOotPs2DodongoFloorStart[2];
-static uintptr_t sOotPs2DodongoFloorEnd[2];
 static u32 sOotPs2LoadedAssetSerial = 1;
 static u32 sOotPs2AssetCacheClock;
 static volatile s32 sOotPs2ForegroundAssetReadWaiters;
@@ -1415,6 +1413,77 @@ static s32 OotPort_RangesOverlap(uintptr_t firstStart, uintptr_t firstEnd, uintp
     return (firstStart < secondEnd) && (secondStart < firstEnd);
 }
 
+static s32 OotPort_CanonicalizeLoadedTextureWords(const OotPortExternalAsset* asset, void* ram,
+                                                  uintptr_t vromStart, size_t size) {
+    const u32 textureWordFlags = OOT_PORT_EXTERNAL_ASSET_NATIVE | OOT_PORT_EXTERNAL_ASSET_TEXTURE_WORDS;
+    uintptr_t vromEnd;
+    u8* out = ram;
+    size_t i;
+
+    if ((asset == NULL) || (size == 0) || ((asset->flags & textureWordFlags) != textureWordFlags)) {
+        return true;
+    }
+    if (vromStart > UINTPTR_MAX - size) {
+        return false;
+    }
+    vromEnd = vromStart + size;
+
+    for (i = 0; i < gOotPortExternalAssetTextureRangeCount; i++) {
+        const OotPortExternalAssetTextureRange* textureRange = &gOotPortExternalAssetTextureRanges[i];
+        uintptr_t overlapStart;
+        uintptr_t overlapEnd;
+        uintptr_t wordBase;
+
+        if (textureRange->vromEnd <= vromStart) {
+            continue;
+        }
+        if (textureRange->vromStart >= vromEnd) {
+            break;
+        }
+
+        overlapStart = textureRange->vromStart > vromStart ? textureRange->vromStart : vromStart;
+        overlapEnd = textureRange->vromEnd < vromEnd ? textureRange->vromEnd : vromEnd;
+        if (overlapEnd <= overlapStart) {
+            continue;
+        }
+
+        if (((textureRange->vromEnd - textureRange->vromStart) & 7U) != 0U) {
+            return false;
+        }
+
+        wordBase = textureRange->vromStart + ((overlapStart - textureRange->vromStart) & ~(uintptr_t)7U);
+        while (wordBase < overlapEnd) {
+            u8 raw[8];
+            uintptr_t copyStart;
+            uintptr_t copyEnd;
+
+            if ((wordBase > UINTPTR_MAX - 8U) || (wordBase + 8U > textureRange->vromEnd) ||
+                (wordBase < asset->vromStart) || (wordBase + 8U > asset->vromEnd)) {
+                return false;
+            }
+
+            if ((wordBase >= vromStart) && (wordBase + 8U <= vromEnd)) {
+                memcpy(raw, out + (wordBase - vromStart), sizeof(raw));
+            } else if (!OotPort_ReadPackedAssetFileRange(asset, (size_t)(wordBase - asset->vromStart), raw,
+                                                         sizeof(raw), true, false, false)) {
+                return false;
+            }
+
+            copyStart = wordBase > overlapStart ? wordBase : overlapStart;
+            copyEnd = (wordBase + 8U) < overlapEnd ? (wordBase + 8U) : overlapEnd;
+            while (copyStart < copyEnd) {
+                const uintptr_t logicalOffset = copyStart - wordBase;
+                out[copyStart - vromStart] = raw[logicalOffset ^ 7U];
+                copyStart++;
+            }
+
+            wordBase += 8U;
+        }
+    }
+
+    return true;
+}
+
 static s32 OotPort_RamRangeFromPtr(const void* ptr, size_t size, uintptr_t* ramStart, uintptr_t* ramEnd) {
     uintptr_t start = (uintptr_t)ptr;
     uintptr_t normalizedStart;
@@ -1530,26 +1599,6 @@ OotPort_FindLoadedAssetSerialRange(uintptr_t ramStart) {
     return (ramStart < range->ramEnd) ? range : NULL;
 }
 
-s32 Asset_IsMutableTextureRange(uintptr_t start, uintptr_t end) {
-    if (end <= start) return false;
-    for (int i = 0; i < 2; i++) {
-        if (sOotPs2DodongoFloorStart[i] != 0 && start >= sOotPs2DodongoFloorStart[i] &&
-            end <= sOotPs2DodongoFloorEnd[i]) return true;
-    }
-    return false;
-}
-
-s32 OotPort_IsMutableTextureRange(const void* ptr, size_t size) {
-    uintptr_t ramStart;
-    uintptr_t ramEnd;
-
-    if (!OotPort_RamRangeFromPtr(ptr, size, &ramStart, &ramEnd)) {
-        return false;
-    }
-
-    return Asset_IsMutableTextureRange(ramStart, ramEnd);
-}
-
 static void OotPort_ClearLoadedAssetRange(void* ram, size_t size) {
     uintptr_t ramStart;
     uintptr_t ramEnd;
@@ -1561,14 +1610,6 @@ static void OotPort_ClearLoadedAssetRange(void* ram, size_t size) {
     }
 
     cleared = OotPort_ClearLoadedAssetSerialRanges(ramStart, ramEnd);
-    for (i = 0; i < 2; i++) {
-        if (sOotPs2DodongoFloorStart[i] != 0 &&
-            OotPort_RangesOverlap(sOotPs2DodongoFloorStart[i], sOotPs2DodongoFloorEnd[i], ramStart, ramEnd)) {
-            sOotPs2DodongoFloorStart[i] = 0;
-            sOotPs2DodongoFloorEnd[i] = 0;
-        }
-    }
-
     for (i = 0; i < sOotPs2LoadedAssetRangeHighWater; i++) {
         LoadedAssetRange* range = &sOotPs2LoadedAssetRanges[i];
 
@@ -1824,20 +1865,6 @@ static void OotPort_RegisterLoadedAssetRanges(void* ram, size_t size, uintptr_t 
         return;
     }
 
-    if (asset->name != NULL && strcmp(asset->name, "ddan_boss_room_1") == 0 && vromStart <= UINTPTR_MAX - size) {
-        const uintptr_t loadEnd = vromStart + size;
-        const uintptr_t offsets[2] = { 0x21C8U, 0x21D8U };
-        const size_t floorBytes = 32U * 64U * 2U;
-        for (int m = 0; m < 2; m++) {
-            const uintptr_t floorVrom = asset->vromStart + offsets[m];
-            if (floorVrom >= vromStart && floorVrom <= UINTPTR_MAX - floorBytes &&
-                floorVrom + floorBytes <= loadEnd) {
-                sOotPs2DodongoFloorStart[m] = ramStart + (floorVrom - vromStart);
-                sOotPs2DodongoFloorEnd[m] = sOotPs2DodongoFloorStart[m] + floorBytes;
-            }
-        }
-    }
-
     OotPort_StoreLoadedAssetRange((void*)ramStart, size, vromStart, asset->flags & ~OOT_PORT_EXTERNAL_ASSET_TEXTURE_WORDS,
                                  serial);
     OotPort_StoreLoadedAssetSerialRange(ramStart, ramEnd, serial,
@@ -1876,7 +1903,8 @@ static void OotPort_RegisterLoadedAssetRanges(void* ram, size_t size, uintptr_t 
         }
 
         OotPort_StoreLoadedAssetRange((void*)(ramStart + (overlapStart - vromStart)),
-                                     (size_t)(overlapEnd - overlapStart), overlapStart, asset->flags, serial);
+                                     (size_t)(overlapEnd - overlapStart), overlapStart,
+                                     asset->flags | OOT_PORT_EXTERNAL_ASSET_CANONICAL_TEXTURE, serial);
     }
 }
 
@@ -1915,6 +1943,9 @@ static s32 OotPort_TryReadAssetCache(const OotPortExternalAsset* asset, void* ra
         return false;
     }
     OotPort_CopyAssetBytes(ram, &cache->data[cacheOffset], size, useFastCopy);
+    if (!OotPort_CanonicalizeLoadedTextureWords(asset, ram, vrom, size)) {
+        return false;
+    }
     OotPort_RegisterLoadedAssetRanges(ram, size, vrom, asset, OotPort_NextLoadedAssetSerial());
     return true;
 }
@@ -2118,6 +2149,27 @@ s32 OotPort_IsNativeExternalTextureRange(const void* ptr, size_t size) {
     return false;
 }
 
+s32 OotPort_IsCanonicalExternalTextureRange(const void* ptr, size_t size) {
+    uintptr_t ramStart;
+    uintptr_t ramEnd;
+    size_t i;
+
+    if (!OotPort_RamRangeFromPtr(ptr, size, &ramStart, &ramEnd)) {
+        return false;
+    }
+
+    for (i = 0; i < sOotPs2LoadedAssetRangeHighWater; i++) {
+        const LoadedAssetRange* range = &sOotPs2LoadedAssetRanges[i];
+
+        if ((range->serial != 0) && ((range->flags & OOT_PORT_EXTERNAL_ASSET_CANONICAL_TEXTURE) != 0) &&
+            OotPort_RangeContains(range->ramStart, range->ramEnd, ramStart, ramEnd)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 u32 OotPort_GetExternalAssetRangeSerial(const void* ptr, size_t size) {
     uintptr_t ramStart;
     uintptr_t ramEnd;
@@ -2125,9 +2177,6 @@ u32 OotPort_GetExternalAssetRangeSerial(const void* ptr, size_t size) {
     u32 serial;
 
     if (!OotPort_RamRangeFromPtr(ptr, size, &ramStart, &ramEnd)) {
-        return 0;
-    }
-    if (Asset_IsMutableTextureRange(ramStart, ramEnd)) {
         return 0;
     }
 
@@ -2416,6 +2465,9 @@ static s32 OotPort_AssetReadLocked(void* ram, uintptr_t vrom, size_t size, s32 u
 
         if (!OotPort_ReadPackedAssetFileRange(asset, offset, out, chunkSize, useBlockCache, useFastCopy,
                                              allowAudioYield)) {
+            return OOT_PORT_ASSET_READ_FAILED;
+        }
+        if (!OotPort_CanonicalizeLoadedTextureWords(asset, chunkOut, chunkVromStart, chunkSize)) {
             return OOT_PORT_ASSET_READ_FAILED;
         }
 

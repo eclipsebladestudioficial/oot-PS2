@@ -288,14 +288,11 @@ static void OotPort_UpdateCurrentThreadStackRange(void) {
     }
 }
 
-extern s32 Asset_IsMutableTextureRange(uintptr_t start, uintptr_t end);
-
 int OotPort_IsRuntimeByteRangeSlow(uintptr_t start, uintptr_t end) {
     OotPort_UpdateCurrentThreadStackRange();
 
     return ((start >= sPs2StackStart) && (end <= sPs2StackEnd)) ||
-           ((start >= sPs2StackAltStart) && (end <= sPs2StackAltEnd)) ||
-           Asset_IsMutableTextureRange(start, end);
+           ((start >= sPs2StackAltStart) && (end <= sPs2StackAltEnd));
 }
 
 static s32 OotPort_IsNativeUserRange(uintptr_t addr, size_t size) {

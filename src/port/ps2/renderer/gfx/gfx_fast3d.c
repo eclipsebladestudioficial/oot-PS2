@@ -688,9 +688,20 @@ static bool gfx_normalize_texture_source(const uint8_t** addr, uint32_t sizeByte
     return false;
 }
 
+static uint32_t gfx_ps2_dynamic_texture_content_key(const uint8_t* addr, uint32_t sizeBytes);
+
+static inline bool gfx_texture_source_is_canonical_external(const uint8_t* addr, uint32_t sizeBytes) {
+    return OotPort_IsCanonicalExternalTextureRange(addr, sizeBytes) ||
+           OotPort_IsCanonicalExternalTextureRange(addr, 1);
+}
+
 static uint32_t gfx_texture_palette_key(const uint8_t* addr, uint32_t sizeBytes) {
     uint32_t key;
     const uint8_t* bytes = addr;
+
+    if (gfx_texture_source_is_canonical_external(addr, sizeBytes)) {
+        return gfx_ps2_dynamic_texture_content_key(addr, sizeBytes);
+    }
 
     if (sizeBytes == GFX_TLUT_SIZE_BYTES) {
         const uint32_t halfSize = sizeBytes / 2;
@@ -818,7 +829,8 @@ static GfxTextureSwapState gfx_texture_source_swap_state(const uint8_t* addr, ui
         return state;
     }
 
-    if (OotPort_IsMutableTextureRange(addr, sizeBytes)) {
+    if (OotPort_IsCanonicalExternalTextureRange(addr, sizeBytes) ||
+        OotPort_IsCanonicalExternalTextureRange(addr, 1)) {
         state.mode = GFX_TEXTURE_SWAP_NONE;
         return state;
     }
@@ -1873,15 +1885,17 @@ static bool gfx_texture_cache_lookup(int tile, TextureCacheEntry** n, const uint
     const TextureTileState* tileState = gfx_get_texture_tile(tile);
     const uint32_t source_span_size = gfx_texture_source_span_size(tile);
     const uint32_t source_key = OotPort_GetExternalAssetRangeSerial(orig_addr, source_span_size);
+    const bool canonical_external_source = gfx_texture_source_is_canonical_external(orig_addr, source_span_size);
     const bool runtime_source = (orig_addr != sInvalidTextureBuf) && (orig_addr != sInvalidPaletteBuf) &&
                                 OotPort_IsRuntimeByteRange(orig_addr, source_span_size);
 
     const bool immutable_dynamic =
         (((fmt == G_IM_FMT_IA) && (siz == G_IM_SIZ_4b) && (source_span_size > 0U) && (source_span_size <= 1024U)) ||
          ((fmt == G_IM_FMT_RGBA) && (siz == G_IM_SIZ_32b) && (source_span_size == (32U * 32U * 4U))));
-    const bool dynamic_source = ((source_key == 0) && runtime_source) || immutable_dynamic;
-    const bool fingerprint_runtime = ((source_key == 0) && runtime_source && !immutable_dynamic &&
-                                      (source_span_size > 0U) && (source_span_size <= 32768U));
+    const bool dynamic_source = canonical_external_source || ((source_key == 0) && runtime_source) || immutable_dynamic;
+    const bool fingerprint_runtime =
+        ((canonical_external_source || ((source_key == 0) && runtime_source)) && !immutable_dynamic &&
+         (source_span_size > 0U) && (source_span_size <= 32768U));
     const uint32_t dynamic_content_key =
         immutable_dynamic ? gfx_ps2_dynamic_texture_content_key(orig_addr, source_span_size) : 0;
     const bool uses_palette = fmt == G_IM_FMT_CI;
@@ -2598,7 +2612,8 @@ static bool gfx_intensity_tint_cache_lookup(uint8_t mode, uint8_t tintFactor, in
     const uint32_t sourceSpan = gfx_texture_source_span_size(tile);
     const uint32_t sourceSerial = OotPort_GetExternalAssetRangeSerial(addr, sourceSpan);
 
-    if ((sourceSerial == 0) && OotPort_IsRuntimeByteRange(addr, sourceSpan)) {
+    if (gfx_texture_source_is_canonical_external(addr, sourceSpan) ||
+        ((sourceSerial == 0) && OotPort_IsRuntimeByteRange(addr, sourceSpan))) {
         return false;
     }
 
@@ -2629,7 +2644,8 @@ static void gfx_intensity_tint_cache_store(uint8_t mode, uint8_t tintFactor, int
     const uint32_t sourceSerial = OotPort_GetExternalAssetRangeSerial(addr, sourceSpan);
     GfxIntensityTintCacheEntry* entry;
 
-    if ((sourceSerial == 0) && OotPort_IsRuntimeByteRange(addr, sourceSpan)) {
+    if (gfx_texture_source_is_canonical_external(addr, sourceSpan) ||
+        ((sourceSerial == 0) && OotPort_IsRuntimeByteRange(addr, sourceSpan))) {
         return;
     }
 
@@ -2862,13 +2878,17 @@ static void gfx_build_flame_atlas(FlameAtlasCacheEntry* entry) {
     const uint8_t* addr1 = rdp.loaded_texture[1].addr;
     const uint32_t serial0 = OotPort_GetExternalAssetRangeSerial(addr0, span0);
     const uint32_t serial1 = OotPort_GetExternalAssetRangeSerial(addr1, span1);
+    const bool canonical0 = gfx_texture_source_is_canonical_external(addr0, span0);
+    const bool canonical1 = gfx_texture_source_is_canonical_external(addr1, span1);
     const bool runtime0 = (serial0 == 0U) && OotPort_IsRuntimeByteRange(addr0, span0);
     const bool runtime1 = (serial1 == 0U) && OotPort_IsRuntimeByteRange(addr1, span1);
 
-    const uint32_t sourceKey0 =
-        serial0 != 0U ? serial0 : (runtime0 ? gfx_ps2_dynamic_texture_content_key(addr0, span0) : 1U);
-    const uint32_t sourceKey1 =
-        serial1 != 0U ? serial1 : (runtime1 ? gfx_ps2_dynamic_texture_content_key(addr1, span1) : 1U);
+    const uint32_t sourceKey0 = canonical0
+        ? gfx_ps2_dynamic_texture_content_key(addr0, span0)
+        : (serial0 != 0U ? serial0 : (runtime0 ? gfx_ps2_dynamic_texture_content_key(addr0, span0) : 1U));
+    const uint32_t sourceKey1 = canonical1
+        ? gfx_ps2_dynamic_texture_content_key(addr1, span1)
+        : (serial1 != 0U ? serial1 : (runtime1 ? gfx_ps2_dynamic_texture_content_key(addr1, span1) : 1U));
     const int32_t pr = (int32_t)(entry->primRgb & 0xffU);
     const int32_t pg = (int32_t)((entry->primRgb >> 8) & 0xffU);
     const int32_t pb = (int32_t)((entry->primRgb >> 16) & 0xffU);
@@ -3141,9 +3161,12 @@ static const uint8_t* gfx_two_i4_get_decoded_source(int tile, uint32_t width, ui
     const uint8_t* addr = rdp.loaded_texture[tile].addr;
     const uint32_t span = gfx_texture_source_span_size(tile);
     const uint32_t serial = OotPort_GetExternalAssetRangeSerial(addr, span);
+    const bool canonical = gfx_texture_source_is_canonical_external(addr, span);
     const bool runtime = serial == 0U && addr != sInvalidTextureBuf && addr != sInvalidPaletteBuf &&
                          OotPort_IsRuntimeByteRange(addr, span);
-    const uint32_t sourceKey = serial != 0U ? serial : (runtime ? gfx_ps2_dynamic_texture_content_key(addr, span) : 1U);
+    const uint32_t sourceKey = canonical
+        ? gfx_ps2_dynamic_texture_content_key(addr, span)
+        : (serial != 0U ? serial : (runtime ? gfx_ps2_dynamic_texture_content_key(addr, span) : 1U));
     const uint32_t rowStride = rdp.loaded_texture[tile].row_stride_bytes;
     const uint8_t nibble = rdp.loaded_texture[tile].source_nibble_offset;
     TwoI4DecodedCacheEntry* victim = &sPs2TwoI4DecodedCache[0];

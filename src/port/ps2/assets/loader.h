@@ -12,6 +12,7 @@
 #define OOT_PORT_ASSET_READ_NOT_EXTERNAL 1
 #define OOT_PORT_EXTERNAL_ASSET_NATIVE 1
 #define OOT_PORT_EXTERNAL_ASSET_TEXTURE_WORDS 2
+#define OOT_PORT_EXTERNAL_ASSET_CANONICAL_TEXTURE 4
 
 typedef struct OotPortExternalAsset {
     uintptr_t vromStart;
@@ -60,8 +61,8 @@ s32 OotPort_SetAssetRoot(const char* root);
 s32 OotPort_IsDiscBoot(void);
 uintptr_t OotPort_NormalizeVrom(uintptr_t vrom);
 void OotPort_NormalizeRomFile(RomFile* file);
-s32 OotPort_IsMutableTextureRange(const void* ptr, size_t size);
 s32 OotPort_IsNativeExternalTextureRange(const void* ptr, size_t size);
+s32 OotPort_IsCanonicalExternalTextureRange(const void* ptr, size_t size);
 s32 OotPort_IsLoadedNativeExternalAssetRange(const void* ptr, size_t size);
 s32 OotPort_GetLoadedExternalAssetRangeFlags(const void* ptr, size_t size, u32* flags);
 s32 OotPort_MarkLoadedExternalAssetRangeFlags(const void* ptr, size_t size, u32 flags);
