@@ -1,3 +1,13 @@
+/* Mano papo reto se alguem vier e ter a cara de pau e falar que foi ia que escreveu tudo isso aqui
+vou mandar tomar no cu, vai tomar no cu namoral essa porra gastei muito tempo nessa desgraça
+pra vim pessoa falando que foi ia que escreveu vai tomar no seu cu ja deu até preguiça
+de documentar a porra desse codigo
+presta atenção nessa porra antes de sair mexendo como se tudo aqui fosse igual ao n64
+esse arquivo pega o que vem do fast3d e transforma em registrador e pacote gif que o gs do ps2 consegue entender
+o gs não faz todos os combines do n64 em uma passada, por isso tem cache, textura montada na cpu e desenho repetido
+se alguma coisa parece estranha primeiro entende o caminho inteiro e só depois inventa de apagar
+*/
+
 #include <stdlib.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -30,11 +40,20 @@
 
 #define SETREG_FOGCOL(r, g, b) ((u64)((r) & 0xff) | ((u64)((g) & 0xff) << 8) | ((u64)((b) & 0xff) << 16))
 
+/*
+antes que algum gênio ache que esses números saíram do cu, eles são o tamanho dos pools e da memória de textura
+o texcache fica na cpu segurando os dados e a vram continua sendo cuidada pelo texmanager do gskit
+*/
+
 extern void gfx_set_ps2_widescreen(bool enabled);
 
 static void restore_prerender_fallback(void);
 void texman_clear(void);
 
+/*
+não inventa de organizar esses campos do seu jeito porque eles são lidos direto do buffer de vértices
+alguns ainda viram qword no pacote gif, então se tirar packed ou aligned o gs recebe lixo e desenha uma merda
+*/
 typedef union TexCoord {
     struct {
         float s;
@@ -111,6 +130,10 @@ enum TextureFormat {
     TEXTURE_FORMAT_8888_GS_NATIVE = 8,
 };
 
+/*
+não seja burro seu dumbo, shader aqui não é shader programável igual numa gpu moderna
+isso é o combiner do fast3d já traduzido para os estados e caminhos que o gs consegue usar
+*/
 struct ShaderProgram {
     bool enabled;
     uint32_t shader_id;
@@ -258,6 +281,10 @@ static bool sTwoTextureBlendActive;
 static bool sTwoTextureAlphaBlendActive;
 static bool sTwoTextureEnvPrimTint;
 
+/*
+esses valores guardados não estão aqui de enfeite, eles evitam mandar o mesmo registrador pro gs toda santa hora
+se algum código mexer no gs por fora tem que invalidar o cache ou o renderer vai confiar num estado que já mudou
+*/
 static int sLastTexFilter = -1;
 static u64 sLastTestReg = ~0ULL;
 static u64 sLastClampReg = ~0ULL;
@@ -295,6 +322,10 @@ static bool sHomeMenuBgActive;
 static bool sHomeMenuBgCaptureRequested;
 static bool sHomeMenuBgCaptured;
 
+/*
+essas flags dizem qual gambiarra de duas texturas o combiner precisa usar no ps2
+elas são limpas em todo frame porque um material não pode deixar sua sujeira no material seguinte
+*/
 void gfx_ps2_set_texture_blend_reverse(bool enabled) {
     sTextureBlendReverse = enabled;
 }
@@ -355,6 +386,10 @@ void gfx_ps2_invalidate_register_cache(void) {
     sLastBoundGsTex = NULL;
 }
 
+/*
+antes de achar que essa divisão por dois está errada lembra que no gs o alpha vai de 0 a 0x80
+no modulate com textura o rgb neutro também é 0x80, então a cor precisa chegar pela metade no pacote
+*/
 static inline uint64_t colorq_from_rgba(uint32_t rgba, float q, bool textured) {
     ColorQ c;
 
@@ -386,6 +421,10 @@ static void load_shader(struct ShaderProgram* p) {
     cur_shader = effective_shader(p);
 }
 
+/*
+isso traduz o id do combiner uma vez e guarda o resultado pra não fazer a mesma merda em todo desenho
+os ids separados não são número aleatório, são combines que precisam de blend, decal ou replace no lugar de modulate
+*/
 static struct ShaderProgram* create_shader(uint32_t id) {
     struct CCFeatures f;
     gfx_cc_get_features(id, &f);
@@ -568,6 +607,10 @@ static void* alloc_tex_bytes(size_t size) {
     return allocation;
 }
 
+/*
+as texturas t8 daqui são intensidade e a clut transforma cada índice em cinza com alpha
+essa troca de blocos parece errada mas é a ordem torta que o csm1 do gs espera, então não desfaz essa porra
+*/
 static void init_intensity_t8_clut(void) {
     if (sIntensityT8ClutReady) {
         return;
@@ -784,6 +827,10 @@ int texman_texture_slot_available(void) {
 }
 
 void texman_clear(void) {
+    /*
+    sim, quando os 4 mb acabam isso espera a fila e reaproveita o bloco inteiro
+    salvar só um pedaço deixa ponteiro velho nos caches e transforma a textura em lixo
+    */
     sPrerenderFallback.valid = false;
     sPrerenderFallback.texture = NULL;
 
@@ -1001,6 +1048,11 @@ static void update_test(void) {
     *packet++ = GS_TEST_1 + gs_global->PrimContext;
 }
 
+/*
+nem pensa em trocar isso por um repeat simples do gs porque cms, cmt e mask ainda seguem as regras do n64
+clamp tem que ganhar de mirror e repeat, enquanto region repeat cuida quando o período é menor que a textura
+essa porra também é o que mantém mirror + clamp dos olhos da epona funcionando, então deixa a ordem quieta
+*/
 static void clamp_tex(struct Texture* t, bool edge_s, bool edge_t) {
     uint32_t wms = t->clamp_s;
     uint32_t wmt = t->clamp_t;
@@ -1078,6 +1130,10 @@ static void clamp_tex(struct Texture* t, bool edge_s, bool edge_t) {
 #define GIF_PRIM_SPRITE_TEXTURED 0x7F04
 #define GIF_PRIM_TRIANGLE_GOURAUD 0x7F05
 
+/*
+esses helpers juntam vários triângulos no mesmo pacote gif porque mandar um pacote pra cada um acaba com o desempenho
+same_obj e os tipos acima avisam até onde o gskit pode continuar escrevendo sem estourar o bloco reservado
+*/
 static inline unsigned ilog2ceil(unsigned v) {
     return v <= 1U ? 0U : (32U - (unsigned)__builtin_clz(v - 1U));
 }
@@ -1141,6 +1197,10 @@ static inline float colorq_q(uint64_t word) {
 static const float sMaskInvPeriod[10] = { 0.0f,     0.5f,      0.25f,      0.125f,      0.0625f,
                                           0.03125f, 0.015625f, 0.0078125f, 0.00390625f, 0.001953125f };
 
+/*
+se deixar coordenada repetida crescer pra caralho o gs perde precisão e a textura começa a virar merda
+aqui saem períodos inteiros sem mudar a imagem, mirror dobra esse período e q continua junto pra manter a perspectiva
+*/
 static inline void normalize_repeat_axis(float* a1, float* a2, float* a3, float q1, float q2, float q3, uint8_t cm,
                                          uint8_t mask) {
     if ((cm & 2) || mask == 0 || mask >= 10) {
@@ -1412,6 +1472,10 @@ void gfx_ps2_set_prerender_depth_only(bool enabled) {
     set_frame_write_mask(enabled ? 0xffffffffU : 0U);
 }
 
+/*
+quando o gs não consegue fechar o combine sozinho a cpu monta uma cópia rgba da textura
+essas funções leem ct32, ct16 e t8 do mesmo jeito pra tint e blend não precisarem adivinhar o formato original
+*/
 static inline bool texture_cpu_rgba_supported(const struct Texture* source) {
     return source != NULL && source->tex.Mem != NULL && source->tex.Width > 0 && source->tex.Height > 0 &&
            (source->tex.PSM == GS_PSM_CT32 || source->tex.PSM == GS_PSM_CT16 || source->tex.PSM == GS_PSM_T8);
@@ -1434,6 +1498,10 @@ static inline uint32_t texture_cpu_rgba(const struct Texture* source, size_t ind
 }
 
 static struct Texture* reverse_tint_texture(struct Texture* source, uint32_t prim, uint32_t env) {
+    /*
+    essa conta é o combine prim + (env - prim) * texel e não uma cor tirada do nada
+    o alpha original fica e a cópia entra no cache porque refazer a textura por triângulo mataria a cpu do ps2
+    */
     const size_t pixels = (size_t)source->tex.Width * (size_t)source->tex.Height;
     const size_t bytes = pixels * 4U;
     const uint32_t primRgb = prim & 0x00ffffffU;
@@ -1564,6 +1632,10 @@ static inline uint32_t reverse_neutral_color(uint32_t rgba) {
     return 0x00ffffffU | (rgba & 0xff000000U);
 }
 
+/*
+esse cache segura as cópias rgba de blend e decal e joga fora a mais velha quando a memória enche
+se a dma ainda estiver lendo uma cópia usada neste frame a fila termina antes de alguém sobrescrever a porra da memória
+*/
 static void blend_cache_sync_if_live(const BlendCacheEntry* entry) {
     if (entry == NULL || !entry->valid || entry->last_used_frame != sRenderFrameSerial || !gs_global) {
         return;
@@ -1894,6 +1966,10 @@ static void draw_fast_textured_pass(const FastVertex* v, size_t tris, struct Tex
     }
 }
 
+/*
+isso parece desenho repetido porque blend e decal do n64 não cabem num único estado do gs
+cada passe resolve uma parte do combine e no final alpha, z e tfx voltam como estavam pra não ferrar o próximo material
+*/
 static bool draw_blend_exact(const FastVertex* v, size_t tris, struct Texture* source) {
     if (v == NULL || tris == 0 || source == NULL || cur_shader == NULL) {
         return false;
@@ -2320,6 +2396,11 @@ static void draw_alpha_blended_texture_batches(const FastVertex* vertices, size_
     }
 }
 
+/*
+é aqui que o desenho 3d decide qual caminho dessa desgraça toda vai usar
+primeiro tenta o resultado exato ou a textura já pronta e só depois cai no lote normal
+não troca essa ordem no chute porque fog, alpha e duas texturas brigam pelos mesmos estados do gs
+*/
 static void draw_triangles(float* raw, size_t length, size_t triangleCount) {
     (void)length;
     if (raw == NULL || triangleCount == 0) {
@@ -2463,6 +2544,10 @@ draw_complete:
     }
 }
 
+/*
+não tem dois fogs fazendo a mesma coisa, quando o alpha deixa o fog já vai no xyzf do desenho normal
+quando não deixa o fast3d manda este passe separado e a flag de skip impede desenhar a porra duas vezes
+*/
 static void restore_fog_pass_state(bool emit_state) {
     if (!sFogPass.active) {
         return;
@@ -2586,6 +2671,10 @@ fog_restore:
     }
 }
 
+/*
+2d não significa que pode ignorar o combiner, esses sprites usam os mesmos caches e as mesmas regras do 3d
+o sprite de 512x256 é o fundo pré-renderizado e fica guardado pra sala não abrir um buraco preto quando ele some
+*/
 void gfx_ps2_draw_triangles_2d(float* raw, size_t unused, size_t count) {
     (void)unused;
     (void)count;
@@ -2752,6 +2841,10 @@ cleanup:
     }
 }
 
+/*
+antes de falar que isso mudou a resolução interna presta atenção no que a função realmente faz
+aqui só entram o tamanho real da saída, o framebuffer, a viewport e a proporção que o gs vai mostrar
+*/
 int gfx_ps2_apply_video_mode(void) {
     VideoMode vmode;
 
@@ -2779,6 +2872,10 @@ int gfx_ps2_apply_video_mode(void) {
     return 0;
 }
 
+/*
+o init não só liga o renderer e vai embora, ele prepara oneshot, alpha e a memória alinhada que a dma precisa
+depois o texmanager manda pra vram somente as texturas que realmente forem usadas
+*/
 static void renderer_init(void) {
     u64* p;
 
@@ -2811,6 +2908,10 @@ static void renderer_init(void) {
     gfx_ps2_apply_video_mode();
 }
 
+/*
+algumas salas não mandam o fundo pré-renderizado de novo antes da geometria e aí aparece um buraco preto do caralho
+quando isso acontece a última cópia válida volta sem z antes do 3d, não é um sprite aleatório desenhado duas vezes
+*/
 static void restore_prerender_fallback(void) {
     if (!sPrerenderRoomActive) {
         sPrerenderFallback.valid = false;
@@ -2853,6 +2954,10 @@ static void restore_prerender_fallback(void) {
 static void renderer_resize(void) {
 }
 
+/*
+todo frame limpa o combine porque deixar estado velho aqui fode outro material que não tem nada a ver
+o clear preto respeita o fundo do pause pra não apagar a imagem e tentar restaurar o nada logo depois
+*/
 static void start_frame(void) {
     restore_fog_pass_state(false);
 
@@ -2907,6 +3012,10 @@ static void start_frame(void) {
     set_blend(old_blend);
 }
 
+/*
+o fps usa essa fonte pequena feita na mão pra não criar textura nem depender do menu inteiro
+o número muda a cada meio segundo porque atualizar a conta em todo frame só deixa a leitura sambando
+*/
 static const uint8_t* fps_glyph(char c) {
     static const uint8_t f[7] = { 31, 16, 16, 30, 16, 16, 16 };
     static const uint8_t p[7] = { 30, 17, 17, 30, 16, 16, 16 };
@@ -3024,6 +3133,10 @@ static void menu_rect(float x0, float y0, float x1, float y1, u64 color) {
 #define HOME_HIGHLIGHT_G 92
 #define HOME_HIGHLIGHT_B 78
 
+/*
+o menu home é só retângulo e a fonte de bits abaixo, não tem textura escondida nessa porra
+480x272 é a medida lógica do menu e home_x com home_y escalam isso pro modo de vídeo sem mudar a resolução do jogo
+*/
 #include "home_font.inc"
 
 static float home_scale(void) {
@@ -3554,6 +3667,10 @@ void gfx_ps2_render_home_menu(int selectedIndex, int screen, int submenuSelected
     set_blend(oldBlend);
 }
 
+/*
+essa tabela liga o fast3d nas funções deste arquivo, então não sai trocando assinatura e achando que ninguém usa
+os gfx_ps2_* que ficaram públicos são chamados pelo gerenciador de janela, pelos menus e pela tradução do combiner
+*/
 struct GfxRenderingAPI gfx_ps2_rapi = {
     .z_is_from_0_to_1 = depth_range_is_zero_to_one,
     .unload_shader = unload_shader,
