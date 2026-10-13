@@ -177,6 +177,16 @@ typedef struct TextureCache {
 static TextureCache sTextureCache;
 static uint32_t sTextureCacheFrameSerial;
 
+#define GFX_TEXTURE_FINGERPRINT_CACHE_SIZE 64
+typedef struct GfxTextureFingerprintCacheEntry {
+    const uint8_t* addr;
+    uint32_t sizeBytes;
+    uint32_t frameSerial;
+    uint32_t key;
+} GfxTextureFingerprintCacheEntry;
+
+static GfxTextureFingerprintCacheEntry sTextureFingerprintCache[GFX_TEXTURE_FINGERPRINT_CACHE_SIZE];
+
 typedef struct Ps2TextureLoadStamp {
     uint32_t frameSerial;
     const uint8_t* addr;
@@ -962,6 +972,8 @@ typedef struct __attribute__((aligned(16))) FlameAtlasCacheEntry {
     uint32_t textureId;
     const uint8_t* texture0Addr;
     const uint8_t* texture1Addr;
+    uint32_t texture0Key;
+    uint32_t texture1Key;
     uint32_t lastUsed;
     uint32_t primRgb;
     uint32_t envRgb;
@@ -1002,6 +1014,8 @@ typedef struct __attribute__((aligned(16))) TwoI4PrecombineCacheEntry {
     uint32_t textureId;
     const uint8_t* texture0Addr;
     const uint8_t* texture1Addr;
+    uint32_t texture0Key;
+    uint32_t texture1Key;
     uint32_t primRgb;
     uint32_t envRgb;
     uint32_t lastUsedFrame;
@@ -1854,27 +1868,89 @@ static void gfx_texture_cache_clear(void) {
 
 static uint32_t gfx_ps2_dynamic_texture_content_key(const uint8_t* addr, uint32_t sizeBytes) {
     const uint8_t* bytes = addr;
-    uint32_t key = 2166136261U;
+    const uint8_t* normalizedBytes;
+    uint32_t contentSize;
+    uint32_t a = 0x9E3779B9U;
+    uint32_t b = 0x85EBCA6BU;
+    uint32_t c = 0xC2B2AE35U;
+    uint32_t d = 0x27D4EB2FU;
+    uint32_t key;
+    size_t cacheIndex;
+    GfxTextureFingerprintCacheEntry* cache;
 
     if ((sizeBytes == 0) || !gfx_normalize_texture_source(&bytes, sizeBytes)) {
         return 0;
     }
 
+    normalizedBytes = bytes;
+    contentSize = sizeBytes;
+
+    cacheIndex = ((((uintptr_t)normalizedBytes >> 4) ^ ((uintptr_t)normalizedBytes >> 12) ^ contentSize) &
+                  (GFX_TEXTURE_FINGERPRINT_CACHE_SIZE - 1));
+    cache = &sTextureFingerprintCache[cacheIndex];
+    if ((cache->frameSerial == sTextureCacheFrameSerial) && (cache->addr == normalizedBytes) &&
+        (cache->sizeBytes == contentSize)) {
+        return cache->key;
+    }
+
     while ((sizeBytes != 0U) && (((uintptr_t)bytes & 3U) != 0U)) {
-        key = (key ^ *bytes++) * 16777619U;
+        a = ((a << 5) - a) + *bytes++;
         sizeBytes--;
     }
+    while (sizeBytes >= 16U) {
+        const uint32_t* words = (const uint32_t*)bytes;
+
+        a = ((a << 5) | (a >> 27)) + words[0];
+        b = ((b << 7) | (b >> 25)) ^ words[1];
+        c = ((c << 11) | (c >> 21)) + words[2];
+        d = ((d << 13) | (d >> 19)) ^ words[3];
+        bytes += 16;
+        sizeBytes -= 16U;
+    }
     while (sizeBytes >= 4U) {
-        const uint32_t word = *(const uint32_t*)bytes;
-        key = (key ^ word) * 16777619U;
+        a += *(const uint32_t*)bytes;
+        b = (b << 3) | (b >> 29);
         bytes += 4;
         sizeBytes -= 4U;
     }
     while (sizeBytes != 0U) {
-        key = (key ^ *bytes++) * 16777619U;
+        c = ((c << 5) - c) + *bytes++;
         sizeBytes--;
     }
-    return key != 0 ? key : 1;
+
+    key = a ^ ((b << 7) | (b >> 25)) ^ ((c << 13) | (c >> 19)) ^ ((d << 21) | (d >> 11));
+    key ^= key >> 16;
+    key *= 0x7FEB352DU;
+    key ^= key >> 15;
+    if (key == 0) {
+        key = 1;
+    }
+
+    cache->addr = normalizedBytes;
+    cache->sizeBytes = contentSize;
+    cache->frameSerial = sTextureCacheFrameSerial;
+    cache->key = key;
+    return key;
+}
+
+static uint32_t gfx_texture_source_cache_key(const uint8_t* addr, uint32_t sizeBytes) {
+    uint32_t serial;
+
+    if (gfx_texture_source_is_canonical_external(addr, sizeBytes)) {
+        return gfx_ps2_dynamic_texture_content_key(addr, sizeBytes);
+    }
+
+    serial = OotPort_GetExternalAssetRangeSerial(addr, sizeBytes);
+    if (serial != 0U) {
+        return serial;
+    }
+
+    if ((addr != sInvalidTextureBuf) && (addr != sInvalidPaletteBuf) &&
+        OotPort_IsRuntimeByteRange(addr, sizeBytes)) {
+        return gfx_ps2_dynamic_texture_content_key(addr, sizeBytes);
+    }
+
+    return 1U;
 }
 
 static bool gfx_texture_cache_lookup(int tile, TextureCacheEntry** n, const uint8_t* orig_addr, uint32_t fmt,
@@ -1897,7 +1973,7 @@ static bool gfx_texture_cache_lookup(int tile, TextureCacheEntry** n, const uint
     const bool dynamic_source = canonical_external_source || ((source_key == 0) && runtime_source) || immutable_dynamic;
     const bool fingerprint_runtime =
         ((canonical_external_source || ((source_key == 0) && runtime_source)) && !immutable_dynamic &&
-         (source_span_size > 0U) && (source_span_size <= 32768U));
+         (source_span_size > 0U));
     const uint32_t dynamic_content_key =
         immutable_dynamic ? gfx_ps2_dynamic_texture_content_key(orig_addr, source_span_size) : 0;
     const bool uses_palette = fmt == G_IM_FMT_CI;
@@ -2589,6 +2665,7 @@ static bool gfx_two_intensity_tint_textures_are_supported(void) {
 typedef struct GfxIntensityTintCacheEntry {
     const uint8_t* addr;
     uint32_t sourceSerial;
+    uint32_t sourceContentKey;
     uint32_t sourceSpan;
     uint32_t rowStride;
     uint32_t sizeBytes;
@@ -2613,9 +2690,10 @@ static bool gfx_intensity_tint_cache_lookup(uint8_t mode, uint8_t tintFactor, in
     const uint8_t* addr = rdp.loaded_texture[tile].addr;
     const uint32_t sourceSpan = gfx_texture_source_span_size(tile);
     const uint32_t sourceSerial = OotPort_GetExternalAssetRangeSerial(addr, sourceSpan);
+    const bool canonical = gfx_texture_source_is_canonical_external(addr, sourceSpan);
+    const uint32_t sourceContentKey = canonical ? gfx_ps2_dynamic_texture_content_key(addr, sourceSpan) : 0U;
 
-    if (gfx_texture_source_is_canonical_external(addr, sourceSpan) ||
-        ((sourceSerial == 0) && OotPort_IsRuntimeByteRange(addr, sourceSpan))) {
+    if (!canonical && (sourceSerial == 0) && OotPort_IsRuntimeByteRange(addr, sourceSpan)) {
         return false;
     }
 
@@ -2623,7 +2701,8 @@ static bool gfx_intensity_tint_cache_lookup(uint8_t mode, uint8_t tintFactor, in
         const GfxIntensityTintCacheEntry* entry = &sIntensityTintCache[i];
 
         if (entry->valid && (entry->mode == mode) && (entry->addr == addr) && (entry->sourceSerial == sourceSerial) &&
-            (entry->sourceSpan == sourceSpan) && (entry->rowStride == rdp.loaded_texture[tile].row_stride_bytes) &&
+            (entry->sourceContentKey == sourceContentKey) && (entry->sourceSpan == sourceSpan) &&
+            (entry->rowStride == rdp.loaded_texture[tile].row_stride_bytes) &&
             (entry->sizeBytes == rdp.loaded_texture[tile].size_bytes) && (entry->width == width) &&
             (entry->height == height) && (entry->sourceNibbleOffset == rdp.loaded_texture[tile].source_nibble_offset) &&
             (entry->siz == gfx_get_texture_tile(tile)->siz) && (entry->tintFactor == tintFactor) &&
@@ -2644,10 +2723,11 @@ static void gfx_intensity_tint_cache_store(uint8_t mode, uint8_t tintFactor, int
     const uint8_t* addr = rdp.loaded_texture[tile].addr;
     const uint32_t sourceSpan = gfx_texture_source_span_size(tile);
     const uint32_t sourceSerial = OotPort_GetExternalAssetRangeSerial(addr, sourceSpan);
+    const bool canonical = gfx_texture_source_is_canonical_external(addr, sourceSpan);
+    const uint32_t sourceContentKey = canonical ? gfx_ps2_dynamic_texture_content_key(addr, sourceSpan) : 0U;
     GfxIntensityTintCacheEntry* entry;
 
-    if (gfx_texture_source_is_canonical_external(addr, sourceSpan) ||
-        ((sourceSerial == 0) && OotPort_IsRuntimeByteRange(addr, sourceSpan))) {
+    if (!canonical && (sourceSerial == 0) && OotPort_IsRuntimeByteRange(addr, sourceSpan)) {
         return;
     }
 
@@ -2655,6 +2735,7 @@ static void gfx_intensity_tint_cache_store(uint8_t mode, uint8_t tintFactor, int
     sIntensityTintCacheNext = (sIntensityTintCacheNext + 1) % GFX_INTENSITY_TINT_CACHE_SIZE;
     entry->addr = addr;
     entry->sourceSerial = sourceSerial;
+    entry->sourceContentKey = sourceContentKey;
     entry->sourceSpan = sourceSpan;
     entry->rowStride = rdp.loaded_texture[tile].row_stride_bytes;
     entry->sizeBytes = rdp.loaded_texture[tile].size_bytes;
@@ -2878,19 +2959,8 @@ static void gfx_build_flame_atlas(FlameAtlasCacheEntry* entry) {
     const uint32_t span1 = gfx_texture_source_span_size(1);
     const uint8_t* addr0 = rdp.loaded_texture[0].addr;
     const uint8_t* addr1 = rdp.loaded_texture[1].addr;
-    const uint32_t serial0 = OotPort_GetExternalAssetRangeSerial(addr0, span0);
-    const uint32_t serial1 = OotPort_GetExternalAssetRangeSerial(addr1, span1);
-    const bool canonical0 = gfx_texture_source_is_canonical_external(addr0, span0);
-    const bool canonical1 = gfx_texture_source_is_canonical_external(addr1, span1);
-    const bool runtime0 = (serial0 == 0U) && OotPort_IsRuntimeByteRange(addr0, span0);
-    const bool runtime1 = (serial1 == 0U) && OotPort_IsRuntimeByteRange(addr1, span1);
-
-    const uint32_t sourceKey0 = canonical0
-        ? gfx_ps2_dynamic_texture_content_key(addr0, span0)
-        : (serial0 != 0U ? serial0 : (runtime0 ? gfx_ps2_dynamic_texture_content_key(addr0, span0) : 1U));
-    const uint32_t sourceKey1 = canonical1
-        ? gfx_ps2_dynamic_texture_content_key(addr1, span1)
-        : (serial1 != 0U ? serial1 : (runtime1 ? gfx_ps2_dynamic_texture_content_key(addr1, span1) : 1U));
+    const uint32_t sourceKey0 = entry->texture0Key;
+    const uint32_t sourceKey1 = entry->texture1Key;
     const int32_t pr = (int32_t)(entry->primRgb & 0xffU);
     const int32_t pg = (int32_t)((entry->primRgb >> 8) & 0xffU);
     const int32_t pb = (int32_t)((entry->primRgb >> 16) & 0xffU);
@@ -3014,6 +3084,10 @@ static void gfx_build_flame_atlas(FlameAtlasCacheEntry* entry) {
 static bool gfx_prepare_flame_atlas(void) {
     FlameAtlasCacheEntry* entry = NULL;
     FlameAtlasCacheEntry* victim = &sFlameAtlasCache[0];
+    const uint32_t texture0Key = gfx_texture_source_cache_key(rdp.loaded_texture[0].addr,
+                                                              gfx_texture_source_span_size(0));
+    const uint32_t texture1Key = gfx_texture_source_cache_key(rdp.loaded_texture[1].addr,
+                                                              gfx_texture_source_span_size(1));
     for (uint32_t i = 0; i < GFX_FLAME_ATLAS_CACHE_SIZE; i++) {
         FlameAtlasCacheEntry* c = &sFlameAtlasCache[i];
         const uint32_t primRgb =
@@ -3021,8 +3095,9 @@ static bool gfx_prepare_flame_atlas(void) {
         const uint32_t envRgb =
             (uint32_t)rdp.env_color.r | ((uint32_t)rdp.env_color.g << 8) | ((uint32_t)rdp.env_color.b << 16);
         if (c->pixelsValid && c->texture0Addr == rdp.loaded_texture[0].addr &&
-            c->texture1Addr == rdp.loaded_texture[1].addr && c->primLodFrac == rdp.prim_lod_frac &&
-            c->primRgb == primRgb && c->envRgb == envRgb) {
+            c->texture1Addr == rdp.loaded_texture[1].addr && c->texture0Key == texture0Key &&
+            c->texture1Key == texture1Key && c->primLodFrac == rdp.prim_lod_frac && c->primRgb == primRgb &&
+            c->envRgb == envRgb) {
             entry = c;
             break;
         }
@@ -3058,10 +3133,13 @@ static bool gfx_prepare_flame_atlas(void) {
     const uint32_t envRgb =
         (uint32_t)rdp.env_color.r | ((uint32_t)rdp.env_color.g << 8) | ((uint32_t)rdp.env_color.b << 16);
     if (!entry->pixelsValid || entry->texture0Addr != rdp.loaded_texture[0].addr ||
-        entry->texture1Addr != rdp.loaded_texture[1].addr || entry->primLodFrac != rdp.prim_lod_frac ||
-        entry->primRgb != primRgb || entry->envRgb != envRgb) {
+        entry->texture1Addr != rdp.loaded_texture[1].addr || entry->texture0Key != texture0Key ||
+        entry->texture1Key != texture1Key || entry->primLodFrac != rdp.prim_lod_frac || entry->primRgb != primRgb ||
+        entry->envRgb != envRgb) {
         entry->texture0Addr = rdp.loaded_texture[0].addr;
         entry->texture1Addr = rdp.loaded_texture[1].addr;
+        entry->texture0Key = texture0Key;
+        entry->texture1Key = texture1Key;
         entry->primLodFrac = rdp.prim_lod_frac;
         entry->primRgb = primRgb;
         entry->envRgb = envRgb;
@@ -3162,13 +3240,7 @@ static const uint8_t* gfx_two_i4_get_decoded_source(int tile, uint32_t width, ui
     const TextureTileState* texture = gfx_get_texture_tile(tile);
     const uint8_t* addr = rdp.loaded_texture[tile].addr;
     const uint32_t span = gfx_texture_source_span_size(tile);
-    const uint32_t serial = OotPort_GetExternalAssetRangeSerial(addr, span);
-    const bool canonical = gfx_texture_source_is_canonical_external(addr, span);
-    const bool runtime = serial == 0U && addr != sInvalidTextureBuf && addr != sInvalidPaletteBuf &&
-                         OotPort_IsRuntimeByteRange(addr, span);
-    const uint32_t sourceKey = canonical
-        ? gfx_ps2_dynamic_texture_content_key(addr, span)
-        : (serial != 0U ? serial : (runtime ? gfx_ps2_dynamic_texture_content_key(addr, span) : 1U));
+    const uint32_t sourceKey = gfx_texture_source_cache_key(addr, span);
     const uint32_t rowStride = rdp.loaded_texture[tile].row_stride_bytes;
     const uint8_t nibble = rdp.loaded_texture[tile].source_nibble_offset;
     TwoI4DecodedCacheEntry* victim = &sPs2TwoI4DecodedCache[0];
@@ -3264,11 +3336,14 @@ static void gfx_two_i4_build_sample_maps(uint8_t sample0X[GFX_TWO_I4_PRECOMBINE_
         sample1Y[y] = (uint8_t)gfx_two_i4_address_coord((int32_t)y, height1, texture1->cmt, texture1->maskt);
     }
 }
-static bool gfx_two_i4_precombine_key_matches(const TwoI4PrecombineCacheEntry* entry, uint32_t primRgb, uint32_t envRgb,
-                                              const uint8_t* sample0X, const uint8_t* sample0Y, const uint8_t* sample1X,
-                                              const uint8_t* sample1Y, uint32_t outputWidth, uint32_t outputHeight) {
+static bool gfx_two_i4_precombine_key_matches(const TwoI4PrecombineCacheEntry* entry, uint32_t texture0Key,
+                                              uint32_t texture1Key, uint32_t primRgb, uint32_t envRgb,
+                                              const uint8_t* sample0X, const uint8_t* sample0Y,
+                                              const uint8_t* sample1X, const uint8_t* sample1Y, uint32_t outputWidth,
+                                              uint32_t outputHeight) {
     return entry->textureValid && entry->texture0Addr == rdp.loaded_texture[0].addr &&
-           entry->texture1Addr == rdp.loaded_texture[1].addr && entry->primRgb == primRgb && entry->envRgb == envRgb &&
+           entry->texture1Addr == rdp.loaded_texture[1].addr && entry->texture0Key == texture0Key &&
+           entry->texture1Key == texture1Key && entry->primRgb == primRgb && entry->envRgb == envRgb &&
            entry->envAlpha == rdp.env_color.a && entry->outputWidth == outputWidth &&
            entry->outputHeight == outputHeight && entry->importWidth0 == gfx_texture_import_width(0) &&
            entry->importHeight0 == gfx_texture_import_height(0) && entry->importWidth1 == gfx_texture_import_width(1) &&
@@ -3281,10 +3356,12 @@ static bool gfx_two_i4_precombine_key_matches(const TwoI4PrecombineCacheEntry* e
            memcmp(entry->sample0Y, sample0Y, outputHeight) == 0 && memcmp(entry->sample1Y, sample1Y, outputHeight) == 0;
 }
 
-static bool gfx_two_i4_precombine_material_matches(const TwoI4PrecombineCacheEntry* entry, uint32_t primRgb,
-                                                   uint32_t envRgb, uint32_t outputWidth, uint32_t outputHeight) {
+static bool gfx_two_i4_precombine_material_matches(const TwoI4PrecombineCacheEntry* entry, uint32_t texture0Key,
+                                                   uint32_t texture1Key, uint32_t primRgb, uint32_t envRgb,
+                                                   uint32_t outputWidth, uint32_t outputHeight) {
     return entry->textureValid && entry->texture0Addr == rdp.loaded_texture[0].addr &&
-           entry->texture1Addr == rdp.loaded_texture[1].addr && entry->primRgb == primRgb && entry->envRgb == envRgb &&
+           entry->texture1Addr == rdp.loaded_texture[1].addr && entry->texture0Key == texture0Key &&
+           entry->texture1Key == texture1Key && entry->primRgb == primRgb && entry->envRgb == envRgb &&
            entry->envAlpha == rdp.env_color.a && entry->outputWidth == outputWidth &&
            entry->outputHeight == outputHeight && entry->importWidth0 == gfx_texture_import_width(0) &&
            entry->importHeight0 == gfx_texture_import_height(0) && entry->importWidth1 == gfx_texture_import_width(1) &&
@@ -3395,6 +3472,8 @@ static bool gfx_prepare_two_i4_precombine(void) {
     uint8_t sample0Y[GFX_TWO_I4_PRECOMBINE_HEIGHT] = { 0 };
     uint8_t sample1X[GFX_TWO_I4_PRECOMBINE_WIDTH] = { 0 };
     uint8_t sample1Y[GFX_TWO_I4_PRECOMBINE_HEIGHT] = { 0 };
+    uint32_t texture0Key;
+    uint32_t texture1Key;
     uint32_t outputWidth;
     uint32_t outputHeight;
 
@@ -3407,18 +3486,21 @@ static bool gfx_prepare_two_i4_precombine(void) {
         sTwoI4PrecombineBuildFrame = sTextureCacheFrameSerial;
         sTwoI4PrecombineBuildsThisFrame = 0;
     }
+    texture0Key = gfx_texture_source_cache_key(rdp.loaded_texture[0].addr, gfx_texture_source_span_size(0));
+    texture1Key = gfx_texture_source_cache_key(rdp.loaded_texture[1].addr, gfx_texture_source_span_size(1));
     outputWidth = gfx_texture_tile_width(1);
     outputHeight = gfx_texture_tile_height(1);
     gfx_two_i4_build_sample_maps(sample0X, sample0Y, sample1X, sample1Y, outputWidth, outputHeight);
 
     for (uint32_t i = 0; i < GFX_TWO_I4_PRECOMBINE_CACHE_SIZE; i++) {
         TwoI4PrecombineCacheEntry* candidate = &sTwoI4PrecombineCache[i];
-        if (gfx_two_i4_precombine_key_matches(candidate, primRgb, envRgb, sample0X, sample0Y, sample1X, sample1Y,
-                                              outputWidth, outputHeight)) {
+        if (gfx_two_i4_precombine_key_matches(candidate, texture0Key, texture1Key, primRgb, envRgb, sample0X,
+                                              sample0Y, sample1X, sample1Y, outputWidth, outputHeight)) {
             entry = candidate;
             break;
         }
-        if (gfx_two_i4_precombine_material_matches(candidate, primRgb, envRgb, outputWidth, outputHeight) &&
+        if (gfx_two_i4_precombine_material_matches(candidate, texture0Key, texture1Key, primRgb, envRgb, outputWidth,
+                                                   outputHeight) &&
             (phaseFallback == NULL || candidate->lastUsedFrame >= newestFallbackFrame)) {
             phaseFallback = candidate;
             newestFallbackFrame = candidate->lastUsedFrame;
@@ -3449,6 +3531,8 @@ static bool gfx_prepare_two_i4_precombine(void) {
         overwriteResident = entry->textureAllocated;
         entry->texture0Addr = rdp.loaded_texture[0].addr;
         entry->texture1Addr = rdp.loaded_texture[1].addr;
+        entry->texture0Key = texture0Key;
+        entry->texture1Key = texture1Key;
         entry->primRgb = primRgb;
         entry->envRgb = envRgb;
         entry->envAlpha = rdp.env_color.a;

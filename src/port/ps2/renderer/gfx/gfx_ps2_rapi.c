@@ -30,7 +30,7 @@ se alguma coisa parece estranha primeiro entende o caminho inteiro e só depois 
 
 #define MAX_TEXTURES 768
 #define MAX_SHADERS 1024
-#define TEXCACHE_SIZE (4 * 1024 * 1024)
+#define TEXCACHE_SIZE (2 * 1024 * 1024)
 #define SHADER_HASH_SLOTS 2048U
 #define REVERSE_TINT_CACHE_SLOTS 16
 #define BLEND_CACHE_SLOTS 256
