@@ -1539,6 +1539,17 @@ s32 Asset_IsMutableTextureRange(uintptr_t start, uintptr_t end) {
     return false;
 }
 
+s32 OotPort_IsMutableTextureRange(const void* ptr, size_t size) {
+    uintptr_t ramStart;
+    uintptr_t ramEnd;
+
+    if (!OotPort_RamRangeFromPtr(ptr, size, &ramStart, &ramEnd)) {
+        return false;
+    }
+
+    return Asset_IsMutableTextureRange(ramStart, ramEnd);
+}
+
 static void OotPort_ClearLoadedAssetRange(void* ram, size_t size) {
     uintptr_t ramStart;
     uintptr_t ramEnd;

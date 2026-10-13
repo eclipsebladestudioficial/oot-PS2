@@ -60,6 +60,7 @@ s32 OotPort_SetAssetRoot(const char* root);
 s32 OotPort_IsDiscBoot(void);
 uintptr_t OotPort_NormalizeVrom(uintptr_t vrom);
 void OotPort_NormalizeRomFile(RomFile* file);
+s32 OotPort_IsMutableTextureRange(const void* ptr, size_t size);
 s32 OotPort_IsNativeExternalTextureRange(const void* ptr, size_t size);
 s32 OotPort_IsLoadedNativeExternalAssetRange(const void* ptr, size_t size);
 s32 OotPort_GetLoadedExternalAssetRangeFlags(const void* ptr, size_t size, u32* flags);
