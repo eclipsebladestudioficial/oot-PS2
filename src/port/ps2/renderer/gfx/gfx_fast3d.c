@@ -1490,8 +1490,7 @@ static void gfx_flush(void) {
         gfx_ps2_set_two_texture_blend_active(twoTextureBlend);
         gfx_ps2_set_two_texture_alpha_blend_active(twoTextureBlend &&
                                                    rendering_state.tri_pipeline.two_texture_alpha_blend);
-        gfx_ps2_set_two_texture_env_prim_tint(twoTextureBlend &&
-                                              rendering_state.tri_pipeline.two_texture_env_prim_tint);
+        gfx_ps2_set_two_texture_env_prim_tint(rendering_state.tri_pipeline.two_texture_env_prim_tint);
         gfx_rapi->draw_triangles((float*)sTriangleBuffer, sTriangleBufferLength, sBufferedTriangleCount);
         if (twoTextureBlend) {
             for (size_t i = 0; i < sBufferedVertexCount; i++) {
@@ -3721,6 +3720,15 @@ static bool gfx_ps2_env_alpha_two_texture_pair_is_supported(void) {
         return false;
     }
 
+    const TextureTileState* texture0 = gfx_get_texture_tile(0);
+    const TextureTileState* texture1 = gfx_get_texture_tile(1);
+
+    if ((texture0->fmt != G_IM_FMT_I) || (texture1->fmt != G_IM_FMT_I) ||
+        ((texture0->siz != G_IM_SIZ_4b) && (texture0->siz != G_IM_SIZ_8b)) ||
+        ((texture1->siz != G_IM_SIZ_4b) && (texture1->siz != G_IM_SIZ_8b))) {
+        return false;
+    }
+
     return gfx_ps2_validate_texture_import_dimensions(0) && gfx_ps2_validate_texture_import_dimensions(1);
 }
 
@@ -3780,8 +3788,10 @@ static void gfx_prepare_tri_pipeline_state(void) {
     const bool prepared_two_texture_blend_uses_prim_lod =
         prepared_two_texture_blend && rdp.combine_two_texture_blend_uses_prim_lod;
     const bool prepared_two_texture_alpha_blend = prepared_two_texture_blend && rdp.combine_two_texture_alpha_blend;
+    const bool fallback_single_texture_env_prim_tint =
+        rdp.combine_two_texture_blend && rdp.combine_texture_tint_uses_env_alpha && !prepared_two_texture_blend;
     const bool prepared_two_texture_env_prim_tint =
-        prepared_two_texture_blend &&
+        (prepared_two_texture_blend || fallback_single_texture_env_prim_tint) &&
         (rdp.combine_texture_tint_uses_prim_lod || rdp.combine_texture_tint_uses_env_alpha);
 
     if (flame_texture_atlas != rendering_state.tri_pipeline.flame_texture_atlas) {
@@ -3904,9 +3914,10 @@ static void gfx_prepare_tri_pipeline_state(void) {
                 gfx_get_single_texture_tint_colors(rdp.prim_lod_frac, GFX_INTENSITY_TINT_CACHE_SINGLE_PRIM_LOD,
                                                    &textureTintPrimColor, &textureTintEnvColor);
         }
-    } else if (rdp.combine_texture_tint_uses_env_alpha && !rdp.combine_two_texture_blend) {
+    } else if (rdp.combine_texture_tint_uses_env_alpha && !prepared_two_texture_blend) {
+        const uint8_t fallbackTintFactor = rdp.combine_two_texture_blend ? 0 : rdp.env_color.a;
         textureTintColorsCorrected = gfx_get_single_texture_tint_colors(
-            rdp.env_color.a, GFX_INTENSITY_TINT_CACHE_SINGLE_ENV_ALPHA, &textureTintPrimColor, &textureTintEnvColor);
+            fallbackTintFactor, GFX_INTENSITY_TINT_CACHE_SINGLE_ENV_ALPHA, &textureTintPrimColor, &textureTintEnvColor);
     }
     if (backend_state_dirty || prg != rendering_state.shader_program) {
         gfx_flush();
@@ -5207,7 +5218,7 @@ static void gfx_sp_tri1_2d(uint8_t vtx1_idx, uint8_t vtx2_idx, UNUSED uint8_t vt
     gfx_ps2_set_din_fire_tint(false);
     gfx_ps2_set_two_texture_blend_active(twoTextureBlend);
     gfx_ps2_set_two_texture_alpha_blend_active(twoTextureBlend && state->two_texture_alpha_blend);
-    gfx_ps2_set_two_texture_env_prim_tint(twoTextureBlend && state->two_texture_env_prim_tint);
+    gfx_ps2_set_two_texture_env_prim_tint(state->two_texture_env_prim_tint);
     gfx_ps2_draw_triangles_2d((float*)&tri_buf[0], 0, 1);
     if (twoTextureBlend) {
         const TextureTileState* tile1State = gfx_get_texture_tile(1);

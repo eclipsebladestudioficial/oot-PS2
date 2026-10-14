@@ -2466,7 +2466,7 @@ static void draw_triangles(float* raw, size_t length, size_t triangleCount) {
     const bool reverseTint = textured && sTextureBlendReverse && texture_cpu_rgba_supported(drawTexture);
     bool blendTint = blendSinglePass;
     bool envPrimTint = false;
-    if (sTwoTextureEnvPrimTint && sTwoTextureBlendActive && textured && texture_cpu_rgba_supported(drawTexture)) {
+    if (sTwoTextureEnvPrimTint && textured && texture_cpu_rgba_supported(drawTexture)) {
         const uint32_t primRgb = vertices[0].rgba & 0x00ffffffU;
         if (vertices_have_uniform_rgb(vertices, triangleCount * 3, primRgb)) {
             struct Texture* tinted = blend_texture(drawTexture, sEnvColor, primRgb);
@@ -2767,7 +2767,7 @@ void gfx_ps2_draw_triangles_2d(float* raw, size_t unused, size_t count) {
     const bool reverse_tint = textured && sTextureBlendReverse && texture_cpu_rgba_supported(draw_tex);
     bool blend_tint = blend_single_pass_2d;
     bool env_prim_tint = false;
-    if (sTwoTextureEnvPrimTint && sTwoTextureBlendActive && textured && texture_cpu_rgba_supported(draw_tex)) {
+    if (sTwoTextureEnvPrimTint && textured && texture_cpu_rgba_supported(draw_tex)) {
         const uint32_t primRgb = q[0].rgba & 0x00ffffffU;
         const uint32_t primRgb1 = q[1].rgba & 0x00ffffffU;
         if (primRgb == primRgb1) {
