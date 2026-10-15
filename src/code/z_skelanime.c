@@ -1561,6 +1561,37 @@ s32 SkelAnime_Update(SkelAnime* skelAnime) {
     return skelAnime->update.normal(skelAnime);
 }
 
+#if defined(TARGET_PS2) && TARGET_PS2
+#define SKELANIME_PS2_FRAME_SNAP_EPSILON 0.000244140625f
+
+static f32 SkelAnime_Ps2SnapCrossedIntegerFrame(f32 prevFrame, f32 curFrame) {
+    f32 integerFrame;
+    f32 distance;
+
+    if (curFrame < 0.0f) {
+        integerFrame = (s32)(curFrame - 0.5f);
+    } else {
+        integerFrame = (s32)(curFrame + 0.5f);
+    }
+
+    distance = curFrame - integerFrame;
+    if (distance < 0.0f) {
+        distance = -distance;
+    }
+
+    if (distance > SKELANIME_PS2_FRAME_SNAP_EPSILON) {
+        return curFrame;
+    }
+
+    if (((curFrame > prevFrame) && (prevFrame < integerFrame)) ||
+        ((curFrame < prevFrame) && (prevFrame > integerFrame))) {
+        return integerFrame;
+    }
+
+    return curFrame;
+}
+#endif
+
 /**
  * Morphs from the pose in jointTable to the one in morphTable, advancing the morph but not the animation frame
  */
@@ -1648,8 +1679,14 @@ void SkelAnime_AnimateFrame(SkelAnime* skelAnime) {
  */
 s32 SkelAnime_LoopFull(SkelAnime* skelAnime) {
     f32 updateRate = R_UPDATE_RATE * (1.0f / 3.0f);
+#if defined(TARGET_PS2) && TARGET_PS2
+    f32 prevFrame = skelAnime->curFrame;
+#endif
 
     skelAnime->curFrame += skelAnime->playSpeed * updateRate;
+#if defined(TARGET_PS2) && TARGET_PS2
+    skelAnime->curFrame = SkelAnime_Ps2SnapCrossedIntegerFrame(prevFrame, skelAnime->curFrame);
+#endif
     if (skelAnime->curFrame < 0.0f) {
         skelAnime->curFrame += skelAnime->animLength;
     } else if (skelAnime->animLength <= skelAnime->curFrame) {
@@ -1664,8 +1701,14 @@ s32 SkelAnime_LoopFull(SkelAnime* skelAnime) {
  */
 s32 SkelAnime_LoopPartial(SkelAnime* skelAnime) {
     f32 updateRate = R_UPDATE_RATE * (1.0f / 3.0f);
+#if defined(TARGET_PS2) && TARGET_PS2
+    f32 prevFrame = skelAnime->curFrame;
+#endif
 
     skelAnime->curFrame += skelAnime->playSpeed * updateRate;
+#if defined(TARGET_PS2) && TARGET_PS2
+    skelAnime->curFrame = SkelAnime_Ps2SnapCrossedIntegerFrame(prevFrame, skelAnime->curFrame);
+#endif
     if (skelAnime->curFrame < skelAnime->startFrame) {
         skelAnime->curFrame = (skelAnime->curFrame - skelAnime->startFrame) + skelAnime->endFrame;
     } else if (skelAnime->endFrame <= skelAnime->curFrame) {
@@ -1681,6 +1724,9 @@ s32 SkelAnime_LoopPartial(SkelAnime* skelAnime) {
  */
 s32 SkelAnime_Once(SkelAnime* skelAnime) {
     f32 updateRate = R_UPDATE_RATE * (1.0f / 3.0f);
+#if defined(TARGET_PS2) && TARGET_PS2
+    f32 prevFrame;
+#endif
 
     if (skelAnime->curFrame == skelAnime->endFrame) {
         SkelAnime_GetFrameData(skelAnime->animation, (s32)skelAnime->curFrame, skelAnime->limbCount,
@@ -1689,7 +1735,13 @@ s32 SkelAnime_Once(SkelAnime* skelAnime) {
         return true;
     }
 
+#if defined(TARGET_PS2) && TARGET_PS2
+    prevFrame = skelAnime->curFrame;
+#endif
     skelAnime->curFrame += skelAnime->playSpeed * updateRate;
+#if defined(TARGET_PS2) && TARGET_PS2
+    skelAnime->curFrame = SkelAnime_Ps2SnapCrossedIntegerFrame(prevFrame, skelAnime->curFrame);
+#endif
 
     if ((skelAnime->curFrame - skelAnime->endFrame) * skelAnime->playSpeed > 0.0f) {
         skelAnime->curFrame = skelAnime->endFrame;
