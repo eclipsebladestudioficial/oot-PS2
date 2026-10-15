@@ -19,9 +19,16 @@
 #define OOT_PS2_HOT_READ_TRACKER_COUNT      16
 #define OOT_PS2_HOT_READ_PROMOTE_COUNT      4
 #define OOT_PS2_HOT_READ_MAX_SIZE           OOT_PS2_ASSET_CACHE_SIZE
+#define OOT_PS2_AUDIOBANK_RESIDENT_SIZE      0x1CA50
+#define OOT_PS2_AUDIOSEQ_RESIDENT_SIZE       0x4F690
+#define OOT_PS2_AUDIOTABLE_RESIDENT_SIZE     0x460AD0
+#define OOT_PS2_KANJI_RESIDENT_SIZE          0x7C300
+#define OOT_PS2_LINK_ANIMATION_RESIDENT_SIZE 0x265C30
+#define OOT_PS2_LINK_BOY_RESIDENT_SIZE       0x37800
+#define OOT_PS2_LINK_CHILD_RESIDENT_SIZE     0x2CF80
 #define OOT_PS2_PACKED_CACHE_BLOCK_SIZE     0x10000
 #define OOT_PS2_PACKED_DIRECT_READ_MIN_SIZE (4 * OOT_PS2_PACKED_CACHE_BLOCK_SIZE)
-#define OOT_PS2_PACKED_CACHE_TARGET_SIZE    (2 * 1024 * 1024)
+#define OOT_PS2_PACKED_CACHE_TARGET_SIZE    (1 * 1024 * 1024)
 #define OOT_PS2_PACKED_CACHE_MIN_SIZE       (256 * 1024)
 #define OOT_PS2_PACKED_CACHE_ALLOC_STEP     (1024 * 1024)
 #define OOT_PS2_PACKED_CACHE_MAX_BLOCK_COUNT \
@@ -167,8 +174,18 @@ static u32 sOotPs2AssetCacheClock;
 static volatile s32 sOotPs2ForegroundAssetReadWaiters;
 static volatile s32 sOotPs2ForegroundAssetReadActive;
 static CacheAllocation sOotPs2CacheAllocations[OOT_PS2_CACHE_ALLOCATION_COUNT];
+static u8 sOotPs2AudiobankData[OOT_PS2_AUDIOBANK_RESIDENT_SIZE] __attribute__((aligned(64)));
+static u8 sOotPs2AudioseqData[OOT_PS2_AUDIOSEQ_RESIDENT_SIZE] __attribute__((aligned(64)));
+static u8 sOotPs2AudiotableData[OOT_PS2_AUDIOTABLE_RESIDENT_SIZE] __attribute__((aligned(64)));
+static u8 sOotPs2KanjiData[OOT_PS2_KANJI_RESIDENT_SIZE] __attribute__((aligned(64)));
+static u8 sOotPs2LinkAnimationData[OOT_PS2_LINK_ANIMATION_RESIDENT_SIZE] __attribute__((aligned(64)));
+static u8 sOotPs2LinkBoyData[OOT_PS2_LINK_BOY_RESIDENT_SIZE] __attribute__((aligned(64)));
+static u8 sOotPs2LinkChildData[OOT_PS2_LINK_CHILD_RESIDENT_SIZE] __attribute__((aligned(64)));
 static PinnedAssetWindowCache sOotPs2PinnedAssetCaches[] = {
+    { OOT_PS2_AUDIOBANK_ASSET_NAME, { NULL, NULL, 0, 0, 0, 0, false, false } },
+    { OOT_PS2_AUDIOSEQ_ASSET_NAME, { NULL, NULL, 0, 0, 0, 0, false, false } },
     { OOT_PS2_AUDIOTABLE_ASSET_NAME, { NULL, NULL, 0, 0, 0, 0, false, false } },
+    { OOT_PS2_KANJI_ASSET_NAME, { NULL, NULL, 0, 0, 0, 0, false, false } },
     { OOT_PS2_LINK_ANIMATION_ASSET_NAME, { NULL, NULL, 0, 0, 0, 0, false, false } },
     { OOT_PS2_DO_ACTION_ASSET_NAME, { NULL, NULL, 0, 0, 0, 0, false, false } },
     { OOT_PS2_GAMEPLAY_KEEP_ASSET_NAME, { NULL, NULL, 0, 0, 0, 0, false, false } },
@@ -210,10 +227,17 @@ static CacheAllocation* OotPort_FindFreeCacheAllocation(void) {
     return NULL;
 }
 
+static s32 OotPort_IsResidentAssetBuffer(const void* address) {
+    return (address == sOotPs2AudiobankData) || (address == sOotPs2AudioseqData) ||
+           (address == sOotPs2AudiotableData) || (address == sOotPs2KanjiData) ||
+           (address == sOotPs2LinkAnimationData) || (address == sOotPs2LinkBoyData) ||
+           (address == sOotPs2LinkChildData);
+}
+
 static void OotPort_FreeCacheMemory(void* address) {
     size_t i;
 
-    if (address == NULL) {
+    if ((address == NULL) || OotPort_IsResidentAssetBuffer(address)) {
         return;
     }
 
@@ -648,6 +672,40 @@ static s32 OotPort_AssetNameEquals(const OotPortExternalAsset* asset, const char
     return strcmp(OotPort_AssetName(asset), expectedName) == 0;
 }
 
+static u8* OotPort_GetResidentAssetBuffer(const OotPortExternalAsset* asset, size_t* capacity) {
+    if (OotPort_AssetNameEquals(asset, OOT_PS2_AUDIOBANK_ASSET_NAME)) {
+        *capacity = sizeof(sOotPs2AudiobankData);
+        return sOotPs2AudiobankData;
+    }
+    if (OotPort_AssetNameEquals(asset, OOT_PS2_AUDIOSEQ_ASSET_NAME)) {
+        *capacity = sizeof(sOotPs2AudioseqData);
+        return sOotPs2AudioseqData;
+    }
+    if (OotPort_AssetNameEquals(asset, OOT_PS2_AUDIOTABLE_ASSET_NAME)) {
+        *capacity = sizeof(sOotPs2AudiotableData);
+        return sOotPs2AudiotableData;
+    }
+    if (OotPort_AssetNameEquals(asset, OOT_PS2_KANJI_ASSET_NAME)) {
+        *capacity = sizeof(sOotPs2KanjiData);
+        return sOotPs2KanjiData;
+    }
+    if (OotPort_AssetNameEquals(asset, OOT_PS2_LINK_ANIMATION_ASSET_NAME)) {
+        *capacity = sizeof(sOotPs2LinkAnimationData);
+        return sOotPs2LinkAnimationData;
+    }
+    if (OotPort_AssetNameEquals(asset, OOT_PS2_LINK_BOY_ASSET_NAME)) {
+        *capacity = sizeof(sOotPs2LinkBoyData);
+        return sOotPs2LinkBoyData;
+    }
+    if (OotPort_AssetNameEquals(asset, OOT_PS2_LINK_CHILD_ASSET_NAME)) {
+        *capacity = sizeof(sOotPs2LinkChildData);
+        return sOotPs2LinkChildData;
+    }
+
+    *capacity = 0;
+    return NULL;
+}
+
 static AssetWindowCache* OotPort_FindPinnedAssetCache(const OotPortExternalAsset* asset) {
     size_t i;
 
@@ -1058,6 +1116,11 @@ static size_t OotPort_GetAssetCacheSizeLimit(const OotPortExternalAsset* asset) 
     }
 
     fileSize = (asset->vromEnd > asset->vromStart) ? (asset->vromEnd - asset->vromStart) : 0;
+
+    size_t residentCapacity;
+    if (OotPort_GetResidentAssetBuffer(asset, &residentCapacity) != NULL) {
+        return fileSize;
+    }
     
     if (OotPort_AssetNameEquals(asset, OOT_PS2_PAUSE_ITEM_NAME_ASSET_NAME) ||
         OotPort_AssetNameEquals(asset, OOT_PS2_PAUSE_MAP_ROOM_ASSET_NAME) ||
@@ -1066,17 +1129,6 @@ static size_t OotPort_GetAssetCacheSizeLimit(const OotPortExternalAsset* asset) 
     }
     for (i = 0; i < OOT_PS2_PINNED_ASSET_CACHE_COUNT; i++) {
         if (OotPort_AssetNameEquals(asset, sOotPs2PinnedAssetCaches[i].name)) {
-            /*
-             * Audiotable is special: the PS2 audio backend asks for stable
-             * pointers directly into resident sample banks, so it must remain
-             * fully resident.  The other pinned assets are only an I/O cache;
-             * keeping multi-megabyte files such as link_animetion resident
-             * starves gsKit's small heap allocations in large outdoor scenes.
-             * Use a sliding 128 KiB window for those instead.
-             */
-            if (OotPort_AssetNameEquals(asset, OOT_PS2_AUDIOTABLE_ASSET_NAME)) {
-                return fileSize;
-            }
             return fileSize < OOT_PS2_ASSET_CACHE_SIZE ? fileSize : OOT_PS2_ASSET_CACHE_SIZE;
         }
     }
@@ -1227,6 +1279,19 @@ static void OotPort_PreloadPersistentAssets(void) {
 
         preloaded[selectedCacheIndex] = true;
         selectedPinned->cache.asset = selectedAsset;
+        size_t residentCapacity;
+        u8* residentData = OotPort_GetResidentAssetBuffer(selectedAsset, &residentCapacity);
+        if (residentData != NULL) {
+            if (selectedFileSize > residentCapacity) {
+                printf("oot-ps2 resident asset too large name=%s size=%lu capacity=%lu\n",
+                       OotPort_AssetName(selectedAsset), (unsigned long)selectedFileSize,
+                       (unsigned long)residentCapacity);
+                selectedPinned->cache.failed = true;
+                continue;
+            }
+            selectedPinned->cache.data = residentData;
+            selectedPinned->cache.capacity = residentCapacity;
+        }
         if (selectedFileSize > OotPort_GetAssetCacheSizeLimit(selectedAsset)) {
             printf("oot-ps2 persistent asset deferred cache name=%s size=%lu window=%lu\n",
                    OotPort_AssetName(selectedAsset), (unsigned long)selectedFileSize,
