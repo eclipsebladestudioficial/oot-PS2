@@ -280,6 +280,7 @@ static bool sDinFireTint;
 static bool sTwoTextureBlendActive;
 static bool sTwoTextureAlphaBlendActive;
 static bool sTwoTextureEnvPrimTint;
+static bool sTextureAddPrim;
 
 /*
 esses valores guardados não estão aqui de enfeite, eles evitam mandar o mesmo registrador pro gs toda santa hora
@@ -348,6 +349,10 @@ void gfx_ps2_set_two_texture_alpha_blend_active(bool enabled) {
 
 void gfx_ps2_set_two_texture_env_prim_tint(bool enabled) {
     sTwoTextureEnvPrimTint = enabled;
+}
+
+void gfx_ps2_set_texture_add_prim(bool enabled) {
+    sTextureAddPrim = enabled;
 }
 
 void gfx_ps2_set_skip_content_hash(bool enabled) {
@@ -1703,6 +1708,7 @@ static bool blend_cache_make_room(BlendCacheEntry* keep, const struct Texture* s
 enum {
     DERIVED_BLEND = 0,
     DERIVED_DECAL = 1,
+    DERIVED_ADD = 2,
 };
 
 static struct Texture* derived_texture(struct Texture* source, uint32_t base, uint32_t target, uint8_t kind) {
@@ -1803,7 +1809,11 @@ static struct Texture* derived_texture(struct Texture* source, uint32_t base, ui
         int r;
         int g;
         int b;
-        if (kind == DERIVED_DECAL) {
+        if (kind == DERIVED_ADD) {
+            r = ir + br;
+            g = ig + bg;
+            b = ib + bb;
+        } else if (kind == DERIVED_DECAL) {
 
             int a = (int)((v >> 24) & 0xff);
             if (a > 0x80) {
@@ -1860,6 +1870,10 @@ static struct Texture* blend_texture(struct Texture* source, uint32_t base, uint
 
 static struct Texture* decal_texture(struct Texture* source, uint32_t base) {
     return derived_texture(source, base, 0, DERIVED_DECAL);
+}
+
+static struct Texture* add_prim_texture(struct Texture* source, uint32_t prim) {
+    return derived_texture(source, prim, 0, DERIVED_ADD);
 }
 
 static inline bool is_pause_name_tint(const struct Texture* tex, uint32_t rgba) {
@@ -2424,8 +2438,19 @@ static void draw_triangles(float* raw, size_t length, size_t triangleCount) {
     struct Texture* drawTexture = last_tex;
     const bool textured =
         drawTexture != NULL && cur_shader != NULL && (cur_shader->texture_used[0] || cur_shader->texture_used[1]);
+    bool addPrimTint = false;
+    if (sTextureAddPrim && textured && !depthOnly && texture_cpu_rgba_supported(drawTexture)) {
+        const uint32_t primRgb = vertices[0].rgba & 0x00ffffffU;
+        if (vertices_have_uniform_rgb(vertices, triangleCount * 3, primRgb)) {
+            struct Texture* added = add_prim_texture(drawTexture, primRgb);
+            if (added != drawTexture) {
+                drawTexture = added;
+                addPrimTint = true;
+            }
+        }
+    }
 
-    const bool batch_01045 = textured && !depthOnly && cur_shader != NULL &&
+    const bool batch_01045 = textured && !depthOnly && !sTextureAddPrim && cur_shader != NULL &&
                              (cur_shader->shader_id == 0x01045A00U || cur_shader->shader_id == 0x03045A00U) &&
                              cur_shader->texture_alpha && !cur_shader->alpha_test && do_blend;
     if (__builtin_expect(batch_01045, 0)) {
@@ -2436,9 +2461,10 @@ static void draw_triangles(float* raw, size_t length, size_t triangleCount) {
     bool blendSinglePass = false;
     bool blendFallbackTarget = false;
     if (textured && !depthOnly && cur_shader != NULL && cur_shader->texture_mode == TEXTURE_MODE_BLEND &&
-        sTextureBlendPrecolor && !sTextureBlendReverse && !sDinFireTint && !sTwoTextureEnvPrimTint &&
-        !sTwoTextureBlendActive && !cur_shader->cc.opt_texture_blend_shade && (do_blend || cur_shader->texture_alpha) &&
-        texture_cpu_rgba_supported(drawTexture) && cur_shader->shader_id != 0x11141551U) {
+        !sTextureAddPrim && sTextureBlendPrecolor && !sTextureBlendReverse && !sDinFireTint &&
+        !sTwoTextureEnvPrimTint && !sTwoTextureBlendActive && !cur_shader->cc.opt_texture_blend_shade &&
+        (do_blend || cur_shader->texture_alpha) && texture_cpu_rgba_supported(drawTexture) &&
+        cur_shader->shader_id != 0x11141551U) {
         const uint32_t baseRgb = vertices[0].rgba & 0x00ffffffU;
         if (vertices_have_uniform_rgb(vertices, triangleCount * 3, baseRgb)) {
             struct Texture* derived = blend_texture(drawTexture, baseRgb, sEnvColor);
@@ -2449,7 +2475,7 @@ static void draw_triangles(float* raw, size_t length, size_t triangleCount) {
         }
     }
 
-    if (textured && !depthOnly && cur_shader != NULL) {
+    if (textured && !depthOnly && !sTextureAddPrim && cur_shader != NULL) {
         if (cur_shader->texture_mode == TEXTURE_MODE_BLEND && sTextureBlendPrecolor && !blendSinglePass &&
             !sTextureBlendReverse && !sDinFireTint && !sTwoTextureEnvPrimTint) {
             if (draw_blend_exact(vertices, triangleCount, drawTexture)) {
@@ -2463,10 +2489,11 @@ static void draw_triangles(float* raw, size_t length, size_t triangleCount) {
         }
     }
 
-    const bool reverseTint = textured && sTextureBlendReverse && texture_cpu_rgba_supported(drawTexture);
+    const bool reverseTint =
+        textured && !sTextureAddPrim && sTextureBlendReverse && texture_cpu_rgba_supported(drawTexture);
     bool blendTint = blendSinglePass;
     bool envPrimTint = false;
-    if (sTwoTextureEnvPrimTint && textured && texture_cpu_rgba_supported(drawTexture)) {
+    if (!sTextureAddPrim && sTwoTextureEnvPrimTint && textured && texture_cpu_rgba_supported(drawTexture)) {
         const uint32_t primRgb = vertices[0].rgba & 0x00ffffffU;
         if (vertices_have_uniform_rgb(vertices, triangleCount * 3, primRgb)) {
             struct Texture* tinted = blend_texture(drawTexture, sEnvColor, primRgb);
@@ -2498,8 +2525,9 @@ static void draw_triangles(float* raw, size_t length, size_t triangleCount) {
     }
 
     const bool pauseNameTint =
-        textured && !reverseTint && !blendTint && is_pause_name_tint(drawTexture, vertices[0].rgba);
-    const bool dekuWater = textured && !reverseTint && !blendTint && is_deku_water_material(drawTexture);
+        textured && !addPrimTint && !reverseTint && !blendTint && is_pause_name_tint(drawTexture, vertices[0].rgba);
+    const bool dekuWater =
+        textured && !addPrimTint && !reverseTint && !blendTint && is_deku_water_material(drawTexture);
     if (textured) {
         bind_texture(&drawTexture->tex);
         clamp_tex(drawTexture, false, false);
@@ -2525,7 +2553,7 @@ static void draw_triangles(float* raw, size_t length, size_t triangleCount) {
     if (exact_tint) {
         draw_exact_tint_passes(vertices, triangleCount, drawTexture);
     } else if (textured) {
-        const bool neutralTint = reverseTint || blendTint || envPrimTint;
+        const bool neutralTint = addPrimTint || reverseTint || blendTint || envPrimTint;
         const bool targetTint = pauseNameTint || blendFallbackTarget;
         draw_textured_batches(vertices, triangleCount, drawTexture, prefer_native_fog, neutralTint, targetTint,
                               dekuWater);
@@ -2715,6 +2743,18 @@ void gfx_ps2_draw_triangles_2d(float* raw, size_t unused, size_t count) {
     const bool prerender_candidate = textured && draw_tex->tex.Width == 512 && draw_tex->tex.Height == 256 &&
                                      draw_tex->tex.PSM == GS_PSM_CT16 && sPrerenderRoomActive && (x2 - x1) >= 300.0f &&
                                      (y2 - y1) >= 200.0f;
+    bool add_prim_tint_2d = false;
+    if (sTextureAddPrim && textured && !depth_only && !prerender_candidate && texture_cpu_rgba_supported(draw_tex)) {
+        const uint32_t primRgb0 = q[0].rgba & 0x00ffffffU;
+        const uint32_t primRgb1 = q[1].rgba & 0x00ffffffU;
+        if (primRgb0 == primRgb1) {
+            struct Texture* added = add_prim_texture(draw_tex, primRgb0);
+            if (added != draw_tex) {
+                draw_tex = added;
+                add_prim_tint_2d = true;
+            }
+        }
+    }
 
     bool blend_single_pass_2d = false;
     bool blend_fallback_target_2d = false;
@@ -2722,7 +2762,8 @@ void gfx_ps2_draw_triangles_2d(float* raw, size_t unused, size_t count) {
     const uint8_t saved_2d_tfx = cur_shader != NULL ? cur_shader->tfx : 0;
     const bool saved_2d_texture_alpha = cur_shader != NULL ? cur_shader->texture_alpha : false;
     if (textured && !depth_only && !prerender_candidate && cur_shader != NULL &&
-        cur_shader->texture_mode == TEXTURE_MODE_BLEND && sTextureBlendPrecolor && !sTextureBlendReverse &&
+        !sTextureAddPrim && cur_shader->texture_mode == TEXTURE_MODE_BLEND && sTextureBlendPrecolor &&
+        !sTextureBlendReverse &&
         !sDinFireTint && !sTwoTextureEnvPrimTint && !sTwoTextureBlendActive &&
         !cur_shader->cc.opt_texture_blend_shade && texture_cpu_rgba_supported(draw_tex)) {
         const uint32_t baseRgb = q[0].rgba & 0x00ffffffU;
@@ -2736,7 +2777,8 @@ void gfx_ps2_draw_triangles_2d(float* raw, size_t unused, size_t count) {
     }
 
     if (textured && !depth_only && !prerender_candidate && cur_shader != NULL &&
-        cur_shader->texture_mode == TEXTURE_MODE_DECAL && cur_shader->texture_alpha && !cur_shader->alpha_test &&
+        !sTextureAddPrim && cur_shader->texture_mode == TEXTURE_MODE_DECAL && cur_shader->texture_alpha &&
+        !cur_shader->alpha_test &&
         texture_cpu_rgba_supported(draw_tex)) {
         const uint32_t baseRgb = q[0].rgba & 0x00ffffffU;
         if (baseRgb == (q[1].rgba & 0x00ffffffU)) {
@@ -2750,7 +2792,7 @@ void gfx_ps2_draw_triangles_2d(float* raw, size_t unused, size_t count) {
             }
         }
     }
-    if (textured && !depth_only && !prerender_candidate && cur_shader != NULL) {
+    if (textured && !depth_only && !prerender_candidate && !sTextureAddPrim && cur_shader != NULL) {
         if (cur_shader->texture_mode == TEXTURE_MODE_BLEND && sTextureBlendPrecolor && !blend_single_pass_2d &&
             !sTextureBlendReverse && !sDinFireTint && !sTwoTextureEnvPrimTint) {
             if (draw_blend_exact_2d(q, draw_tex, x1, y1, z1, u1, v1, x2, y2, z2, u2, v2)) {
@@ -2764,10 +2806,11 @@ void gfx_ps2_draw_triangles_2d(float* raw, size_t unused, size_t count) {
         }
     }
 
-    const bool reverse_tint = textured && sTextureBlendReverse && texture_cpu_rgba_supported(draw_tex);
+    const bool reverse_tint =
+        textured && !sTextureAddPrim && sTextureBlendReverse && texture_cpu_rgba_supported(draw_tex);
     bool blend_tint = blend_single_pass_2d;
     bool env_prim_tint = false;
-    if (sTwoTextureEnvPrimTint && textured && texture_cpu_rgba_supported(draw_tex)) {
+    if (!sTextureAddPrim && sTwoTextureEnvPrimTint && textured && texture_cpu_rgba_supported(draw_tex)) {
         const uint32_t primRgb = q[0].rgba & 0x00ffffffU;
         const uint32_t primRgb1 = q[1].rgba & 0x00ffffffU;
         if (primRgb == primRgb1) {
@@ -2790,7 +2833,7 @@ void gfx_ps2_draw_triangles_2d(float* raw, size_t unused, size_t count) {
         }
     }
     uint32_t drawColor = q[0].rgba;
-    if (reverse_tint || blend_tint || env_prim_tint) {
+    if (add_prim_tint_2d || reverse_tint || blend_tint || env_prim_tint) {
         drawColor = reverse_neutral_color(drawColor);
     } else if (blend_fallback_target_2d) {
         drawColor = target_rgb_preserve_alpha(drawColor);
@@ -2967,6 +3010,7 @@ static void start_frame(void) {
     sTwoTextureBlendActive = false;
     sTwoTextureAlphaBlendActive = false;
     sTwoTextureEnvPrimTint = false;
+    sTextureAddPrim = false;
     sRenderFrameSerial++;
     if (sRenderFrameSerial == 0) {
         sRenderFrameSerial = 1;
