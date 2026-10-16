@@ -8378,6 +8378,10 @@ s32 Camera_SetNewModeStateFlags(Camera* camera) {
 #define CAM_REQUEST_MODE_SKIP_ANIM_NORMAL_PARALLEL (1 << 4) // never set to
 #define CAM_REQUEST_MODE_SKIP_ANIM_FIRST_PERSON (1 << 5)
 
+static s32 Camera_IsModeValid(Camera* camera, s16 mode) {
+    return (sCameraSettings[camera->setting].unk_00 & 0x3FFFFFFFU) & (1U << mode);
+}
+
 s32 Camera_RequestModeImpl(Camera* camera, s16 requestedMode, u8 forceModeChange) {
     static s32 sModeRequestFlags = 0;
 
@@ -8390,7 +8394,7 @@ s32 Camera_RequestModeImpl(Camera* camera, s16 requestedMode, u8 forceModeChange
         return -1;
     }
 
-    if (!((sCameraSettings[camera->setting].unk_00 & 0x3FFFFFFF) & (1 << requestedMode))) {
+    if (!Camera_IsModeValid(camera, requestedMode)) {
         if (requestedMode == CAM_MODE_FIRST_PERSON) {
             PRINTF("camera: error sound\n");
             Sfx_PlaySfxCentered(NA_SE_SY_ERROR);
@@ -8546,7 +8550,7 @@ s32 Camera_CheckValidMode(Camera* camera, s16 mode) {
     if (QREG(89) != 0) {
         PRINTF("+=+=+=+ recive asking -> %s (%s)\n", sCameraModeNames[mode], sCameraSettingNames[camera->setting]);
     }
-    if (!(sCameraSettings[camera->setting].validModes & (1 << mode))) {
+    if (!Camera_IsModeValid(camera, mode)) {
         return 0;
     } else if (mode == camera->mode) {
         return -1;

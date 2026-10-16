@@ -269,6 +269,7 @@ struct TriPipelineState {
     bool fog_uses_texture_alpha;
     bool flame_texture_atlas;
     bool texture_tint_colors_corrected;
+    bool texture_tint_use_prim_color;
     bool two_texture_uncompensated_alpha;
     struct RGBA texture_tint_prim_color;
     struct RGBA texture_tint_env_color;
@@ -4037,6 +4038,8 @@ static void gfx_prepare_tri_pipeline_state(void) {
     state->fog_uses_texture_alpha = use_fog && comb->uses_texture_alpha && !(texture_edge && depth_test && z_upd);
     state->flame_texture_atlas = flame_texture_atlas;
     state->texture_tint_colors_corrected = textureTintColorsCorrected;
+    state->texture_tint_use_prim_color = textureTintColorsCorrected && rdp.combine_texture_tint_uses_prim_lod &&
+                                         !prepared_two_texture_env_prim_tint;
     state->two_texture_uncompensated_alpha = twoTextureUncompensatedAlpha;
     state->texture_tint_prim_color = textureTintPrimColor;
     state->texture_tint_env_color = textureTintEnvColor;
@@ -5003,7 +5006,9 @@ static void gfx_sp_triangles_run(uint32_t packed0, uint32_t packed1, uint8_t tri
             }
             if (state->texture_tint_colors_corrected) {
                 const struct RGBA* tintColor =
-                    state->two_texture_env_prim_tint ? &state->texture_tint_prim_color : &state->texture_tint_env_color;
+                    (state->two_texture_env_prim_tint || state->texture_tint_use_prim_color)
+                        ? &state->texture_tint_prim_color
+                        : &state->texture_tint_env_color;
                 out->color.r = tintColor->r;
                 out->color.g = tintColor->g;
                 out->color.b = tintColor->b;
@@ -5167,7 +5172,9 @@ static void gfx_sp_tri1_2d(uint8_t vtx1_idx, uint8_t vtx2_idx, UNUSED uint8_t vt
         tri_buf[tri_num_vert].color = gfx_get_vertex_rgba(comb, use_alpha, &v_arr[i]->color, 0.0f, false);
         if (state->texture_tint_colors_corrected) {
             const struct RGBA* tintColor =
-                state->two_texture_env_prim_tint ? &state->texture_tint_prim_color : &state->texture_tint_env_color;
+                (state->two_texture_env_prim_tint || state->texture_tint_use_prim_color)
+                    ? &state->texture_tint_prim_color
+                    : &state->texture_tint_env_color;
             tri_buf[tri_num_vert].color.r = tintColor->r;
             tri_buf[tri_num_vert].color.g = tintColor->g;
             tri_buf[tri_num_vert].color.b = tintColor->b;
