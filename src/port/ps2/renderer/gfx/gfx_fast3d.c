@@ -2,6 +2,22 @@
 Carai mano agora mandei nessa viu papo reto gozei palavras mas vai tomar no cu porque vou ter que documentar tudo
 vai demorar mais um pouco isso ou eu possso mandar tomar no cu tenho obrigação nenhuma de documentar tudo
 se quiser aprenda a ler e faz isso ai vai demorar mais  
+
+Vamos ver, antes de vocês falarem bosta "ah foi ia que escreveu" primeiramente
+vai tomar no meio do seu cu seu vagabundo, segundo esse script só está no tamanho do caralho
+porque eu ja portei ele assim ja veio do psp assim só adaptei e mudei algumas coisas
+então para de ser pau no cu e vai se foder
+terceiro, porque todo mundo acha que tudo é desgraça de ia hoje em dia? porque sinceramente
+se voce acha que ports desse tipo só acontece por conta de ia
+eu quero que voce vai tomar no meio do seu cu tambem
+e vai se foder
+porque isso aqui foi VARIAS HORAS TRABALHADAS a mais de 5 MESES mesmo que essa porra aqui
+eu tenha colocado no github dia 3 de setembro eu venho mexendo nessa porra
+a mais de 5 MESES caralho 
+nós ja viemos estudando MUITO antes do que isso pra fazer essa bosta funcionar no ps2 de forma correta
+pra voce vim falando merda vai se foder, espero que voce tenha entendido a lição
+seu bosta
+
 */
 
 #include <assert.h>
