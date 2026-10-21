@@ -270,10 +270,11 @@ static void HomeMenu_Render(const char* statusMessage, const Color_RGB8* tunicCo
 void HomeMenu_PollHomeButton(void) {
     u32 buttons = HomeMenu_ReadButtons();
     u32 pressed = buttons & ~sLastPolledButtons;
+    u32 toggleButtons = OOT_PS2_BUTTON_START | OOT_PS2_BUTTON_SELECT;
 
     sLastPolledButtons = buttons;
 
-    if (((pressed & OOT_PS2_BUTTON_START) && (pressed & OOT_PS2_BUTTON_UP)) && !sActive) { // home btn
+    if (!sActive && ((buttons & toggleButtons) == toggleButtons) && ((pressed & toggleButtons) != 0)) {
         HomeMenu_RequestOpen();
     }
 }
