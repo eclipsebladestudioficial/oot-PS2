@@ -1022,15 +1022,20 @@ static uint32_t sPs2FlameDecodedI8Serial;
 static uint32_t sPs2FlameDecodedI8SecondSerial;
 static uint32_t sPs2FlameDecodedI4Serial;
 
-#define GFX_TWO_I4_PRECOMBINE_WIDTH 32
-#define GFX_TWO_I4_PRECOMBINE_HEIGHT 32
+#define GFX_TWO_I4_PRECOMBINE_WIDTH 64
+#define GFX_TWO_I4_PRECOMBINE_HEIGHT 64
 #define GFX_TWO_I4_PRECOMBINE_PIXELS (GFX_TWO_I4_PRECOMBINE_WIDTH * GFX_TWO_I4_PRECOMBINE_HEIGHT)
 #define GFX_TWO_I4_PRECOMBINE_CACHE_SIZE 128
 #define GFX_TWO_I4_PRECOMBINE_BUILD_BUDGET 1
 #define GFX_TWO_I4_REPRESENTATIVE_PHASE_STEP 8
+#define GFX_TWO_I4_PRIM_LOD_PHASE_STEP 1
+
+enum TwoI4PrecombineFormula {
+    GFX_TWO_I4_FORMULA_ENV_ALPHA,
+    GFX_TWO_I4_FORMULA_PRIM_LOD,
+};
 
 typedef struct __attribute__((aligned(16))) TwoI4PrecombineCacheEntry {
-    uint32_t pixels[GFX_TWO_I4_PRECOMBINE_PIXELS];
     uint32_t textureId;
     const uint8_t* texture0Addr;
     const uint8_t* texture1Addr;
@@ -1048,6 +1053,8 @@ typedef struct __attribute__((aligned(16))) TwoI4PrecombineCacheEntry {
     uint8_t sample1X[GFX_TWO_I4_PRECOMBINE_WIDTH];
     uint8_t sample1Y[GFX_TWO_I4_PRECOMBINE_HEIGHT];
     uint8_t envAlpha;
+    uint8_t primLodFrac;
+    uint8_t formula;
     uint8_t outputWidth;
     uint8_t outputHeight;
     bool textureAllocated;
@@ -1055,8 +1062,10 @@ typedef struct __attribute__((aligned(16))) TwoI4PrecombineCacheEntry {
 } TwoI4PrecombineCacheEntry;
 
 static TwoI4PrecombineCacheEntry sTwoI4PrecombineCache[GFX_TWO_I4_PRECOMBINE_CACHE_SIZE] __attribute__((aligned(16)));
+static uint32_t sTwoI4PrecombinePixels[GFX_TWO_I4_PRECOMBINE_PIXELS] __attribute__((aligned(64)));
 static uint32_t sTwoI4PrecombineBuildFrame;
 static uint8_t sTwoI4PrecombineBuildsThisFrame;
+static uint8_t sPreparedTwoI4CoordTile;
 
 static uint32_t sPs2TwoI4RgbLut[256] __attribute__((aligned(64)));
 static int16_t sPs2TwoI4RgbAdd[256] __attribute__((aligned(64)));
@@ -3187,8 +3196,8 @@ static bool gfx_two_i4_precombine_material_is_supported(void) {
         (texture1->fmt == G_IM_FMT_I) && ((texture1->siz == G_IM_SIZ_4b) || (texture1->siz == G_IM_SIZ_8b));
 
     if (!texture0Intensity || !texture1Intensity || width0 == 0 || height0 == 0 || width1 == 0 || height1 == 0 ||
-        width0 > 64U || width1 > GFX_TWO_I4_PRECOMBINE_WIDTH || height1 > GFX_TWO_I4_PRECOMBINE_HEIGHT ||
-        height0 > 128) {
+        width0 > GFX_TWO_I4_PRECOMBINE_WIDTH || width1 > GFX_TWO_I4_PRECOMBINE_WIDTH ||
+        height0 > GFX_TWO_I4_PRECOMBINE_HEIGHT || height1 > GFX_TWO_I4_PRECOMBINE_HEIGHT) {
         return false;
     }
 
@@ -3322,7 +3331,7 @@ static void gfx_two_i4_build_sample_maps(uint8_t sample0X[GFX_TWO_I4_PRECOMBINE_
                                          uint8_t sample0Y[GFX_TWO_I4_PRECOMBINE_HEIGHT],
                                          uint8_t sample1X[GFX_TWO_I4_PRECOMBINE_WIDTH],
                                          uint8_t sample1Y[GFX_TWO_I4_PRECOMBINE_HEIGHT], uint32_t outputWidth,
-                                         uint32_t outputHeight) {
+                                         uint32_t outputHeight, uint32_t phaseStep, uint8_t coordTile) {
     const TextureTileState* texture0 = gfx_get_texture_tile(0);
     const TextureTileState* texture1 = gfx_get_texture_tile(1);
     const uint32_t width0 = gfx_texture_import_width(0);
@@ -3333,38 +3342,54 @@ static void gfx_two_i4_build_sample_maps(uint8_t sample0X[GFX_TWO_I4_PRECOMBINE_
     const float shift0T = gfx_texture_shift_scale(texture0->shiftt);
     const float shift1S = gfx_texture_shift_scale(texture1->shifts);
     const float shift1T = gfx_texture_shift_scale(texture1->shiftt);
-    const int32_t phaseHalf = GFX_TWO_I4_REPRESENTATIVE_PHASE_STEP / 2;
+    const int32_t phaseHalf = phaseStep / 2;
     const int32_t scroll0SPixels = texture0->uls >> G_TEXTURE_IMAGE_FRAC;
     const int32_t scroll0TPixels = texture0->ult >> G_TEXTURE_IMAGE_FRAC;
     const int32_t scroll1SPixels = texture1->uls >> G_TEXTURE_IMAGE_FRAC;
     const int32_t scroll1TPixels = texture1->ult >> G_TEXTURE_IMAGE_FRAC;
-    const float scroll0S = (float)((scroll0SPixels + phaseHalf) & ~(GFX_TWO_I4_REPRESENTATIVE_PHASE_STEP - 1));
-    const float scroll0T = (float)((scroll0TPixels + phaseHalf) & ~(GFX_TWO_I4_REPRESENTATIVE_PHASE_STEP - 1));
-    const float scroll1S = (float)((scroll1SPixels + phaseHalf) & ~(GFX_TWO_I4_REPRESENTATIVE_PHASE_STEP - 1));
-    const float scroll1T = (float)((scroll1TPixels + phaseHalf) & ~(GFX_TWO_I4_REPRESENTATIVE_PHASE_STEP - 1));
+    const float scroll0S = (float)((scroll0SPixels + phaseHalf) & ~(phaseStep - 1));
+    const float scroll0T = (float)((scroll0TPixels + phaseHalf) & ~(phaseStep - 1));
+    const float scroll1S = (float)((scroll1SPixels + phaseHalf) & ~(phaseStep - 1));
+    const float scroll1T = (float)((scroll1TPixels + phaseHalf) & ~(phaseStep - 1));
 
     for (uint32_t x = 0; x < outputWidth; x++) {
-        const float incomingS = ((float)x + scroll1S) / shift1S;
-        const int32_t x0 = (int32_t)floorf(incomingS * shift0S - scroll0S + 0.5f);
-        sample0X[x] = (uint8_t)gfx_two_i4_address_coord(x0, width0, texture0->cms, texture0->masks);
-        sample1X[x] = (uint8_t)gfx_two_i4_address_coord((int32_t)x, width1, texture1->cms, texture1->masks);
+        if (coordTile == 0) {
+            const float incomingS = ((float)x + scroll0S) / shift0S;
+            const int32_t x1 = (int32_t)floorf(incomingS * shift1S - scroll1S + 0.5f);
+            sample0X[x] = (uint8_t)gfx_two_i4_address_coord((int32_t)x, width0, texture0->cms, texture0->masks);
+            sample1X[x] = (uint8_t)gfx_two_i4_address_coord(x1, width1, texture1->cms, texture1->masks);
+        } else {
+            const float incomingS = ((float)x + scroll1S) / shift1S;
+            const int32_t x0 = (int32_t)floorf(incomingS * shift0S - scroll0S + 0.5f);
+            sample0X[x] = (uint8_t)gfx_two_i4_address_coord(x0, width0, texture0->cms, texture0->masks);
+            sample1X[x] = (uint8_t)gfx_two_i4_address_coord((int32_t)x, width1, texture1->cms, texture1->masks);
+        }
     }
     for (uint32_t y = 0; y < outputHeight; y++) {
-        const float incomingT = ((float)y + scroll1T) / shift1T;
-        const int32_t y0 = (int32_t)floorf(incomingT * shift0T - scroll0T + 0.5f);
-        sample0Y[y] = (uint8_t)gfx_two_i4_address_coord(y0, height0, texture0->cmt, texture0->maskt);
-        sample1Y[y] = (uint8_t)gfx_two_i4_address_coord((int32_t)y, height1, texture1->cmt, texture1->maskt);
+        if (coordTile == 0) {
+            const float incomingT = ((float)y + scroll0T) / shift0T;
+            const int32_t y1 = (int32_t)floorf(incomingT * shift1T - scroll1T + 0.5f);
+            sample0Y[y] = (uint8_t)gfx_two_i4_address_coord((int32_t)y, height0, texture0->cmt, texture0->maskt);
+            sample1Y[y] = (uint8_t)gfx_two_i4_address_coord(y1, height1, texture1->cmt, texture1->maskt);
+        } else {
+            const float incomingT = ((float)y + scroll1T) / shift1T;
+            const int32_t y0 = (int32_t)floorf(incomingT * shift0T - scroll0T + 0.5f);
+            sample0Y[y] = (uint8_t)gfx_two_i4_address_coord(y0, height0, texture0->cmt, texture0->maskt);
+            sample1Y[y] = (uint8_t)gfx_two_i4_address_coord((int32_t)y, height1, texture1->cmt, texture1->maskt);
+        }
     }
 }
 static bool gfx_two_i4_precombine_key_matches(const TwoI4PrecombineCacheEntry* entry, uint32_t texture0Key,
                                               uint32_t texture1Key, uint32_t primRgb, uint32_t envRgb,
+                                              uint8_t formula, uint8_t primLodFrac,
                                               const uint8_t* sample0X, const uint8_t* sample0Y,
                                               const uint8_t* sample1X, const uint8_t* sample1Y, uint32_t outputWidth,
                                               uint32_t outputHeight) {
     return entry->textureValid && entry->texture0Addr == rdp.loaded_texture[0].addr &&
            entry->texture1Addr == rdp.loaded_texture[1].addr && entry->texture0Key == texture0Key &&
            entry->texture1Key == texture1Key && entry->primRgb == primRgb && entry->envRgb == envRgb &&
-           entry->envAlpha == rdp.env_color.a && entry->outputWidth == outputWidth &&
+           entry->envAlpha == rdp.env_color.a && entry->formula == formula &&
+           entry->primLodFrac == primLodFrac && entry->outputWidth == outputWidth &&
            entry->outputHeight == outputHeight && entry->importWidth0 == gfx_texture_import_width(0) &&
            entry->importHeight0 == gfx_texture_import_height(0) && entry->importWidth1 == gfx_texture_import_width(1) &&
            entry->importHeight1 == gfx_texture_import_height(1) && entry->fmt0 == gfx_get_texture_tile(0)->fmt &&
@@ -3378,11 +3403,13 @@ static bool gfx_two_i4_precombine_key_matches(const TwoI4PrecombineCacheEntry* e
 
 static bool gfx_two_i4_precombine_material_matches(const TwoI4PrecombineCacheEntry* entry, uint32_t texture0Key,
                                                    uint32_t texture1Key, uint32_t primRgb, uint32_t envRgb,
+                                                   uint8_t formula, uint8_t primLodFrac,
                                                    uint32_t outputWidth, uint32_t outputHeight) {
     return entry->textureValid && entry->texture0Addr == rdp.loaded_texture[0].addr &&
            entry->texture1Addr == rdp.loaded_texture[1].addr && entry->texture0Key == texture0Key &&
            entry->texture1Key == texture1Key && entry->primRgb == primRgb && entry->envRgb == envRgb &&
-           entry->envAlpha == rdp.env_color.a && entry->outputWidth == outputWidth &&
+           entry->envAlpha == rdp.env_color.a && entry->formula == formula &&
+           entry->primLodFrac == primLodFrac && entry->outputWidth == outputWidth &&
            entry->outputHeight == outputHeight && entry->importWidth0 == gfx_texture_import_width(0) &&
            entry->importHeight0 == gfx_texture_import_height(0) && entry->importWidth1 == gfx_texture_import_width(1) &&
            entry->importHeight1 == gfx_texture_import_height(1) && entry->fmt0 == gfx_get_texture_tile(0)->fmt &&
@@ -3465,18 +3492,33 @@ static void gfx_build_two_i4_precombine_pixels(TwoI4PrecombineCacheEntry* entry)
                                                 : gfx_two_i4_read_texel_255(1, (int32_t)sx1, (int32_t)sample1Y[y],
                                                                             width1, height1, &swap1);
 
-            if (bothI4) {
-                entry->pixels[y * outputWidth + x] = sPs2TwoI4PairLut[((uint32_t)(t0 >> 4) << 4) | (uint32_t)(t1 >> 4)];
+            if (entry->formula == GFX_TWO_I4_FORMULA_PRIM_LOD) {
+                const int32_t lod = entry->primLodFrac;
+                const uint8_t mixR = gfx_ps2_clamp_u8_i32((int32_t)t0 + gfx_ps2_div256_round_signed(((int32_t)t1 - pr) * lod));
+                const uint8_t mixG = gfx_ps2_clamp_u8_i32((int32_t)t0 + gfx_ps2_div256_round_signed(((int32_t)t1 - pg) * lod));
+                const uint8_t mixB = gfx_ps2_clamp_u8_i32((int32_t)t0 + gfx_ps2_div256_round_signed(((int32_t)t1 - pb) * lod));
+                const uint8_t alpha = gfx_ps2_clamp_u8_i32((int32_t)t0 + gfx_ps2_div256_round_signed(((int32_t)t1 - 255) * lod));
+                const uint8_t r = gfx_ps2_clamp_u8_i32(er + gfx_ps2_div255_round((pr - er) * mixR));
+                const uint8_t g = gfx_ps2_clamp_u8_i32(eg + gfx_ps2_div255_round((pg - eg) * mixG));
+                const uint8_t b = gfx_ps2_clamp_u8_i32(eb + gfx_ps2_div255_round((pb - eb) * mixB));
+
+                sTwoI4PrecombinePixels[y * outputWidth + x] =
+                    (uint32_t)r | ((uint32_t)g << 8) | ((uint32_t)b << 16) | ((uint32_t)alpha << 24);
+            } else if (bothI4) {
+                sTwoI4PrecombinePixels[y * outputWidth + x] =
+                    sPs2TwoI4PairLut[((uint32_t)(t0 >> 4) << 4) | (uint32_t)(t1 >> 4)];
             } else {
                 const uint8_t rgbMix = gfx_ps2_clamp_u8_i32((int32_t)t1 + sPs2TwoI4RgbAdd[t0]);
                 const uint8_t alphaMix = gfx_ps2_clamp_u8_i32((int32_t)t1 + sPs2TwoI4AlphaAdd[t0]);
-                entry->pixels[y * outputWidth + x] = sPs2TwoI4RgbLut[rgbMix] | ((uint32_t)alphaMix << 24);
+                sTwoI4PrecombinePixels[y * outputWidth + x] =
+                    sPs2TwoI4RgbLut[rgbMix] | ((uint32_t)alphaMix << 24);
             }
         }
     }
+
 }
 
-static bool gfx_prepare_two_i4_precombine(void) {
+static bool gfx_prepare_two_i4_precombine(uint8_t formula) {
     const uint32_t primRgb =
         (uint32_t)rdp.prim_color.r | ((uint32_t)rdp.prim_color.g << 8) | ((uint32_t)rdp.prim_color.b << 16);
     const uint32_t envRgb =
@@ -3488,6 +3530,8 @@ static bool gfx_prepare_two_i4_precombine(void) {
     uint32_t newestFallbackFrame = 0;
     bool needsUpload = false;
     bool overwriteResident = false;
+    bool pixelsReady = false;
+    bool rebuildEntry = false;
     uint8_t sample0X[GFX_TWO_I4_PRECOMBINE_WIDTH] = { 0 };
     uint8_t sample0Y[GFX_TWO_I4_PRECOMBINE_HEIGHT] = { 0 };
     uint8_t sample1X[GFX_TWO_I4_PRECOMBINE_WIDTH] = { 0 };
@@ -3496,6 +3540,10 @@ static bool gfx_prepare_two_i4_precombine(void) {
     uint32_t texture1Key;
     uint32_t outputWidth;
     uint32_t outputHeight;
+    const uint8_t primLodFrac = formula == GFX_TWO_I4_FORMULA_PRIM_LOD ? rdp.prim_lod_frac : 0;
+    const uint8_t coordTile = formula == GFX_TWO_I4_FORMULA_PRIM_LOD ? 0 : 1;
+    const uint32_t phaseStep = formula == GFX_TWO_I4_FORMULA_PRIM_LOD ? GFX_TWO_I4_PRIM_LOD_PHASE_STEP
+                                                                     : GFX_TWO_I4_REPRESENTATIVE_PHASE_STEP;
 
     if (!gfx_two_i4_precombine_material_is_supported() || !gfx_validate_texture_source(0, "ps2-two-i4-0") ||
         !gfx_validate_texture_source(1, "ps2-two-i4-1")) {
@@ -3508,19 +3556,21 @@ static bool gfx_prepare_two_i4_precombine(void) {
     }
     texture0Key = gfx_texture_source_cache_key(rdp.loaded_texture[0].addr, gfx_texture_source_span_size(0));
     texture1Key = gfx_texture_source_cache_key(rdp.loaded_texture[1].addr, gfx_texture_source_span_size(1));
-    outputWidth = gfx_texture_tile_width(1);
-    outputHeight = gfx_texture_tile_height(1);
-    gfx_two_i4_build_sample_maps(sample0X, sample0Y, sample1X, sample1Y, outputWidth, outputHeight);
+    outputWidth = gfx_texture_tile_width(coordTile);
+    outputHeight = gfx_texture_tile_height(coordTile);
+    gfx_two_i4_build_sample_maps(sample0X, sample0Y, sample1X, sample1Y, outputWidth, outputHeight, phaseStep,
+                                 coordTile);
 
     for (uint32_t i = 0; i < GFX_TWO_I4_PRECOMBINE_CACHE_SIZE; i++) {
         TwoI4PrecombineCacheEntry* candidate = &sTwoI4PrecombineCache[i];
-        if (gfx_two_i4_precombine_key_matches(candidate, texture0Key, texture1Key, primRgb, envRgb, sample0X,
+        if (gfx_two_i4_precombine_key_matches(candidate, texture0Key, texture1Key, primRgb, envRgb, formula,
+                                              primLodFrac, sample0X,
                                               sample0Y, sample1X, sample1Y, outputWidth, outputHeight)) {
             entry = candidate;
             break;
         }
-        if (gfx_two_i4_precombine_material_matches(candidate, texture0Key, texture1Key, primRgb, envRgb, outputWidth,
-                                                   outputHeight) &&
+        if (gfx_two_i4_precombine_material_matches(candidate, texture0Key, texture1Key, primRgb, envRgb, formula,
+                                                   primLodFrac, outputWidth, outputHeight) &&
             (phaseFallback == NULL || candidate->lastUsedFrame >= newestFallbackFrame)) {
             phaseFallback = candidate;
             newestFallbackFrame = candidate->lastUsedFrame;
@@ -3536,18 +3586,26 @@ static bool gfx_prepare_two_i4_precombine(void) {
         }
     }
 
-    if (entry == NULL && sTwoI4PrecombineBuildsThisFrame >= GFX_TWO_I4_PRECOMBINE_BUILD_BUDGET &&
+    if (entry == NULL && formula == GFX_TWO_I4_FORMULA_ENV_ALPHA &&
+        sTwoI4PrecombineBuildsThisFrame >= GFX_TWO_I4_PRECOMBINE_BUILD_BUDGET &&
         phaseFallback != NULL) {
         entry = phaseFallback;
     }
 
-    if (entry == NULL) {
+    if (entry == NULL && formula == GFX_TWO_I4_FORMULA_PRIM_LOD && phaseFallback != NULL) {
+        entry = phaseFallback;
+        rebuildEntry = true;
+    }
+
+    if (entry == NULL || rebuildEntry) {
         sTwoI4PrecombineBuildsThisFrame++;
         if (victim == NULL) {
             gfx_texture_cache_clear();
             victim = &sTwoI4PrecombineCache[0];
         }
-        entry = victim;
+        if (entry == NULL) {
+            entry = victim;
+        }
         overwriteResident = entry->textureAllocated;
         entry->texture0Addr = rdp.loaded_texture[0].addr;
         entry->texture1Addr = rdp.loaded_texture[1].addr;
@@ -3556,6 +3614,8 @@ static bool gfx_prepare_two_i4_precombine(void) {
         entry->primRgb = primRgb;
         entry->envRgb = envRgb;
         entry->envAlpha = rdp.env_color.a;
+        entry->primLodFrac = primLodFrac;
+        entry->formula = formula;
         entry->outputWidth = (uint8_t)outputWidth;
         entry->outputHeight = (uint8_t)outputHeight;
         entry->importWidth0 = (uint16_t)gfx_texture_import_width(0);
@@ -3574,6 +3634,7 @@ static bool gfx_prepare_two_i4_precombine(void) {
         memcpy(entry->sample1Y, sample1Y, outputHeight);
 
         gfx_build_two_i4_precombine_pixels(entry);
+        pixelsReady = true;
         entry->textureValid = true;
         needsUpload = true;
     }
@@ -3592,12 +3653,15 @@ static bool gfx_prepare_two_i4_precombine(void) {
     }
 
     if (needsUpload) {
+        if (!pixelsReady) {
+            gfx_build_two_i4_precombine_pixels(entry);
+        }
         if (overwriteResident) {
             gfx_flush();
         }
         gfx_rapi->select_texture(0, entry->textureId);
         gfx_ps2_set_skip_content_hash(true);
-        gfx_rapi->upload_texture((const uint8_t*)entry->pixels, entry->outputWidth, entry->outputHeight,
+        gfx_rapi->upload_texture((const uint8_t*)sTwoI4PrecombinePixels, entry->outputWidth, entry->outputHeight,
                                  PS2_TEXFMT_8888);
         gfx_ps2_set_skip_content_hash(false);
     }
@@ -3605,6 +3669,7 @@ static bool gfx_prepare_two_i4_precombine(void) {
     entry->lastUsedFrame = sTextureCacheFrameSerial;
     sPreparedAtlasKind = GFX_PREPARED_ATLAS_TWO_I4;
     sPreparedAtlasTextureId = entry->textureId;
+    sPreparedTwoI4CoordTile = coordTile;
     return true;
 }
 
@@ -3694,23 +3759,29 @@ static void gfx_prepare_texture_coord_state(struct TriPipelineState* state, int 
 static void gfx_prepare_flame_atlas_coord_state(struct TriPipelineState* state) {
     const TextureTileState* texture0 = gfx_get_texture_tile(0);
     if (sPreparedAtlasKind == GFX_PREPARED_ATLAS_TWO_I4) {
-        const TextureTileState* texture1 = gfx_get_texture_tile(1);
-        const bool linear = (rdp.other_mode_h & (3U << G_MDSFT_TEXTFILT)) != G_TF_POINT;
-        const float filterBias = linear ? 16.0f : 0.0f;
+        const TextureTileState* texture1 = gfx_get_texture_tile(sPreparedTwoI4CoordTile);
         const float textureSpanU = 8.0f * (texture1->lrs - texture1->uls + 4);
         const float textureSpanV = 8.0f * (texture1->lrt - texture1->ult + 4);
+        const float outputWidth = (float)gfx_texture_tile_width(sPreparedTwoI4CoordTile);
+        const float outputHeight = (float)gfx_texture_tile_height(sPreparedTwoI4CoordTile);
 
-        if (textureSpanU == 0.0f || textureSpanV == 0.0f) {
+        if (textureSpanU == 0.0f || textureSpanV == 0.0f || outputWidth == 0.0f || outputHeight == 0.0f) {
             return;
         }
         state->tex_u_nominal_span[0] = textureSpanU;
         state->tex_v_nominal_span[0] = textureSpanV;
         state->tex_u_shift_scale[0] = gfx_texture_shift_scale(texture1->shifts);
         state->tex_v_shift_scale[0] = gfx_texture_shift_scale(texture1->shiftt);
-        state->tex_u_scale[0] = state->tex_u_shift_scale[0] / textureSpanU;
-        state->tex_v_scale[0] = state->tex_v_shift_scale[0] / textureSpanV;
-        state->tex_u_bias[0] = (filterBias - texture1->uls * 8.0f) / textureSpanU;
-        state->tex_v_bias[0] = (filterBias - texture1->ult * 8.0f) / textureSpanV;
+        state->tex_u_scale[0] =
+            state->tex_u_shift_scale[0] * (outputWidth - 1.0f) / (outputWidth * textureSpanU);
+        state->tex_v_scale[0] =
+            state->tex_v_shift_scale[0] * (outputHeight - 1.0f) / (outputHeight * textureSpanV);
+        state->tex_u_bias[0] =
+            (0.5f / outputWidth) - (texture1->uls * 8.0f * (outputWidth - 1.0f)) /
+                                       (outputWidth * textureSpanU);
+        state->tex_v_bias[0] =
+            (0.5f / outputHeight) - (texture1->ult * 8.0f * (outputHeight - 1.0f)) /
+                                        (outputHeight * textureSpanV);
         state->tex_u_scale_to_primitive[0] = false;
         state->tex_v_scale_to_primitive[0] = false;
         return;
@@ -3793,12 +3864,17 @@ static void gfx_prepare_tri_pipeline_state(void) {
 
     sPreparedAtlasKind = GFX_PREPARED_ATLAS_NONE;
     sPreparedAtlasTextureId = 0;
-    if (rdp.combine_two_intensity_env_prim_precombine && gfx_prepare_two_i4_precombine()) {
+    if (rdp.combine_two_intensity_env_prim_precombine &&
+        gfx_prepare_two_i4_precombine(GFX_TWO_I4_FORMULA_ENV_ALPHA)) {
         two_i4_precombine = true;
         flame_texture_atlas = true;
     } else if (rdp.combine_flame_texture_atlas && gfx_prepare_flame_atlas()) {
         sPreparedAtlasKind = GFX_PREPARED_ATLAS_FLAME;
         sPreparedAtlasTextureId = sPreparedFlameAtlas->textureId;
+        flame_texture_atlas = true;
+    } else if (rdp.combine_flame_texture_atlas &&
+               gfx_prepare_two_i4_precombine(GFX_TWO_I4_FORMULA_PRIM_LOD)) {
+        two_i4_precombine = true;
         flame_texture_atlas = true;
     }
     bool prepared_two_texture_blend = rdp.combine_two_texture_blend && !two_i4_precombine;
@@ -4014,9 +4090,8 @@ static void gfx_prepare_tri_pipeline_state(void) {
             (rendering_state.bound_texture_tile != 0)) {
             gfx_flush();
             if (sPreparedAtlasKind == GFX_PREPARED_ATLAS_TWO_I4) {
-                const TextureTileState* maskTile = gfx_get_texture_tile(1);
-                gfx_rapi->set_sampler_parameters(0, linear_filter, maskTile->cms, maskTile->cmt, maskTile->masks,
-                                                 maskTile->maskt);
+                gfx_rapi->set_sampler_parameters(0, linear_filter, G_TX_CLAMP, G_TX_CLAMP, G_TX_NOMASK,
+                                                 G_TX_NOMASK);
             } else {
                 gfx_rapi->set_sampler_parameters(0, linear_filter, G_TX_CLAMP, G_TX_CLAMP, G_TX_NOMASK, G_TX_NOMASK);
             }
