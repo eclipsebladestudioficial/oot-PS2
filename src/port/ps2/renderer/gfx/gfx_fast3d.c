@@ -69,6 +69,7 @@ seu bosta
 #define N64_LOGICAL_SCREEN_HEIGHT 240
 #define N64_LOGICAL_HALF_WIDTH (N64_LOGICAL_SCREEN_WIDTH / 2)
 #define N64_LOGICAL_HALF_HEIGHT (N64_LOGICAL_SCREEN_HEIGHT / 2)
+#define N64_HUD_SAFE_MARGIN 4.0f
 
 #define SCREEN_SCALE_X (gfx_current_dimensions.width / (2.0f * N64_LOGICAL_HALF_WIDTH))
 #define SCREEN_SCALE_Y (gfx_current_dimensions.height / (2.0f * N64_LOGICAL_HALF_HEIGHT))
@@ -4491,6 +4492,7 @@ static void gfx_update_screen_metrics(void) {
     const float width = (float)gfx_current_dimensions.width;
     const float height = gfx_current_dimensions.height != 0 ? (float)gfx_current_dimensions.height : 1.0f;
     float margin;
+    float hudAnchorReach;
 
     if (sPs2Widescreen) {
         gfx_current_dimensions.aspect_ratio = 16.0f / 9.0f;
@@ -4506,7 +4508,11 @@ static void gfx_update_screen_metrics(void) {
         margin = 0.0f;
     }
     sWidescreenMarginPixels = margin;
-    sHudAnchorOffsetPixels = gfx_hud_anchor_direction() * sWidescreenMarginPixels;
+    hudAnchorReach = margin - (N64_HUD_SAFE_MARGIN * SCREEN_SCALE_Y);
+    if (hudAnchorReach < 0.0f) {
+        hudAnchorReach = 0.0f;
+    }
+    sHudAnchorOffsetPixels = gfx_hud_anchor_direction() * hudAnchorReach;
     sHudAnchorOffsetNdc = width != 0.0f ? 2.0f * sHudAnchorOffsetPixels / width : 0.0f;
 }
 
@@ -5410,7 +5416,8 @@ static void gfx_calc_and_set_viewport(const Vp_t* viewport) {
 
     if (gfx_hud_anchor_enabled() && !sHudViewportFullscreen) {
         width *= SCREEN_SCALE_Y;
-        x = (x * SCREEN_SCALE_Y) + gfx_widescreen_margin_pixels() + gfx_hud_anchor_offset_pixels();
+        x = (x * SCREEN_SCALE_Y) + (sPs2Widescreen ? 0.0f : gfx_widescreen_margin_pixels()) +
+            gfx_hud_anchor_offset_pixels();
     } else {
         width *= SCREEN_SCALE_X;
         x *= SCREEN_SCALE_X;
@@ -5511,14 +5518,31 @@ static void gfx_sp_texture(uint16_t sc, uint16_t tc, uint8_t level, uint8_t tile
 static void gfx_dp_set_scissor(uint32_t mode, uint32_t ulx, uint32_t uly, uint32_t lrx, uint32_t lry) {
     _UNUSED(mode);
 
-    const float activeWidth =
-        sPs2Widescreen ? (float)gfx_current_dimensions.width : gfx_current_dimensions.height * (4.0f / 3.0f);
-    const float activeX = (gfx_current_dimensions.width - activeWidth) * 0.5f;
-    const float xScale = sPs2Widescreen ? SCREEN_SCALE_X : SCREEN_SCALE_Y;
-    float x = activeX + (ulx / 4.0f * xScale) + gfx_hud_anchor_offset_pixels();
+    const bool fullWidth = (ulx == 0) && (lrx >= (N64_LOGICAL_SCREEN_WIDTH << 2));
+    float xScale;
+    float activeX;
+    float x;
+    float width;
     float y = (N64_LOGICAL_SCREEN_HEIGHT - lry / 4.0f) * SCREEN_SCALE_Y;
-    float width = (lrx - ulx) / 4.0f * xScale;
     float height = (lry - uly) / 4.0f * SCREEN_SCALE_Y;
+
+    if (fullWidth) {
+        x = 0.0f;
+        width = gfx_current_dimensions.width;
+    } else {
+        if (gfx_hud_anchor_enabled()) {
+            xScale = SCREEN_SCALE_Y;
+            activeX = sPs2Widescreen ? 0.0f : gfx_widescreen_margin_pixels();
+        } else {
+            const float activeWidth = sPs2Widescreen ? (float)gfx_current_dimensions.width
+                                                     : gfx_current_dimensions.height * (4.0f / 3.0f);
+
+            xScale = sPs2Widescreen ? SCREEN_SCALE_X : SCREEN_SCALE_Y;
+            activeX = (gfx_current_dimensions.width - activeWidth) * 0.5f;
+        }
+        x = activeX + (ulx / 4.0f * xScale) + gfx_hud_anchor_offset_pixels();
+        width = (lrx - ulx) / 4.0f * xScale;
+    }
 
     struct XYWidthHeight scissor = { x, y, width, height };
 
@@ -6336,11 +6360,8 @@ static void gfx_draw_rectangle(int32_t ulx, int32_t uly, int32_t lrx, int32_t lr
     float lryf = lry;
 
     if (force_fullscreen) {
-        const float activeWidth =
-            sPs2Widescreen ? (float)gfx_current_dimensions.width : (float)gfx_current_dimensions.height * (4.0f / 3.0f);
-        const float activeX = ((float)gfx_current_dimensions.width - activeWidth) * 0.5f;
-        ulxf = activeX;
-        lrxf = activeX + activeWidth;
+        ulxf = 0.0f;
+        lrxf = gfx_current_dimensions.width;
         ulyf = 0.0f;
         lryf = gfx_current_dimensions.height;
     } else {
@@ -6352,10 +6373,8 @@ static void gfx_draw_rectangle(int32_t ulx, int32_t uly, int32_t lrx, int32_t lr
         lryf = (lryf / (4.0f * N64_LOGICAL_HALF_HEIGHT)) - 1.0f;
 
         if (force_full_width) {
-            const float activeWidth = (float)gfx_current_dimensions.height * (4.0f / 3.0f);
-            const float activeX = ((float)gfx_current_dimensions.width - activeWidth) * 0.5f;
-            ulxf = activeX;
-            lrxf = activeX + activeWidth;
+            ulxf = 0.0f;
+            lrxf = gfx_current_dimensions.width;
         } else {
             ulxf = ulxf / (4.0f * N64_LOGICAL_HALF_WIDTH) - 1.0f;
             lrxf = lrxf / (4.0f * N64_LOGICAL_HALF_WIDTH) - 1.0f;
