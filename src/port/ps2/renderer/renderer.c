@@ -7,6 +7,7 @@
 #include "gfx/gfx_window_ps2.h"
 #include "gfx/gfx_window_manager_api.h"
 #include "platform.h"
+#include "renderer/video.h"
 
 extern struct GfxRenderingAPI gfx_ps2_rapi;
 
@@ -200,8 +201,9 @@ int Renderer_ApplyVideoSettings(void) {
 
     Renderer_Init();
     result = gfx_ps2_apply_video_mode();
-    
-    //gfx_invalidate_texture_cache(); gs texflush
-    //gfx_invalidate_render_state();
-    return result;
+    if (result != 0) {
+        return result;
+    }
+    Video_CommitMode();
+    return Video_Save();
 }

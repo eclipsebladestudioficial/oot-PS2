@@ -2890,6 +2890,7 @@ aqui só entram o tamanho real da saída, o framebuffer, a viewport e a proporç
 */
 int gfx_ps2_apply_video_mode(void) {
     VideoMode vmode;
+    int result;
 
     Video_GetMode(&vmode);
 
@@ -2899,18 +2900,16 @@ int gfx_ps2_apply_video_mode(void) {
         gs_global->Aspect = GS_ASPECT_4_3;
     }
 
-    gs_global->Width = vmode.displayWidth;
-    gs_global->Height = vmode.displayHeight;
-    gs_global->Field = vmode.field;
-    gs_global->Interlace = vmode.interlaced;
-    gs_global->Mode = vmode.mode;
-
-    gsKit_init_screen(gs_global);
+    result = gfx_ps2_apply_display_mode(vmode.mode, vmode.interlaced, vmode.field);
+    if (result != 0) {
+        return result;
+    }
 
     viewport(0, 0, vmode.displayWidth, vmode.displayHeight);
     scissor(0, 0, vmode.viewportWidth, vmode.viewportHeight);
 
     gfx_set_ps2_widescreen(vmode.widescreen);
+    gfx_ps2_invalidate_register_cache();
 
     return 0;
 }

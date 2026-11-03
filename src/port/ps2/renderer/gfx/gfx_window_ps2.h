@@ -12,6 +12,7 @@ extern struct gsGlobal* gs_global;
 extern struct GfxWindowManagerAPI gfx_ps2_wapi;
 
 void gfx_ps2_prepare_crash_screen(void);
+int gfx_ps2_apply_display_mode(int mode, int interlace, int field);
 
 void gfx_ps2_depth_query_begin(void);
 bool gfx_ps2_depth_read(int32_t x, int32_t y, uint16_t* depth);

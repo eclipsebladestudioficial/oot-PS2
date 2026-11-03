@@ -35,8 +35,7 @@ esses numeros so evitam que o jogo espere pra sempre se o gif o gs ou o vif1 der
 */
 
 #define GIF_DMA_TIMEOUT_ITERATIONS 8000000U
-#define GS_FINISH_TIMEOUT_ITERATIONS 8000000U
-#define FRAME_FINISH_TIMEOUT_ITERATIONS 12000000U
+#define GS_FINISH_TIMEOUT_USEC 2000000ULL
 #define LOCAL_TRANSFER_TIMEOUT_ITERATIONS 4000000U
 
 #define DMA_CHCR_STR_MASK (1U << 8)
@@ -161,8 +160,10 @@ static bool GfxWaitGifBounded(void) {
     return true;
 }
 
-static bool GfxWaitFinishBounded(u32 iterations) {
-    while (!GS_CSR_FINISH && iterations-- != 0U) {
+static bool GfxWaitFinishBounded(u64 timeoutUsec) {
+    const u64 deadline = GetTimerSystemTime() + USec2TimerBusClock(timeoutUsec);
+
+    while (!GS_CSR_FINISH && GetTimerSystemTime() < deadline) {
         __asm__ volatile("nop");
     }
     return (GS_CSR_FINISH) != 0;
@@ -235,7 +236,7 @@ static bool GfxWindow_ReadLocalRect(void* dst, size_t dstBytes, u32 sourceAddr, 
     qwcRemaining = dmaBytes >> 4;
     writePtr = dst;
 
-    if (!GfxWaitFinishBounded(GS_FINISH_TIMEOUT_ITERATIONS)) {
+    if (!GfxWaitFinishBounded(GS_FINISH_TIMEOUT_USEC)) {
         return false;
     }
     if (dmaKit_wait(DMA_CHANNEL_GIF, LOCAL_TRANSFER_TIMEOUT_ITERATIONS) < 0) {
@@ -391,7 +392,7 @@ void gfx_ps2_apply_vismono(uint8_t primR, uint8_t primG, uint8_t primB, uint8_t 
             GfxRecoverGifDma(false);
             return;
         }
-        if (!GfxWaitFinishBounded(GS_FINISH_TIMEOUT_ITERATIONS)) {
+        if (!GfxWaitFinishBounded(GS_FINISH_TIMEOUT_USEC)) {
             return;
         }
         gsKit_queue_reset(gs_global->Os_Queue);
@@ -576,7 +577,7 @@ static bool GfxInitScreenDisc(GSGLOBAL* g) {
     }
     gsKit_clear(g, GS_SETREG_RGBAQ(0x00, 0x00, 0x00, 0x00, 0x00));
     gsKit_queue_exec(g);
-    if (!GfxWaitGifBounded() || !GfxWaitFinishBounded(GS_FINISH_TIMEOUT_ITERATIONS)) {
+    if (!GfxWaitGifBounded() || !GfxWaitFinishBounded(GS_FINISH_TIMEOUT_USEC)) {
         return false;
     }
 
@@ -773,13 +774,7 @@ static bool GfxWindow_StartFrame(void) {
         const int completed = gs_global->ActiveBuffer & 1;
         int nextDraw = completed;
 
-        if (!GfxWaitFinishBounded(FRAME_FINISH_TIMEOUT_ITERATIONS)) {
-            printf("oot-ps2: timed out waiting for frame completion; resetting GIF DMA\n");
-            GfxRecoverGifDma(false);
-            gfx_ps2_invalidate_register_cache();
-            sFramePending = false;
-            return false;
-        }
+        __real_gsKit_finish();
 
         sDisplayedBufferIndex = completed;
         sDisplayedFrameValid = true;
@@ -801,14 +796,84 @@ static bool GfxWindow_StartFrame(void) {
     return true;
 }
 
+static void GfxWindow_SetDisplayAttributes(void) {
+    if (gs_global->Mode == GS_MODE_DTV_480P) {
+        gs_global->StartX = 232;
+        gs_global->StartY = 35;
+        gs_global->DW = 1440;
+        gs_global->DH = 480;
+    } else {
+        gs_global->StartX = NTSC_START_X;
+        gs_global->StartY = NTSC_START_Y;
+        gs_global->DW = NTSC_DISPLAY_WIDTH;
+        gs_global->DH = NTSC_DISPLAY_HEIGHT;
+    }
+
+    gs_global->StartXOffset = 0;
+    gs_global->StartYOffset = 0;
+    gs_global->MagH = (gs_global->DW / gs_global->Width) - 1;
+    gs_global->MagV = (gs_global->DH / gs_global->Height) - 1;
+    gs_global->StartX += (gs_global->DW - ((gs_global->MagH + 1) * gs_global->Width)) / 2;
+    gs_global->StartY += (gs_global->DH - ((gs_global->MagV + 1) * gs_global->Height)) / 2;
+    if (gs_global->Interlace == GS_INTERLACED) {
+        gs_global->StartY &= ~1;
+    }
+    gs_global->DW = (gs_global->MagH + 1) * gs_global->Width;
+    gs_global->DH = (gs_global->MagV + 1) * gs_global->Height;
+    if (gs_global->Interlace == GS_INTERLACED && gs_global->Field == GS_FRAME) {
+        gs_global->MagV--;
+    }
+}
+
+int gfx_ps2_apply_display_mode(int mode, int interlace, int field) {
+    int drawBuffer;
+
+    if (gs_global == NULL) {
+        return -1;
+    }
+    if (!GfxWindow_StartFrame()) {
+        return -2;
+    }
+    if (!GfxWaitGifBounded()) {
+        return -3;
+    }
+
+    gs_global->Mode = mode;
+    gs_global->Interlace = interlace;
+    gs_global->Field = field;
+    GfxWindow_SetDisplayAttributes();
+    SetGsCrt(gs_global->Interlace, gs_global->Mode, gs_global->Field);
+
+    GS_SET_DISPFB1(gs_global->ScreenBuffer[sDisplayedBufferIndex & 1] / GS_VRAM_BLOCKSIZE_8K,
+                   gs_global->Width / GS_VRAM_TBWALIGN, gs_global->PSM, 0, 0);
+    GS_SET_DISPFB2(gs_global->ScreenBuffer[sDisplayedBufferIndex & 1] / GS_VRAM_BLOCKSIZE_8K,
+                   gs_global->Width / GS_VRAM_TBWALIGN, gs_global->PSM, 0, 0);
+    GS_SET_DISPLAY1(gs_global->StartX, gs_global->StartY, gs_global->MagH, gs_global->MagV,
+                    gs_global->DW - 1, gs_global->DH - 1);
+    GS_SET_DISPLAY2(gs_global->StartX, gs_global->StartY, gs_global->MagH, gs_global->MagV,
+                    gs_global->DW - 1, gs_global->DH - 1);
+    GS_SET_PMODE(0, 1, 0, 1, 0, 0x80);
+
+    drawBuffer = gfx_ps2_pause_background_active() ? (sPauseBackgroundSourceIndex ^ 1)
+                                                   : ((sDisplayedBufferIndex & 1) ^ 1);
+    gs_global->ActiveBuffer = (u8)drawBuffer;
+    gsKit_setactive(gs_global);
+    if (!GfxWaitGifBounded()) {
+        return -4;
+    }
+    return 0;
+}
+
 static void GfxWindow_SwapBuffersBegin(void) {
 }
 
 static void GfxWindow_SwapBuffersEnd(void) {
+    const bool submitted = gs_global->Os_Queue->tag_size != 0 || gs_global->Per_Queue->tag_size != 0;
+
     sAsyncFrameSubmit = true;
     gsKit_queue_exec(gs_global);
     sAsyncFrameSubmit = false;
-    sFramePending = true;
+    sFramePending = submitted;
     gsKit_TexManager_nextFrame(gs_global);
 }
 
