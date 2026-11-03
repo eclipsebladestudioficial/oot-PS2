@@ -756,7 +756,7 @@ void PadMgr_RequestPadData(PadMgr* padMgr, Input* inputs, s32 gameRequest) {
     if (Input_FirstPersonAimActive() &&
         (sPs2InputPlayState == NULL || !IS_PAUSED(&sPs2InputPlayState->pauseCtx))) {
         input->cur.stick_x /= 2;
-        input->cur.stick_y /= 2;
+        input->cur.stick_y = -input->cur.stick_y / 2;
     }
 
     input->press.button = (input->cur.button ^ input->prev.button) & input->cur.button;
