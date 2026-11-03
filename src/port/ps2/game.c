@@ -774,10 +774,12 @@ void PadMgr_RequestPadData(PadMgr* padMgr, Input* inputs, s32 gameRequest) {
 
     padMgr->validCtrlrsMask = 1;
     padMgr->ctrlrIsConnected[0] = true;
+    padMgr->pakType[0] = CONT_PAK_RUMBLE;
     padMgr->nControllers = 1;
 }
 
 void PadMgr_RumbleStop(UNUSED PadMgr* padMgr) {
+    Pad_SetRumble(false);
 }
 
 void PadMgr_RumbleReset(PadMgr* padMgr) {
@@ -787,11 +789,15 @@ void PadMgr_RumbleReset(PadMgr* padMgr) {
         padMgr->rumbleEnable[i] = 0;
         padMgr->rumbleTimer[i] = 0;
     }
+    Pad_SetRumble(false);
 }
 
 void PadMgr_RumbleSetSingle(PadMgr* padMgr, u32 port, u32 rumble) {
     if (port < ARRAY_COUNT(padMgr->rumbleEnable)) {
         padMgr->rumbleEnable[port] = rumble != 0;
+        if (port == 0) {
+            Pad_SetRumble(rumble != 0);
+        }
     }
 }
 
@@ -802,6 +808,7 @@ void PadMgr_RumbleSet(PadMgr* padMgr, u8* enable) {
         for (i = 0; i < ARRAY_COUNT(padMgr->rumbleEnable); i++) {
             padMgr->rumbleEnable[i] = enable[i];
         }
+        Pad_SetRumble(enable[0] != 0);
     }
 }
 

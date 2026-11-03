@@ -93,6 +93,7 @@ void Cache_InvalidateInstruction(void);
 
 void Pad_Init(void);
 s32 Pad_Read(PadState* out);
+void Pad_SetRumble(s32 enabled);
 void _GetRightStick(int* x, int* y);
 void Input_SetPlayState(void* playState);
 

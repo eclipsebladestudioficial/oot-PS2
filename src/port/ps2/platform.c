@@ -30,6 +30,8 @@ typedef struct ThreadSlot {
 static ThreadSlot sThreadSlots[OOT_PS2_MAX_PLATFORM_THREADS];
 static s32 sPadReady;
 static s32 sPadAnalogConfigured;
+static s32 sPadRumbleConfigured;
+static s32 sPadRumbleEnabled;
 static u8 sPadBuffer[256] __attribute__((aligned(64)));
 static struct padButtonStatus sPadStatus __attribute__((aligned(64)));
 static volatile s32 sPadRightX;
@@ -300,6 +302,40 @@ void Pad_Init(void) {
                 padSetMainMode(0, 0, PAD_MMODE_DUALSHOCK, PAD_MMODE_LOCK);
             }
         }
+    }
+
+    if (sPadAnalogConfigured && !sPadRumbleConfigured) {
+        s32 state = padGetState(0, 0);
+
+        if (state == PAD_STATE_STABLE || state == PAD_STATE_FINDCTP1) {
+            char align[6] = { 0, 1, -1, -1, -1, -1 };
+
+            if (padInfoAct(0, 0, -1, 0) > 0 && padSetActAlign(0, 0, align) > 0) {
+                sPadRumbleConfigured = true;
+            }
+        }
+    }
+}
+
+void Pad_SetRumble(s32 enabled) {
+    char direct[6] = { 0, 0, 0, 0, 0, 0 };
+    s32 state;
+
+    Pad_Init();
+    enabled = enabled != 0;
+    if (!sPadReady || !sPadRumbleConfigured || enabled == sPadRumbleEnabled) {
+        return;
+    }
+
+    state = padGetState(0, 0);
+    if (state != PAD_STATE_STABLE && state != PAD_STATE_FINDCTP1) {
+        return;
+    }
+
+    direct[0] = enabled;
+    direct[1] = enabled ? 255 : 0;
+    if (padSetActDirect(0, 0, direct) > 0) {
+        sPadRumbleEnabled = enabled;
     }
 }
 
