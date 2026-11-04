@@ -46,6 +46,7 @@ o texcache fica na cpu segurando os dados e a vram continua sendo cuidada pelo t
 */
 
 extern void gfx_set_ps2_widescreen(bool enabled);
+extern const u8 gOotPs2BootWarning[];
 
 static void restore_prerender_fallback(void);
 void texman_clear(void);
@@ -318,6 +319,8 @@ static bool sSuppressFpsOverlay;
 static bool sFpsOverlayEnabled = true;
 static int sBootProgressCode = -1;
 static char sBootProgressLabel[40];
+static GSTEXTURE sBootWarningTexture;
+static bool sBootWarningTextureReady;
 
 static bool sHomeMenuBgActive;
 static bool sHomeMenuBgCaptureRequested;
@@ -3336,6 +3339,9 @@ static void home_render_submenu(const char* title, const char* const* lines, int
 
 void gfx_ps2_set_boot_progress(int code, const char* label) {
     sBootProgressCode = code;
+    if (code < 0 && sBootWarningTexture.Vram != 0) {
+        release_texture_residency(&sBootWarningTexture);
+    }
     if (label == NULL) {
         sBootProgressLabel[0] = '\0';
     } else {
@@ -3347,11 +3353,25 @@ static void boot_progress_draw_contents(int code) {
     char codeText[16];
     const u64 white = home_rgba(255, 255, 245, 255);
     const u64 shadow = home_rgba(0, 0, 0, 220);
+    struct ShaderProgram* savedShader = cur_shader;
 
     snprintf(codeText, sizeof(codeText), "%03d", code < 0 ? 0 : code);
-    home_rect(0, 0, 480, 272, home_rgba(0, 0, 0, 255));
-    home_text(240, 108, "Boot Check", 0.72f, white, shadow, true);
-    home_text(240, 148, codeText, 1.45f, white, shadow, true);
+    if (!sBootWarningTextureReady) {
+        memset(&sBootWarningTexture, 0, sizeof(sBootWarningTexture));
+        sBootWarningTexture.Width = 640;
+        sBootWarningTexture.Height = 448;
+        sBootWarningTexture.PSM = GS_PSM_CT16;
+        sBootWarningTexture.Filter = GS_FILTER_LINEAR;
+        sBootWarningTexture.Mem = (void*)gOotPs2BootWarning;
+        sBootWarningTextureReady = true;
+    }
+    cur_shader = NULL;
+    bind_texture(&sBootWarningTexture);
+    sprite_tex(&sBootWarningTexture, 0.0f, 0.0f, 0, 0.0f, 0.0f, (float)gs_global->Width,
+               (float)gs_global->Height, 0, 640.0f, 448.0f, colorq_from_rgba(0xffffffffU, 1.0f, true));
+    cur_shader = savedShader;
+    home_rect(405, 226, 62, 34, home_rgba(0, 0, 0, 210));
+    home_text(436, 251, codeText, 1.05f, white, shadow, true);
 }
 
 void gfx_ps2_render_boot_progress(int code, const char* label) {

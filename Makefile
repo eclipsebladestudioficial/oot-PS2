@@ -1383,6 +1383,7 @@ PS2_PORT_RUNTIME_ASM_SOURCES := \
 	src/port/ps2/assets/transform.s \
 	src/port/ps2/assets/ucode_assets.s \
 	src/port/ps2/audio/mix.s \
+	src/port/ps2/boot_warning.s \
 	src/port/ps2/save_icon.s
 PS2_PORT_ASSET_SNAPSHOT := assets/ps2/$(VERSION)/generated.zip
 PS2_PORT_ASSET_TRANSFORM := assets/ps2/$(VERSION)/asset_transform.z
@@ -1531,6 +1532,7 @@ $(PS2_PORT_ASSET_SEGMENT_OBJECT): $(PS2_PORT_ASSET_SEGMENT_SOURCE)
 	$(PS2_PORT_CC) -MMD -MP -MF $(@:.o=.d) -MT $@ -c -x assembler-with-cpp $(PS2_PORT_ASM_FLAGS) -o $@ $<
 
 $(PS2_PORT_BUILD_DIR)/src/port/ps2/assets/transform.o: $(PS2_PORT_ASSET_TRANSFORM)
+$(PS2_PORT_BUILD_DIR)/src/port/ps2/boot_warning.o: assets/ps2/boot/warning.rgb555
 $(PS2_PORT_RUNTIME_OBJECTS) $(PS2_PORT_RUNTIME_ASM_OBJECTS) $(PS2_PORT_ENTRY_OBJECT): $(PS2_PORT_SETUP_STAMP)
 
 $(PS2_PORT_LIBRARY): $(PS2_PORT_RUNTIME_OBJECTS) $(PS2_PORT_RUNTIME_ASM_OBJECTS) \
