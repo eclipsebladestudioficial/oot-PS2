@@ -316,7 +316,7 @@ static u32 sPrerenderRoomKey = 0xffffffffU;
 static uint32_t sRenderFrameSerial = 1;
 
 static bool sSuppressFpsOverlay;
-static bool sFpsOverlayEnabled = true;
+static bool sFpsOverlayEnabled;
 static int sBootProgressCode = -1;
 static char sBootProgressLabel[40];
 static GSTEXTURE sBootWarningTexture;
