@@ -312,6 +312,10 @@ static bool sPrerender3dStarted;
 static bool sPrerenderRoomActive;
 static bool sPrerenderDepthOnlyPass;
 static u32 sPrerenderRoomKey = 0xffffffffU;
+static bool sPrerenderSideBarsActive;
+static int sPrerenderSideBarsLeft;
+static int sPrerenderSideBarsRight;
+static int sPrerenderTopBarEnd;
 
 static uint32_t sRenderFrameSerial = 1;
 
@@ -379,6 +383,46 @@ void gfx_ps2_set_prerender_room_state(bool active, u32 roomKey) {
         sPrerenderRoomActive = active;
         sPrerenderRoomKey = roomKey;
     }
+}
+
+bool gfx_ps2_prerender_room_active(void) {
+    return sPrerenderRoomActive;
+}
+
+void gfx_ps2_set_prerender_background_bounds(float left, float right, float top) {
+    if (!sPrerenderRoomActive || gs_global == NULL || !(right > left)) {
+        return;
+    }
+
+    int x0 = (int)(left + 0.999f);
+    int x1 = (int)right;
+    if (x0 < 0) {
+        x0 = 0;
+    }
+    if (x0 > gs_global->Width) {
+        x0 = gs_global->Width;
+    }
+    if (x1 < 0) {
+        x1 = 0;
+    }
+    if (x1 > gs_global->Width) {
+        x1 = gs_global->Width;
+    }
+    if (x1 <= x0) {
+        return;
+    }
+
+    sPrerenderSideBarsLeft = x0;
+    sPrerenderSideBarsRight = x1;
+    sPrerenderTopBarEnd = 0;
+    if (top > 0.0f && top < gs_global->Height * 0.5f) {
+        int end = (int)(top + 2.0f);
+        if (end > gs_global->Height) {
+            end = gs_global->Height;
+        }
+        sPrerenderTopBarEnd = end;
+    }
+    sPrerenderSideBarsActive = true;
 }
 
 void gfx_ps2_invalidate_register_cache(void) {
@@ -3023,6 +3067,8 @@ static void start_frame(void) {
     }
     sPrerenderFallback.seenThisFrame = false;
     sPrerender3dStarted = false;
+    sPrerenderSideBarsActive = false;
+    sPrerenderTopBarEnd = 0;
     sLastTexFilter = -1;
     sLastTestReg = ~0ULL;
     sLastClampReg = ~0ULL;
@@ -3426,7 +3472,50 @@ void gfx_ps2_render_menu(const char* title, const char* const* lines, int lineCo
     set_blend(old_blend);
 }
 
+static void draw_prerender_side_bars(void) {
+    if (!sPrerenderSideBarsActive || !sPrerenderRoomActive) {
+        return;
+    }
+
+    const bool savedZTest = z_test;
+    const bool savedZWrite = z_write;
+    const bool savedBlend = do_blend;
+    const bool savedAlphaTest = cur_shader != NULL && cur_shader->alpha_test;
+    const struct Clip savedClip = r_clip;
+    const u64 black = GS_SETREG_RGBAQ(0, 0, 0, 0x80, 0);
+
+    if (cur_shader != NULL) {
+        cur_shader->alpha_test = false;
+    }
+    z_test = false;
+    depth_mask(false);
+    set_blend(false);
+    update_test();
+    set_frame_write_mask(0);
+    set_scissor_raw(0, 0, gs_global->Width - 1, gs_global->Height - 1);
+
+    if (sPrerenderSideBarsLeft > 0) {
+        gsKit_prim_sprite(gs_global, 0, 0, sPrerenderSideBarsLeft, gs_global->Height, 0, black);
+    }
+    if (sPrerenderSideBarsRight < gs_global->Width) {
+        gsKit_prim_sprite(gs_global, sPrerenderSideBarsRight, 0, gs_global->Width, gs_global->Height, 0, black);
+    }
+    if (sPrerenderTopBarEnd > 0) {
+        gsKit_prim_sprite(gs_global, 0, 0, gs_global->Width, sPrerenderTopBarEnd, 0, black);
+    }
+
+    set_scissor_raw(savedClip.x0, savedClip.y0, savedClip.x1, savedClip.y1);
+    if (cur_shader != NULL) {
+        cur_shader->alpha_test = savedAlphaTest;
+    }
+    z_test = savedZTest;
+    depth_mask(savedZWrite);
+    update_test();
+    set_blend(savedBlend);
+}
+
 static void end_frame(void) {
+    draw_prerender_side_bars();
     if (sSuppressFpsOverlay) {
         sSuppressFpsOverlay = false;
     } else if (sFpsOverlayEnabled) {

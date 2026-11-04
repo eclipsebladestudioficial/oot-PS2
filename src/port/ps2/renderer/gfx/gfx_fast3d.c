@@ -38,6 +38,9 @@ seu bosta
 #include "gfx_cc.h"
 #include "gfx_window_ps2.h"
 #include "gfx_window_manager_api.h"
+
+extern bool gfx_ps2_prerender_room_active(void);
+extern void gfx_ps2_set_prerender_background_bounds(float left, float right, float top);
 #include "gfx_rendering_api.h"
 #include "gfx_screen_config.h"
 #include "buffers.h"
@@ -7071,6 +7074,40 @@ static GFX_DL_HANDLER void gfx_sp_s2dex_bg_rect(uint32_t opcode, const void* bgA
     texSpanS = (uint64_t)texSpanS * contentWidth / imageWidth;
     texSpanT = (uint64_t)texSpanT * contentHeight / imageHeight;
 
+    if (frameW == 0 || frameH == 0) {
+        return;
+    }
+
+    const int32_t originalX = frameX;
+    const int32_t originalY = frameY;
+    const uint32_t originalW = frameW;
+    const uint32_t originalH = frameH;
+    int32_t clippedX1 = frameX + (int32_t)frameW;
+    int32_t clippedY1 = frameY + (int32_t)frameH;
+
+    if (frameX < 0) {
+        frameX = 0;
+    }
+    if (frameY < 0) {
+        frameY = 0;
+    }
+    if (clippedX1 > (N64_LOGICAL_SCREEN_WIDTH << 2)) {
+        clippedX1 = N64_LOGICAL_SCREEN_WIDTH << 2;
+    }
+    if (clippedY1 > (N64_LOGICAL_SCREEN_HEIGHT << 2)) {
+        clippedY1 = N64_LOGICAL_SCREEN_HEIGHT << 2;
+    }
+    if (clippedX1 <= frameX || clippedY1 <= frameY) {
+        return;
+    }
+
+    frameW = (uint32_t)(clippedX1 - frameX);
+    frameH = (uint32_t)(clippedY1 - frameY);
+    texStartS += (uint32_t)((uint64_t)texSpanS * (uint32_t)(frameX - originalX) / originalW);
+    texStartT += (uint32_t)((uint64_t)texSpanT * (uint32_t)(frameY - originalY) / originalH);
+    texSpanS = (uint32_t)((uint64_t)texSpanS * frameW / originalW);
+    texSpanT = (uint32_t)((uint64_t)texSpanT * frameH / originalH);
+
     ul->u = texStartS;
     ul->v = texStartT;
     ul->color = white_color;
@@ -7105,7 +7142,25 @@ static GFX_DL_HANDLER void gfx_sp_s2dex_bg_rect(uint32_t opcode, const void* bgA
         rsp.geometry_mode &= ~G_ZBUFFER;
         rdp.other_mode_l &= ~(Z_CMP | Z_UPD);
         gfx_mark_tri_pipeline_dirty();
+        struct XYWidthHeight scissorSaved = rdp.scissor;
+        if (gfx_ps2_prerender_room_active() && rdp.scissor.height > 4.0f) {
+            rdp.scissor.height -= 3.0f;
+            rdp.viewport_or_scissor_changed = true;
+        }
+        if (gfx_ps2_prerender_room_active() &&
+            frameW >= ((N64_LOGICAL_SCREEN_WIDTH - 16) << 2) &&
+            frameH >= ((N64_LOGICAL_SCREEN_HEIGHT - 16) << 2)) {
+            const float halfWidth = (float)gfx_current_dimensions.width * 0.5f;
+            const float left = (((float)frameX / (4.0f * N64_LOGICAL_HALF_WIDTH)) - 1.0f) *
+                                   sNdcAspectScale * halfWidth + halfWidth + gfx_hud_anchor_offset_pixels();
+            const float right = (((float)(frameX + (int32_t)frameW) / (4.0f * N64_LOGICAL_HALF_WIDTH)) - 1.0f) *
+                                    sNdcAspectScale * halfWidth + halfWidth + gfx_hud_anchor_offset_pixels();
+            const float top = (float)gfx_current_dimensions.height - scissorSaved.y - scissorSaved.height;
+            gfx_ps2_set_prerender_background_bounds(left, right, top);
+        }
         gfx_draw_rectangle(frameX, frameY, frameX + frameW, frameY + frameH, false, false);
+        rdp.scissor = scissorSaved;
+        rdp.viewport_or_scissor_changed = true;
 
         rsp.geometry_mode = savedGeometryMode;
         rdp.other_mode_l = savedOtherModeL;
