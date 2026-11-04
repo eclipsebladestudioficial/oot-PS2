@@ -137,6 +137,7 @@ typedef struct CacheAllocation {
 static char sOotPs2AssetRoot[256];
 static s32 sOotPs2DiscBoot;
 static s32 sOotPs2OriginalRangesSorted = -1;
+static s32 sOotPs2ExternalRangesSorted = -1;
 static Handle sOotPs2AssetSema = -1;
 static Handle sOotPs2PackedAssetFd = -1;
 static s32 sOotPs2PackedAssetUnavailable = false;
@@ -1309,7 +1310,45 @@ static void OotPort_PreloadPersistentAssets(void) {
     }
 }
 
+static s32 OotPort_AreExternalAssetRangesSorted(void) {
+    size_t i;
+    uintptr_t previousStart = 0;
+
+    if (sOotPs2ExternalRangesSorted >= 0) {
+        return sOotPs2ExternalRangesSorted;
+    }
+
+    sOotPs2ExternalRangesSorted = true;
+    for (i = 0; i < gOotPortExternalAssetCount; i++) {
+        const OotPortExternalAsset* asset = &gOotPortExternalAssets[i];
+
+        if ((i != 0) && (asset->vromStart < previousStart)) {
+            sOotPs2ExternalRangesSorted = false;
+            break;
+        }
+        previousStart = asset->vromStart;
+    }
+
+    return sOotPs2ExternalRangesSorted;
+}
+
 static const OotPortExternalAsset* OotPort_FindContainingExternalAsset(uintptr_t vrom, size_t* index) {
+    size_t i;
+
+    if (!OotPort_AreExternalAssetRangesSorted()) {
+        for (i = 0; i < gOotPortExternalAssetCount; i++) {
+            const OotPortExternalAsset* asset = &gOotPortExternalAssets[i];
+
+            if ((vrom >= asset->vromStart) && (vrom < asset->vromEnd)) {
+                if (index != NULL) {
+                    *index = i;
+                }
+                return asset;
+            }
+        }
+        return NULL;
+    }
+
     size_t left = 0;
     size_t right = gOotPortExternalAssetCount;
 
@@ -1335,6 +1374,8 @@ static const OotPortExternalAsset* OotPort_FindContainingExternalAsset(uintptr_t
 static s32 OotPort_IsExternalAssetSpanContiguous(size_t index, uintptr_t vromStart, uintptr_t vromEnd) {
     uintptr_t cursor = vromStart;
 
+    (void)index;
+
     if (vromEnd < vromStart) {
         return false;
     }
@@ -1344,24 +1385,19 @@ static s32 OotPort_IsExternalAssetSpanContiguous(size_t index, uintptr_t vromSta
     }
 
     while (cursor < vromEnd) {
-        const OotPortExternalAsset* asset;
+        const OotPortExternalAsset* asset = OotPort_FindContainingExternalAsset(cursor, NULL);
 
-        if (index >= gOotPortExternalAssetCount) {
+        if (asset == NULL) {
             return false;
         }
-
-        asset = &gOotPortExternalAssets[index];
         if ((cursor < asset->vromStart) || (cursor >= asset->vromEnd)) {
             return false;
         }
 
         cursor = asset->vromEnd;
-        if ((cursor < vromEnd) &&
-            (((index + 1) >= gOotPortExternalAssetCount) || (gOotPortExternalAssets[index + 1].vromStart != cursor))) {
+        if ((cursor < vromEnd) && (OotPort_FindContainingExternalAsset(cursor, NULL) == NULL)) {
             return false;
         }
-
-        index++;
     }
 
     return true;
@@ -2506,9 +2542,9 @@ static s32 OotPort_AssetReadLocked(void* ram, uintptr_t vrom, size_t size, s32 u
         OotPort_RegisterLoadedAssetRanges(chunkOut, chunkSize, chunkVromStart, asset, chunkSerial);
 
         if (remaining != 0) {
-            assetIndex++;
-            if ((assetIndex >= gOotPortExternalAssetCount) ||
-                (gOotPortExternalAssets[assetIndex].vromStart != cursor)) {
+            const OotPortExternalAsset* nextAsset = OotPort_FindContainingExternalAsset(cursor, &assetIndex);
+
+            if ((nextAsset == NULL) || (nextAsset->vromStart != cursor)) {
                 printf("oot-ps2 asset span gap vrom=%08lx remaining=%lu\n", (unsigned long)cursor,
                        (unsigned long)remaining);
                 return OOT_PORT_ASSET_READ_NOT_EXTERNAL;

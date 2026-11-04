@@ -921,6 +921,7 @@ s32 AssetSetup_Ensure(void) {
     const char* outputPath = OotPort_ResolveRootPath(OOT_PS2_PACKED_ASSET_PATH, outputBuffer, sizeof(outputBuffer));
     const char* tempPath = OotPort_ResolveRootPath(OOT_PS2_PACKED_ASSET_TEMP_PATH, tempBuffer, sizeof(tempBuffer));
     size_t expectedSize;
+    size_t assetIndex;
     Handle romFd;
     s32 ok;
 
@@ -928,9 +929,15 @@ s32 AssetSetup_Ensure(void) {
         return false;
     }
 
-    expectedSize = gOotPortExternalAssets[gOotPortExternalAssetCount - 1].fileOffset +
-                   (gOotPortExternalAssets[gOotPortExternalAssetCount - 1].vromEnd -
-                    gOotPortExternalAssets[gOotPortExternalAssetCount - 1].vromStart);
+    expectedSize = 0;
+    for (assetIndex = 0; assetIndex < gOotPortExternalAssetCount; assetIndex++) {
+        const OotPortExternalAsset* asset = &gOotPortExternalAssets[assetIndex];
+        size_t assetEnd = asset->fileOffset + (asset->vromEnd - asset->vromStart);
+
+        if (expectedSize < assetEnd) {
+            expectedSize = assetEnd;
+        }
+    }
 
     if (AssetSetup_FileHasSize(outputPath, expectedSize) &&
         !AssetSetup_PackHasCompressedPrerenderJpeg(outputPath)) {
