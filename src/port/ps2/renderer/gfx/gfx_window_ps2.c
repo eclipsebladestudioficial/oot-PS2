@@ -626,12 +626,8 @@ static void GfxWindow_Init(const char* gameName, bool startInFullscreen) {
     GfxPipelineSync();
     sGsInitFailed = false;
     sGsInitActive = true;
-    if (Platform_IsDiscBoot()) {
-        initialized = GfxInitScreenDisc(gs_global);
-    } else {
-        gsKit_init_screen(gs_global);
-        initialized = !sGsInitFailed;
-    }
+    gsKit_init_screen(gs_global);
+    initialized = !sGsInitFailed;
     sGsInitActive = false;
 
     if (!initialized || sGsInitFailed) {
