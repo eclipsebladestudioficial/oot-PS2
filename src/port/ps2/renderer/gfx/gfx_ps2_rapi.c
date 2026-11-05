@@ -312,6 +312,7 @@ static bool sPrerender3dStarted;
 static bool sPrerenderRoomActive;
 static bool sPrerenderDepthOnlyPass;
 static u32 sPrerenderRoomKey = 0xffffffffU;
+static bool sTextboxPass;
 static bool sPrerenderSideBarsActive;
 static int sPrerenderSideBarsLeft;
 static int sPrerenderSideBarsRight;
@@ -383,6 +384,10 @@ void gfx_ps2_set_prerender_room_state(bool active, u32 roomKey) {
         sPrerenderRoomActive = active;
         sPrerenderRoomKey = roomKey;
     }
+}
+
+void gfx_ps2_set_textbox_pass(bool active) {
+    sTextboxPass = active;
 }
 
 bool gfx_ps2_prerender_room_active(void) {
@@ -930,10 +935,6 @@ void texman_upload(int width, int height, unsigned int type, const void* buffer)
 }
 
 static inline void bind_texture(GSTEXTURE* texture) {
-    if (__builtin_expect(sLastBoundGsTex == texture && texture->Vram != 0, 1)) {
-        return;
-    }
-
     const u32 oldVram = texture->Vram;
     const unsigned transferred = gsKit_TexManager_bind(gs_global, texture);
 
@@ -2154,6 +2155,84 @@ static void draw_sprite_untextured_pass(float x1, float y1, int z1, float x2, fl
     gsKit_prim_sprite(gs_global, x1, y1, x2, y2, z1, colorq_from_rgba(rgba, 1.0f, false));
 }
 
+static void draw_textbox_untextured(float x1, float y1, float x2, float y2, int z, uint32_t rgba) {
+    if (x2 <= x1 || y2 <= y1) {
+        return;
+    }
+
+    const bool savedZTest = z_test;
+    const bool savedZWrite = z_write;
+    const bool savedBlend = do_blend;
+    const bool savedAlphaTest = cur_shader != NULL && cur_shader->alpha_test;
+    const int savedFog = gs_global->PrimFogEnable;
+    const float width = x2 - x1;
+    const float height = y2 - y1;
+    float radius = height * 0.18f;
+    if (radius > width * 0.065f) {
+        radius = width * 0.065f;
+    }
+    if (radius > 26.0f) {
+        radius = 26.0f;
+    }
+    int cornerRows = (int)(radius + 0.5f);
+    if (cornerRows < 1) {
+        cornerRows = 1;
+    }
+    if (cornerRows * 2 > height) {
+        cornerRows = (int)(height * 0.5f);
+    }
+
+    if (cur_shader != NULL) {
+        cur_shader->alpha_test = false;
+    }
+    z_test = false;
+    depth_mask(false);
+    set_blend(true);
+    gs_global->PrimFogEnable = 0;
+    update_test();
+
+    const u64 color = colorq_from_rgba(rgba, 1.0f, false);
+    const uint32_t a = (rgba >> 24) & 0xffU;
+    const uint32_t edgeA = ((a + 1U) / 3U) << 24;
+    const u64 edgeColor = colorq_from_rgba((rgba & 0x00ffffffU) | edgeA, 1.0f, false);
+    const float edge = 1.5f;
+
+    if (y2 - cornerRows > y1 + cornerRows) {
+        gsKit_prim_sprite(gs_global, x1 + edge, y1 + cornerRows, x2 - edge, y2 - cornerRows, z, color);
+        gsKit_prim_sprite(gs_global, x1, y1 + cornerRows, x1 + edge, y2 - cornerRows, z, edgeColor);
+        gsKit_prim_sprite(gs_global, x2 - edge, y1 + cornerRows, x2, y2 - cornerRows, z, edgeColor);
+    }
+
+    for (int i = 0; i < cornerRows; i++) {
+        const float r = (float)cornerRows;
+        const float t = (r - (float)i - 0.5f) / r;
+        const float inset = r * (1.0f - sqrtf(1.0f - t * t));
+        const float left = x1 + inset;
+        const float right = x2 - inset;
+        if (right - left <= edge * 2.0f) {
+            continue;
+        }
+
+        const float top = y1 + i;
+        const float bottom = y2 - i - 1.0f;
+        gsKit_prim_sprite(gs_global, left + edge, top, right - edge, top + 1.0f, z, color);
+        gsKit_prim_sprite(gs_global, left, top, left + edge, top + 1.0f, z, edgeColor);
+        gsKit_prim_sprite(gs_global, right - edge, top, right, top + 1.0f, z, edgeColor);
+        gsKit_prim_sprite(gs_global, left + edge, bottom, right - edge, bottom + 1.0f, z, color);
+        gsKit_prim_sprite(gs_global, left, bottom, left + edge, bottom + 1.0f, z, edgeColor);
+        gsKit_prim_sprite(gs_global, right - edge, bottom, right, bottom + 1.0f, z, edgeColor);
+    }
+
+    gs_global->PrimFogEnable = savedFog;
+    if (cur_shader != NULL) {
+        cur_shader->alpha_test = savedAlphaTest;
+    }
+    z_test = savedZTest;
+    depth_mask(savedZWrite);
+    update_test();
+    set_blend(savedBlend);
+}
+
 static void draw_sprite_textured_pass(struct Texture* tex, float x1, float y1, int z1, float u1, float v1, float x2,
                                       float y2, int z2, float u2, float v2, uint32_t rgba, enum PassColorMode mode,
                                       uint32_t target) {
@@ -2755,6 +2834,10 @@ void gfx_ps2_draw_triangles_2d(float* raw, size_t unused, size_t count) {
     (void)count;
     VertexColor2D* q = (VertexColor2D*)raw;
     if (!q) {
+        return;
+    }
+    if (sTextboxPass) {
+        draw_textbox_untextured(q[0].x, q[0].y, q[1].x, q[1].y, (int)q[0].z, q[0].rgba);
         return;
     }
     const bool depth_only = cur_shader && cur_shader->depth_only;
