@@ -39,6 +39,7 @@ seu bosta
 #include "gfx_window_ps2.h"
 #include "gfx_window_manager_api.h"
 
+extern void gfx_ps2_draw_prerender_side_bars(void);
 extern bool gfx_ps2_prerender_room_active(void);
 extern void gfx_ps2_set_prerender_background_bounds(float left, float right, float top);
 #include "gfx_rendering_api.h"
@@ -102,6 +103,7 @@ extern void gfx_ps2_set_prerender_background_bounds(float left, float right, flo
 
 #define PS2_TEXFMT_8888_GS_NATIVE (8)
 extern void gfx_ps2_draw_triangles_2d(float vertices[], size_t length, size_t triangleCount);
+extern void gfx_ps2_set_textbox_pass(bool active);
 extern float identity_matrix[4][4];
 extern Mtx D_01000000;
 extern void gfx_ps2_set_texture_blend_reverse(bool enabled);
@@ -6484,7 +6486,13 @@ static void gfx_dp_texture_rectangle(int32_t ulx, int32_t uly, int32_t lrx, int3
         ul->v = ult;
         lr->u = lrs;
         lr->v = lrt;
+        const TextureTileState* rectangleTile = gfx_get_texture_tile(0);
+        const bool textbox = !flip && rectangleTile->fmt == G_IM_FMT_I &&
+                             rectangleTile->siz == G_IM_SIZ_4b && (rectangleTile->cms & G_TX_MIRROR) &&
+                             rectangleTile->masks == 7 && rectangleTile->maskt == 0 && width >= 640 && height >= 120;
+        gfx_ps2_set_textbox_pass(textbox);
         gfx_draw_rectangle(ulx, uly, lrx, lry, false, false);
+        gfx_ps2_set_textbox_pass(false);
     }
     rdp.combine_mode = saved_combine_mode;
     rdp.combine_color_mul_env = saved_combine_color_mul_env;
@@ -7425,6 +7433,18 @@ static void gfx_run_dl(Gfx* cmd) {
                     }
                     cmd = returnStack[--returnDepth];
                     continue;
+                }
+
+                if (!push && returnDepth == 0) {
+                    const uintptr_t targetPhysical = (uintptr_t)target & 0x1FFFFFFFU;
+                    const uintptr_t overlay0 = (uintptr_t)gGfxPools[0].overlayBuffer & 0x1FFFFFFFU;
+                    const uintptr_t overlay1 = (uintptr_t)gGfxPools[1].overlayBuffer & 0x1FFFFFFFU;
+                    if (targetPhysical == overlay0 || targetPhysical == overlay1) {
+                        gfx_flush();
+                        gfx_ps2_draw_prerender_side_bars();
+                        gfx_mark_tri_pipeline_dirty();
+                        rendering_state.backend_state_dirty = true;
+                    }
                 }
 
                 if (push) {

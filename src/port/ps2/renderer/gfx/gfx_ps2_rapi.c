@@ -3555,7 +3555,7 @@ void gfx_ps2_render_menu(const char* title, const char* const* lines, int lineCo
     set_blend(old_blend);
 }
 
-static void draw_prerender_side_bars(void) {
+void gfx_ps2_draw_prerender_side_bars(void) {
     if (!sPrerenderSideBarsActive || !sPrerenderRoomActive) {
         return;
     }
@@ -3598,7 +3598,6 @@ static void draw_prerender_side_bars(void) {
 }
 
 static void end_frame(void) {
-    draw_prerender_side_bars();
     if (sSuppressFpsOverlay) {
         sSuppressFpsOverlay = false;
     } else if (sFpsOverlayEnabled) {
