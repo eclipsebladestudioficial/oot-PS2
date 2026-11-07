@@ -312,7 +312,7 @@ static bool sPrerender3dStarted;
 static bool sPrerenderRoomActive;
 static bool sPrerenderDepthOnlyPass;
 static u32 sPrerenderRoomKey = 0xffffffffU;
-static bool sTextboxPass;
+static int sTextboxPass;
 static bool sPrerenderSideBarsActive;
 static int sPrerenderSideBarsLeft;
 static int sPrerenderSideBarsRight;
@@ -386,8 +386,8 @@ void gfx_ps2_set_prerender_room_state(bool active, u32 roomKey) {
     }
 }
 
-void gfx_ps2_set_textbox_pass(bool active) {
-    sTextboxPass = active;
+void gfx_ps2_set_textbox_pass(int mode) {
+    sTextboxPass = mode;
 }
 
 bool gfx_ps2_prerender_room_active(void) {
@@ -2233,6 +2233,124 @@ static void draw_textbox_untextured(float x1, float y1, float x2, float y2, int 
     set_blend(savedBlend);
 }
 
+static uint8_t sWoodenTextboxPixels[128 * 64];
+static bool sWoodenTextboxPixelsValid;
+
+void gfx_ps2_set_wooden_textbox_pixels(const uint8_t* pixels) {
+    if (pixels != NULL) {
+        memcpy(sWoodenTextboxPixels, pixels, sizeof(sWoodenTextboxPixels));
+        sWoodenTextboxPixelsValid = true;
+    } else {
+        sWoodenTextboxPixelsValid = false;
+    }
+}
+
+static void draw_wooden_textbox_original(const VertexColor2D* q) {
+    if (!sWoodenTextboxPixelsValid) {
+        return;
+    }
+
+    const float x1 = q[0].x;
+    const float y1 = q[0].y;
+    const float x2 = q[1].x;
+    const float y2 = q[1].y;
+    const float u1 = q[0].u;
+    const float v1 = q[0].v;
+    const float u2 = q[1].u;
+    const float v2 = q[1].v;
+    if (x2 <= x1 || y2 <= y1 || u2 <= u1 || v2 <= v1) {
+        return;
+    }
+
+    const bool savedZTest = z_test;
+    const bool savedZWrite = z_write;
+    const bool savedBlend = do_blend;
+    const bool savedAlphaTest = cur_shader != NULL && cur_shader->alpha_test;
+    const int savedFog = gs_global->PrimFogEnable;
+    const uint32_t rgba = q[0].rgba;
+    const uint32_t a = rgba & 0xff000000U;
+    const unsigned r = rgba & 255U;
+    const unsigned g = (rgba >> 8) & 255U;
+    const unsigned b = (rgba >> 16) & 255U;
+    u64 colors[16];
+    for (unsigned i = 0; i < 16; ++i) {
+        const unsigned intensity = i >> 1;
+        const uint32_t rgb = ((r * intensity + 3U) / 7U) |
+                             (((g * intensity + 3U) / 7U) << 8) |
+                             (((b * intensity + 3U) / 7U) << 16);
+        colors[i] = colorq_from_rgba(rgb | a, 1.0f, false);
+    }
+
+    if (cur_shader != NULL) {
+        cur_shader->alpha_test = false;
+    }
+    z_test = false;
+    depth_mask(false);
+    set_blend(true);
+    gs_global->PrimFogEnable = 0;
+    update_test();
+
+    const float stepX = (x2 - x1) / (u2 - u1);
+    const float stepY = (y2 - y1) / (v2 - v1);
+    int uStart = (int)floorf(u1);
+    int uEnd = (int)ceilf(u2);
+    int vStart = (int)floorf(v1);
+    int vEnd = (int)ceilf(v2);
+    if (uEnd - uStart > 512) {
+        uEnd = uStart + 512;
+    }
+    if (vEnd - vStart > 256) {
+        vEnd = vStart + 256;
+    }
+    const int z = (int)q[0].z;
+    for (int v = vStart; v < vEnd; ++v) {
+        float top = y1 + ((float)v - v1) * stepY;
+        float bottom = top + stepY;
+        if (top < y1) top = y1;
+        if (bottom > y2) bottom = y2;
+        if (bottom <= top) continue;
+        int vy = v & 127;
+        if (vy >= 64) vy = 127 - vy;
+        const uint8_t* row = sWoodenTextboxPixels + vy * 128;
+        int u = uStart;
+        while (u < uEnd) {
+            int tx = u & 255;
+            if (tx >= 128) tx = 255 - tx;
+            const uint8_t pixel = row[tx];
+            const int runStart = u++;
+            while (u < uEnd) {
+                int nextX = u & 255;
+                if (nextX >= 128) nextX = 255 - nextX;
+                if (row[nextX] != pixel) break;
+                ++u;
+            }
+            if ((pixel & 1U) == 0U) continue;
+            float left = x1 + ((float)runStart - u1) * stepX;
+            float right = x1 + ((float)u - u1) * stepX;
+            if (left < x1) left = x1;
+            if (right > x2) right = x2;
+            if (right > left) {
+                GSQUEUE* queue = gs_global->CurQueue;
+                if ((uintptr_t)queue->pool_cur + 1024U >= (uintptr_t)queue->pool_max[queue->dbuf]) {
+                    gsKit_queue_exec(gs_global);
+                    dmaKit_wait_fast();
+                    gsKit_queue_reset(gs_global->Os_Queue);
+                }
+                gsKit_prim_sprite(gs_global, left, top, right, bottom, z, colors[pixel]);
+            }
+        }
+    }
+
+    gs_global->PrimFogEnable = savedFog;
+    if (cur_shader != NULL) {
+        cur_shader->alpha_test = savedAlphaTest;
+    }
+    z_test = savedZTest;
+    depth_mask(savedZWrite);
+    update_test();
+    set_blend(savedBlend);
+}
+
 static void draw_sprite_textured_pass(struct Texture* tex, float x1, float y1, int z1, float u1, float v1, float x2,
                                       float y2, int z2, float u2, float v2, uint32_t rgba, enum PassColorMode mode,
                                       uint32_t target) {
@@ -2836,8 +2954,12 @@ void gfx_ps2_draw_triangles_2d(float* raw, size_t unused, size_t count) {
     if (!q) {
         return;
     }
-    if (sTextboxPass) {
+    if (sTextboxPass == 1) {
         draw_textbox_untextured(q[0].x, q[0].y, q[1].x, q[1].y, (int)q[0].z, q[0].rgba);
+        return;
+    }
+    if (sTextboxPass == 2) {
+        draw_wooden_textbox_original(q);
         return;
     }
     const bool depth_only = cur_shader && cur_shader->depth_only;
