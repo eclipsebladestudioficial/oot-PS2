@@ -103,7 +103,8 @@ extern void gfx_ps2_set_prerender_background_bounds(float left, float right, flo
 
 #define PS2_TEXFMT_8888_GS_NATIVE (8)
 extern void gfx_ps2_draw_triangles_2d(float vertices[], size_t length, size_t triangleCount);
-extern void gfx_ps2_set_textbox_pass(bool active);
+extern void gfx_ps2_set_textbox_pass(int mode);
+extern void gfx_ps2_set_wooden_textbox_pixels(const uint8_t* pixels);
 extern float identity_matrix[4][4];
 extern Mtx D_01000000;
 extern void gfx_ps2_set_texture_blend_reverse(bool enabled);
@@ -857,9 +858,37 @@ typedef struct GfxTextureSwapState {
     uintptr_t rangeEnd;
 } GfxTextureSwapState;
 
+#define GFX_PS2_ASSET_SNAPSHOT_COUNT 24
+#define GFX_PS2_ASSET_SNAPSHOT_SIZE 8192U
+
+typedef struct GfxPs2AssetTextureSnapshot {
+    const uint8_t* source;
+    uint32_t sourceSize;
+    uint32_t assetSerial;
+    uint32_t lastUseFrame;
+    bool valid;
+    uint8_t pixels[GFX_PS2_ASSET_SNAPSHOT_SIZE] __attribute__((aligned(16)));
+} GfxPs2AssetTextureSnapshot;
+
+static GfxPs2AssetTextureSnapshot sGfxPs2AssetTextureSnapshots[GFX_PS2_ASSET_SNAPSHOT_COUNT];
+
+static bool gfx_ps2_is_asset_texture_snapshot(const uint8_t* addr, uint32_t sizeBytes) {
+    for (size_t i = 0; i < GFX_PS2_ASSET_SNAPSHOT_COUNT; ++i) {
+        const GfxPs2AssetTextureSnapshot* snapshot = &sGfxPs2AssetTextureSnapshots[i];
+        if (snapshot->valid && snapshot->pixels == addr && sizeBytes <= snapshot->sourceSize) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static GfxTextureSwapState gfx_texture_source_swap_state(const uint8_t* addr, uint32_t sizeBytes) {
     GfxTextureSwapState state = { GFX_TEXTURE_SWAP_NONE, 0, 0 };
     u32 loadedFlags;
+
+    if (gfx_ps2_is_asset_texture_snapshot(addr, sizeBytes)) {
+        return state;
+    }
 
     if ((addr == sInvalidTextureBuf) || (addr == sInvalidPaletteBuf)) {
         return state;
@@ -919,6 +948,56 @@ static inline uint16_t gfx_read_texture_source_be16(const uint8_t* addr, uint32_
     uint16_t lo = gfx_read_texture_source_u8(addr, offset + 1, swapState);
 
     return (hi << 8) | lo;
+}
+
+static const uint8_t* gfx_ps2_snapshot_loaded_asset_texture(const uint8_t* addr, uint32_t sizeBytes) {
+    if (addr == NULL || sizeBytes == 0 || sizeBytes > GFX_PS2_ASSET_SNAPSHOT_SIZE ||
+        addr == sInvalidTextureBuf || gfx_ps2_is_asset_texture_snapshot(addr, sizeBytes)) {
+        return addr;
+    }
+
+    const uint32_t serial = OotPort_GetExternalAssetRangeSerial(addr, sizeBytes);
+    if (serial == 0) {
+        return addr;
+    }
+
+    const uint8_t* normalized = addr;
+    if (!gfx_normalize_texture_source(&normalized, sizeBytes)) {
+        return addr;
+    }
+
+    GfxPs2AssetTextureSnapshot* oldest = NULL;
+    for (size_t i = 0; i < GFX_PS2_ASSET_SNAPSHOT_COUNT; ++i) {
+        GfxPs2AssetTextureSnapshot* snapshot = &sGfxPs2AssetTextureSnapshots[i];
+        if (snapshot->valid && snapshot->source == normalized && snapshot->sourceSize == sizeBytes &&
+            snapshot->assetSerial == serial) {
+            snapshot->lastUseFrame = sTextureCacheFrameSerial;
+            return snapshot->pixels;
+        }
+        if (!snapshot->valid) {
+            oldest = snapshot;
+            break;
+        }
+        if (snapshot->lastUseFrame != sTextureCacheFrameSerial &&
+            (oldest == NULL || (oldest->valid && snapshot->lastUseFrame < oldest->lastUseFrame))) {
+            oldest = snapshot;
+        }
+    }
+    if (oldest == NULL) {
+        return addr;
+    }
+
+    GfxTextureSwapState state = gfx_texture_source_swap_state(normalized, sizeBytes);
+    oldest->valid = false;
+    for (uint32_t i = 0; i < sizeBytes; ++i) {
+        oldest->pixels[i] = gfx_read_texture_source_u8(normalized, i, &state);
+    }
+    oldest->source = normalized;
+    oldest->sourceSize = sizeBytes;
+    oldest->assetSerial = serial;
+    oldest->lastUseFrame = sTextureCacheFrameSerial;
+    oldest->valid = true;
+    return oldest->pixels;
 }
 
 typedef struct FastVertex {
@@ -5752,7 +5831,8 @@ static void gfx_dp_load_block(uint8_t tile, uint32_t uls, uint32_t ult, uint32_t
     rdp.loaded_texture[loadSlot].row_stride_bytes = ps2RowBytes;
     rdp.loaded_texture[loadSlot].source_nibble_offset = 0;
 
-    rdp.loaded_texture[loadSlot].addr = rdp.texture_to_load.addr;
+    rdp.loaded_texture[loadSlot].addr =
+        gfx_ps2_snapshot_loaded_asset_texture(rdp.texture_to_load.addr, size_bytes);
 
     if (!sameFrameLoad) {
         rdp.textures_changed[loadSlot] = true;
@@ -5809,7 +5889,8 @@ static void gfx_dp_load_tile(uint8_t tile, uint32_t uls, uint32_t ult, uint32_t 
     rdp.loaded_texture[loadSlot].load_row_bytes = row_bytes;
     rdp.loaded_texture[loadSlot].source_nibble_offset = sourceNibbleOffset;
 
-    rdp.loaded_texture[loadSlot].addr = source_addr;
+    rdp.loaded_texture[loadSlot].addr =
+        gfx_ps2_snapshot_loaded_asset_texture(source_addr, source_size_bytes);
     gfx_get_texture_tile(loadSlot)->uls = uls;
     gfx_get_texture_tile(loadSlot)->ult = ult;
     gfx_get_texture_tile(loadSlot)->lrs = lrs;
@@ -6427,6 +6508,27 @@ static void gfx_draw_rectangle(int32_t ulx, int32_t uly, int32_t lrx, int32_t lr
     }
 }
 
+static uint8_t sWoodenTextboxPixels[128 * 64];
+
+static bool gfx_ps2_decode_wooden_textbox(int tile) {
+    if (rdp.loaded_texture[tile].addr == NULL || gfx_texture_import_width(tile) < 128 ||
+        gfx_texture_import_height(tile) < 64) {
+        return false;
+    }
+    const uint32_t rowBytes = gfx_texture_row_bytes(128 + rdp.loaded_texture[tile].source_nibble_offset,
+                                                    G_IM_SIZ_4b);
+    GfxTextureSwapState swapState =
+        gfx_texture_source_swap_state(rdp.loaded_texture[tile].addr, gfx_texture_source_span_size(tile));
+    for (uint32_t y = 0; y < 64; ++y) {
+        const uint8_t* row = gfx_texture_row(tile, y, rowBytes);
+        for (uint32_t x = 0; x < 128; ++x) {
+            sWoodenTextboxPixels[y * 128 + x] = gfx_texture_read_4b(tile, x, row, &swapState);
+        }
+    }
+    gfx_ps2_set_wooden_textbox_pixels(sWoodenTextboxPixels);
+    return true;
+}
+
 static void gfx_dp_texture_rectangle(int32_t ulx, int32_t uly, int32_t lrx, int32_t lry, uint8_t tile, int16_t uls,
                                      int16_t ult, int16_t dsdx, int16_t dtdy, bool flip) {
     _UNUSED(tile);
@@ -6487,10 +6589,15 @@ static void gfx_dp_texture_rectangle(int32_t ulx, int32_t uly, int32_t lrx, int3
         lr->u = lrs;
         lr->v = lrt;
         const TextureTileState* rectangleTile = gfx_get_texture_tile(0);
-        const bool textbox = !flip && rectangleTile->fmt == G_IM_FMT_I &&
-                             rectangleTile->siz == G_IM_SIZ_4b && (rectangleTile->cms & G_TX_MIRROR) &&
-                             rectangleTile->masks == 7 && rectangleTile->maskt == 0 && width >= 640 && height >= 120;
-        gfx_ps2_set_textbox_pass(textbox);
+        const bool textboxRectangle = !flip && rectangleTile->siz == G_IM_SIZ_4b &&
+                                      (rectangleTile->cms & G_TX_MIRROR) && rectangleTile->masks == 7 &&
+                                      rectangleTile->maskt == 0 && width >= 640 && height >= 120;
+        const bool woodenTextbox = textboxRectangle && rectangleTile->fmt == G_IM_FMT_IA &&
+                                   (rectangleTile->cmt & G_TX_MIRROR) && rdp.env_color.r == 50 &&
+                                   rdp.env_color.g == 20 && rdp.env_color.b == 0;
+        const int textboxMode = woodenTextbox && gfx_ps2_decode_wooden_textbox(0) ? 2 :
+                                (textboxRectangle && rectangleTile->fmt == G_IM_FMT_I ? 1 : 0);
+        gfx_ps2_set_textbox_pass(textboxMode);
         gfx_draw_rectangle(ulx, uly, lrx, lry, false, false);
         gfx_ps2_set_textbox_pass(false);
     }
