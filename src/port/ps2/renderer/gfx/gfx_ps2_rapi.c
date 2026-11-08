@@ -3773,9 +3773,11 @@ static void gfx_ps2_render_controller_mapping(int selectedIndex, const char* sta
     int bindingCount = OotPortControls_GetBindingCount();
     int deadzoneRow = bindingCount;
     int n64StickScalingRow = bindingCount + 1;
-    int saveRow = bindingCount + 2;
-    int resetRow = bindingCount + 3;
-    int backRow = bindingCount + 4;
+    int invertCameraXRow = bindingCount + 2;
+    int invertCameraYRow = bindingCount + 3;
+    int saveRow = bindingCount + 4;
+    int resetRow = bindingCount + 5;
+    int backRow = bindingCount + 6;
     int totalRows = backRow + 1;
     int visibleRows = 7;
     int firstRow = selectedIndex - (visibleRows / 2);
@@ -3813,6 +3815,12 @@ static void gfx_ps2_render_controller_mapping(int selectedIndex, const char* sta
         } else if (row == n64StickScalingRow) {
             snprintf(line, sizeof(line), "N64 Stick Scaling: %s",
                      OotPortControls_IsN64StickScalingEnabled() ? "On" : "Off");
+        } else if (row == invertCameraXRow) {
+            snprintf(line, sizeof(line), "Invert Camera X: %s",
+                     OotPortControls_IsCameraInvertXEnabled() ? "On" : "Off");
+        } else if (row == invertCameraYRow) {
+            snprintf(line, sizeof(line), "Invert Camera Y: %s",
+                     OotPortControls_IsCameraInvertYEnabled() ? "On" : "Off");
         } else if (row == saveRow) {
             snprintf(line, sizeof(line), "Save controls.ini");
         } else if (row == resetRow) {

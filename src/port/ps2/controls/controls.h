@@ -28,4 +28,10 @@ void OotPortControls_AdjustDeadzone(int delta);
 int OotPortControls_IsN64StickScalingEnabled(void);
 void OotPortControls_SetN64StickScalingEnabled(int enabled);
 
+int OotPortControls_IsCameraInvertXEnabled(void);
+int OotPortControls_IsCameraInvertYEnabled(void);
+void OotPortControls_SetCameraInvertX(int enabled);
+void OotPortControls_SetCameraInvertY(int enabled);
+void OotPortControls_ApplyCameraInvert(int* x, int* y);
+
 #endif

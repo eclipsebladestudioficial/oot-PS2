@@ -56,6 +56,8 @@ static const N64Action sN64Actions[] = {
 };
 
 static int sDeadzone;
+static int sCameraInvertX;
+static int sCameraInvertY;
 static int sInitialized;
 
 static int OotPortControls_StrIcmp(const char* a, const char* b) {
@@ -180,6 +182,8 @@ void OotPortControls_InitDefaults(void) {
     }
 
     sDeadzone = 0;
+    sCameraInvertX = 0;
+    sCameraInvertY = 0;
     sInitialized = true;
 }
 
@@ -271,6 +275,10 @@ s32 OotPortControls_Load(void) {
             }
         } else if (section == 2 && OotPortControls_StrIcmp(key, "deadzone") == 0) {
             OotPortControls_SetDeadzone(atoi(value));
+        } else if (section == 2 && OotPortControls_StrIcmp(key, "invert_camera_x") == 0) {
+            sCameraInvertX = atoi(value) != 0;
+        } else if (section == 2 && OotPortControls_StrIcmp(key, "invert_camera_y") == 0) {
+            sCameraInvertY = atoi(value) != 0;
         }
     }
 
@@ -306,6 +314,8 @@ s32 OotPortControls_Save(void) {
 
     OOT_PS2_CONTROLS_APPEND("\n[analog]\n");
     OOT_PS2_CONTROLS_APPEND("deadzone = %d\n", sDeadzone);
+    OOT_PS2_CONTROLS_APPEND("invert_camera_x = %d\n", sCameraInvertX);
+    OOT_PS2_CONTROLS_APPEND("invert_camera_y = %d\n", sCameraInvertY);
 
 #undef OOT_PS2_CONTROLS_APPEND
 
@@ -440,4 +450,35 @@ int OotPortControls_IsN64StickScalingEnabled(void) {
 
 void OotPortControls_SetN64StickScalingEnabled(int enabled) {
     //sN64StickScalingEnabled = enabled != 0;
+}
+
+int OotPortControls_IsCameraInvertXEnabled(void) {
+    OotPortControls_EnsureInitialized();
+    return sCameraInvertX;
+}
+
+int OotPortControls_IsCameraInvertYEnabled(void) {
+    OotPortControls_EnsureInitialized();
+    return sCameraInvertY;
+}
+
+void OotPortControls_SetCameraInvertX(int enabled) {
+    OotPortControls_EnsureInitialized();
+    sCameraInvertX = enabled != 0;
+}
+
+void OotPortControls_SetCameraInvertY(int enabled) {
+    OotPortControls_EnsureInitialized();
+    sCameraInvertY = enabled != 0;
+}
+
+void OotPortControls_ApplyCameraInvert(int* x, int* y) {
+    OotPortControls_EnsureInitialized();
+
+    if ((x != NULL) && sCameraInvertX) {
+        *x = -*x;
+    }
+    if ((y != NULL) && sCameraInvertY) {
+        *y = -*y;
+    }
 }
