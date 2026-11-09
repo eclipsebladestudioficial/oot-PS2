@@ -6323,10 +6323,8 @@ static GFX_DL_HANDLER void gfx_dp_set_combine(uint32_t w0, uint32_t w1) {
     }
 
     if (((rdp.other_mode_h & (3U << G_MDSFT_CYCLETYPE)) == G_CYC_2CYCLE) &&
-        (gfx_cc_is_two_i4_env_prim_tint(rgbA0, rgbB0, rgbC0, rgbD0, alphaA0, alphaB0, alphaC0, alphaD0, rgbA1, rgbB1,
-                                        rgbC1, rgbD1, alphaA1, alphaB1, alphaC1, alphaD1) ||
-         gfx_cc_is_two_cycle_texture_blend_mul_shade(rgbA0, rgbB0, rgbC0, rgbD0, rgbA1, rgbB1, rgbC1, rgbD1,
-                                                     G_CCMUX_ENV_ALPHA))) {
+        gfx_cc_is_two_i4_env_prim_tint(rgbA0, rgbB0, rgbC0, rgbD0, alphaA0, alphaB0, alphaC0, alphaD0, rgbA1, rgbB1,
+                                       rgbC1, rgbD1, alphaA1, alphaB1, alphaC1, alphaD1)) {
         twoIntensityEnvPrimPrecombine = true;
     }
 
