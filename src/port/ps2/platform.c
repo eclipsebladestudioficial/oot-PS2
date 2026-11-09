@@ -392,34 +392,12 @@ s32 Pad_Read(PadState* out) {
     if (buttons & PAD_R3) out->buttons |= OOT_PS2_BUTTON_R3;
 
     if ((sPadStatus.mode & 0xf0) == 0x70) {
-        s32 lx = (s32)sPadStatus.ljoy_h - 128;
-        s32 ly = (s32)sPadStatus.ljoy_v - 128;
-        const s32 leftDeadzone = 48;
         s32 rx;
         s32 ry;
         const s32 rightDeadzone = 24;
-        s32 ax = lx < 0 ? -lx : lx;
-        s32 ay = ly < 0 ? -ly : ly;
-        s32 approxMag = (ax > ay ? ax : ay) + ((ax > ay ? ay : ax) >> 1);
 
-        if (approxMag <= leftDeadzone) {
-            lx = 0;
-            ly = 0;
-        } else {
-            s32 cappedMag = approxMag > 127 ? 127 : approxMag;
-            s32 scaleNum = (cappedMag - leftDeadzone) * 127;
-            s32 scaleDen = (127 - leftDeadzone) * cappedMag;
-            if (scaleDen > 0) {
-                lx = (lx * scaleNum) / scaleDen;
-                ly = (ly * scaleNum) / scaleDen;
-            }
-        }
-        if (lx < -127) lx = -127;
-        if (lx > 127) lx = 127;
-        if (ly < -127) ly = -127;
-        if (ly > 127) ly = 127;
-        out->lx = (u8)(128 + lx);
-        out->ly = (u8)(128 + ly);
+        out->lx = sPadStatus.ljoy_h;
+        out->ly = sPadStatus.ljoy_v;
 
         rx = (s32)sPadStatus.rjoy_h - 128;
         ry = 128 - (s32)sPadStatus.rjoy_v;
