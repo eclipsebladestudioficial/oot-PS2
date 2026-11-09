@@ -912,7 +912,12 @@ s32 EnRu1_IsPlayerInRangeForFirstEncounter(EnRu1* this, PlayState* play) {
     f32 thisPosZ = this->actor.world.pos.z;
     f32 playerPosZ = player->actor.world.pos.z;
 
+#if defined(TARGET_PS2)
+    if ((playerPosZ - thisPosZ <= 265.0f) &&
+        (player->actor.world.pos.y + 0.5f >= this->actor.world.pos.y)) {
+#else
     if ((playerPosZ - thisPosZ <= 265.0f) && (player->actor.world.pos.y >= this->actor.world.pos.y)) {
+#endif
         return true;
     }
     return false;
