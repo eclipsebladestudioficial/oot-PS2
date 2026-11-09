@@ -7,6 +7,8 @@
 #include "controller.h"
 
 #define OOT_PS2_CONTROLS_INI_BUFFER_SIZE 4096
+#define OOT_PS2_CONTROLS_SAVE_DIR "mc0:/OOTPS2"
+#define OOT_PS2_CONTROLS_SAVE_PATH "mc0:/OOTPS2/controls.ini"
 
 typedef struct ButtonBinding {
     const char* iniName;
@@ -112,10 +114,6 @@ static int OotPortControls_ClampDeadzone(int deadzone) {
     return deadzone;
 }
 
-static const char* OotPortControls_Path(char* buffer, size_t bufferSize) {
-    return OotPort_ResolveRootPath(OOT_PORT_CONTROLS_INI_PATH, buffer, bufferSize);
-}
-
 static int OotPortControls_FindBinding(const char* name) {
     int i;
 
@@ -192,7 +190,7 @@ void OotPortControls_ResetDefaults(void) {
 }
 
 s32 OotPortControls_Load(void) {
-    char pathBuffer[384];
+    char fallbackPathBuffer[384];
     char iniBuffer[OOT_PS2_CONTROLS_INI_BUFFER_SIZE];
     const char* path;
     Handle fd;
@@ -203,13 +201,18 @@ s32 OotPortControls_Load(void) {
 
     OotPortControls_InitDefaults();
 
-    path = OotPortControls_Path(pathBuffer, sizeof(pathBuffer));
+    path = OOT_PS2_CONTROLS_SAVE_PATH;
     fd = File_Open(path, OOT_PS2_FILE_RDONLY, 0);
     if (fd < 0) {
-        if (OotPort_IsDiscBoot()) {
-            return 0;
+        path = OotPort_ResolveRootPath(OOT_PORT_CONTROLS_INI_PATH, fallbackPathBuffer,
+                                       sizeof(fallbackPathBuffer));
+        fd = File_Open(path, OOT_PS2_FILE_RDONLY, 0);
+        if (fd < 0) {
+            if (OotPort_IsDiscBoot()) {
+                return 0;
+            }
+            return OotPortControls_Save();
         }
-        return OotPortControls_Save();
     }
 
     readSize = File_Read(fd, iniBuffer, sizeof(iniBuffer) - 1);
@@ -286,7 +289,7 @@ s32 OotPortControls_Load(void) {
 }
 
 s32 OotPortControls_Save(void) {
-    char pathBuffer[384];
+    char fallbackPathBuffer[384];
     char iniBuffer[OOT_PS2_CONTROLS_INI_BUFFER_SIZE];
     char valueBuffer[96];
     const char* path;
@@ -319,12 +322,23 @@ s32 OotPortControls_Save(void) {
 
 #undef OOT_PS2_CONTROLS_APPEND
 
-    path = OotPortControls_Path(pathBuffer, sizeof(pathBuffer));
+    File_Mkdir(OOT_PS2_CONTROLS_SAVE_DIR, 0777);
+    path = OOT_PS2_CONTROLS_SAVE_PATH;
+    fd = File_Open(path, OOT_PS2_FILE_WRONLY | OOT_PS2_FILE_CREAT | OOT_PS2_FILE_TRUNC, 0777);
+    if (fd >= 0) {
+        written = File_Write(fd, iniBuffer, offset);
+        File_Close(fd);
+        if (written == offset) {
+            return 0;
+        }
+    }
+
+    File_Remove(OOT_PS2_CONTROLS_SAVE_PATH);
+    path = OotPort_ResolveRootPath(OOT_PORT_CONTROLS_INI_PATH, fallbackPathBuffer, sizeof(fallbackPathBuffer));
     fd = File_Open(path, OOT_PS2_FILE_WRONLY | OOT_PS2_FILE_CREAT | OOT_PS2_FILE_TRUNC, 0777);
     if (fd < 0) {
         return fd;
     }
-
     written = File_Write(fd, iniBuffer, offset);
     File_Close(fd);
     return written == offset ? 0 : -1;

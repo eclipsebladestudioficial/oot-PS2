@@ -7,6 +7,8 @@
 
 #define OOT_PS2_VIDEO_INI_BUFFER_SIZE 512
 #define OOT_PS2_VIDEO_PATH_CAPACITY 384
+#define OOT_PS2_VIDEO_SAVE_DIR "mc0:/OOTPS2"
+#define OOT_PS2_VIDEO_SAVE_PATH "mc0:/OOTPS2/video.ini"
 
 static VideoOutput sOotPs2VideoOutput;
 static VideoResolution sOotPs2VideoResolution;
@@ -15,6 +17,7 @@ static VideoOutput sOotPs2VideoActiveOutput;
 static VideoResolution sOotPs2VideoActiveResolution;
 static VideoAspect sOotPs2VideoActiveAspect;
 static char sOotPs2VideoPath[OOT_PS2_VIDEO_PATH_CAPACITY];
+static char sOotPs2VideoFallbackPath[OOT_PS2_VIDEO_PATH_CAPACITY];
 
 int Dve_GetModel() { return -1; };
 int Dve_IsAvailable() { return -1; };
@@ -78,7 +81,8 @@ static void Video_BuildPath(const char* executablePath) {
     size_t rootLength;
     size_t suffixLength = sizeof(OOT_PS2_VIDEO_INI_PATH);
 
-    sOotPs2VideoPath[0] = '\0';
+    memcpy(sOotPs2VideoPath, OOT_PS2_VIDEO_SAVE_PATH, sizeof(OOT_PS2_VIDEO_SAVE_PATH));
+    sOotPs2VideoFallbackPath[0] = '\0';
     if ((executablePath == NULL) || (executablePath[0] == '\0')) {
         return;
     }
@@ -90,14 +94,14 @@ static void Video_BuildPath(const char* executablePath) {
     }
 
     rootLength = (slash != NULL) ? (size_t)(slash - executablePath) + 1 : 0;
-    if ((rootLength + suffixLength) > sizeof(sOotPs2VideoPath)) {
+    if ((rootLength + suffixLength) > sizeof(sOotPs2VideoFallbackPath)) {
         return;
     }
 
     if (rootLength != 0) {
-        memcpy(sOotPs2VideoPath, executablePath, rootLength);
+        memcpy(sOotPs2VideoFallbackPath, executablePath, rootLength);
     }
-    memcpy(sOotPs2VideoPath + rootLength, OOT_PS2_VIDEO_INI_PATH, suffixLength);
+    memcpy(sOotPs2VideoFallbackPath + rootLength, OOT_PS2_VIDEO_INI_PATH, suffixLength);
 }
 
 void Video_ResetDefaults(void) {
@@ -130,7 +134,13 @@ void Video_Init(const char* executablePath) {
 
     fd = File_Open(sOotPs2VideoPath, OOT_PS2_FILE_RDONLY, 0);
     if (fd < 0) {
-        return;
+        if (sOotPs2VideoFallbackPath[0] == '\0') {
+            return;
+        }
+        fd = File_Open(sOotPs2VideoFallbackPath, OOT_PS2_FILE_RDONLY, 0);
+        if (fd < 0) {
+            return;
+        }
     }
     readSize = File_Read(fd, buffer, sizeof(buffer) - 1);
     File_Close(fd);
@@ -208,7 +218,21 @@ int Video_Save(void) {
         return -1;
     }
 
+    File_Mkdir(OOT_PS2_VIDEO_SAVE_DIR, 0777);
     fd = File_Open(sOotPs2VideoPath, OOT_PS2_FILE_WRONLY | OOT_PS2_FILE_CREAT | OOT_PS2_FILE_TRUNC, 0777);
+    if (fd >= 0) {
+        written = File_Write(fd, buffer, length);
+        File_Close(fd);
+        if (written == length) {
+            return 0;
+        }
+    }
+
+    File_Remove(OOT_PS2_VIDEO_SAVE_PATH);
+    if (sOotPs2VideoFallbackPath[0] == '\0') {
+        return -1;
+    }
+    fd = File_Open(sOotPs2VideoFallbackPath, OOT_PS2_FILE_WRONLY | OOT_PS2_FILE_CREAT | OOT_PS2_FILE_TRUNC, 0777);
     if (fd < 0) {
         return fd;
     }
