@@ -91,20 +91,28 @@ static int HomeMenu_ControlN64StickScalingRow(void) {
     return OotPortControls_GetBindingCount() + 1;
 }
 
-static int HomeMenu_ControlSaveRow(void) {
+static int HomeMenu_ControlInvertCameraXRow(void) {
     return OotPortControls_GetBindingCount() + 2;
 }
 
-static int HomeMenu_ControlResetRow(void) {
+static int HomeMenu_ControlInvertCameraYRow(void) {
     return OotPortControls_GetBindingCount() + 3;
 }
 
-static int HomeMenu_ControlBackRow(void) {
+static int HomeMenu_ControlSaveRow(void) {
     return OotPortControls_GetBindingCount() + 4;
 }
 
-static int HomeMenu_ControlRowCount(void) {
+static int HomeMenu_ControlResetRow(void) {
     return OotPortControls_GetBindingCount() + 5;
+}
+
+static int HomeMenu_ControlBackRow(void) {
+    return OotPortControls_GetBindingCount() + 6;
+}
+
+static int HomeMenu_ControlRowCount(void) {
+    return OotPortControls_GetBindingCount() + 7;
 }
 
 static void HomeMenu_SetStatus(const char* message) {
@@ -132,6 +140,10 @@ static void HomeMenu_AdjustControlRow(int direction) {
         OotPortControls_AdjustDeadzone(direction * 2);
     } else if (sControlSelectedIndex == HomeMenu_ControlN64StickScalingRow()) {
         OotPortControls_SetN64StickScalingEnabled(!OotPortControls_IsN64StickScalingEnabled());
+    } else if (sControlSelectedIndex == HomeMenu_ControlInvertCameraXRow()) {
+        OotPortControls_SetCameraInvertX(!OotPortControls_IsCameraInvertXEnabled());
+    } else if (sControlSelectedIndex == HomeMenu_ControlInvertCameraYRow()) {
+        OotPortControls_SetCameraInvertY(!OotPortControls_IsCameraInvertYEnabled());
     }
 }
 
@@ -142,6 +154,10 @@ static void HomeMenu_ActivateControlRow(void) {
         OotPortControls_AdjustDeadzone(2);
     } else if (sControlSelectedIndex == HomeMenu_ControlN64StickScalingRow()) {
         OotPortControls_SetN64StickScalingEnabled(!OotPortControls_IsN64StickScalingEnabled());
+    } else if (sControlSelectedIndex == HomeMenu_ControlInvertCameraXRow()) {
+        OotPortControls_SetCameraInvertX(!OotPortControls_IsCameraInvertXEnabled());
+    } else if (sControlSelectedIndex == HomeMenu_ControlInvertCameraYRow()) {
+        OotPortControls_SetCameraInvertY(!OotPortControls_IsCameraInvertYEnabled());
     } else if (sControlSelectedIndex == HomeMenu_ControlSaveRow()) {
         if (OotPortControls_Save() == 0) {
             HomeMenu_SetStatus("Saved controls.ini");
