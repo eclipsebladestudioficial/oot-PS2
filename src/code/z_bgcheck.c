@@ -440,12 +440,37 @@ s32 CollisionPoly_LineVsPoly(CollisionPoly* poly, Vec3s* vtxList, Vec3f* posA, V
     f32 planeDistDelta;
 
     plane.originDist = poly->dist;
-    planeDistA =
-        (poly->normal.x * posA->x + poly->normal.y * posA->y + poly->normal.z * posA->z) * COLPOLY_NORMAL_FRAC +
-        plane.originDist;
-    planeDistB =
-        (poly->normal.x * posB->x + poly->normal.y * posB->y + poly->normal.z * posB->z) * COLPOLY_NORMAL_FRAC +
-        plane.originDist;
+#if defined(TARGET_PS2)
+    if ((poly->normal.y == 0) && (poly->normal.z == 0) &&
+        ((poly->normal.x == SHT_MAX) || (poly->normal.x == -SHT_MAX))) {
+        f32 n = (poly->normal.x == SHT_MAX) ? 1.0f : -1.0f;
+
+        planeDistA = n * posA->x + plane.originDist;
+        planeDistB = n * posB->x + plane.originDist;
+    } else if ((poly->normal.x == 0) && (poly->normal.z == 0) &&
+               ((poly->normal.y == SHT_MAX) || (poly->normal.y == -SHT_MAX))) {
+        f32 n = (poly->normal.y == SHT_MAX) ? 1.0f : -1.0f;
+
+        planeDistA = n * posA->y + plane.originDist;
+        planeDistB = n * posB->y + plane.originDist;
+    } else if ((poly->normal.x == 0) && (poly->normal.y == 0) &&
+               ((poly->normal.z == SHT_MAX) || (poly->normal.z == -SHT_MAX))) {
+        f32 n = (poly->normal.z == SHT_MAX) ? 1.0f : -1.0f;
+
+        planeDistA = n * posA->z + plane.originDist;
+        planeDistB = n * posB->z + plane.originDist;
+    } else
+#endif
+    {
+        planeDistA =
+            (poly->normal.x * posA->x + poly->normal.y * posA->y + poly->normal.z * posA->z) *
+                COLPOLY_NORMAL_FRAC +
+            plane.originDist;
+        planeDistB =
+            (poly->normal.x * posB->x + poly->normal.y * posB->y + poly->normal.z * posB->z) *
+                COLPOLY_NORMAL_FRAC +
+            plane.originDist;
+    }
 
     planeDistDelta = planeDistA - planeDistB;
     if ((planeDistA >= 0.0f && planeDistB >= 0.0f) || (planeDistA < 0.0f && planeDistB < 0.0f) ||
