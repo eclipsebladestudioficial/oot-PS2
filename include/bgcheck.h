@@ -33,7 +33,20 @@ typedef struct ScaleRotPos {
 
 #define COLPOLY_NORMAL_FRAC (1.0f / SHT_MAX)
 #define COLPOLY_SNORMAL(x) ((s16)((x) * SHT_MAX))
+#if defined(TARGET_PS2)
+static inline f32 BgCheck_NormalToFloat(s16 normal) {
+    if (normal == SHT_MAX) {
+        return 1.0f;
+    }
+    if (normal == -SHT_MAX) {
+        return -1.0f;
+    }
+    return normal * COLPOLY_NORMAL_FRAC;
+}
+#define COLPOLY_GET_NORMAL(n) BgCheck_NormalToFloat(n)
+#else
 #define COLPOLY_GET_NORMAL(n) ((n)*COLPOLY_NORMAL_FRAC)
+#endif
 #define COLPOLY_VTX_CHECK_FLAGS_ANY(vI, flags) ((vI) & (((flags) & 7) << 13))
 #define COLPOLY_VTX_FLAGS_MASKED(vI) ((vI) & 0xE000)
 #define COLPOLY_VTX_INDEX(vI) ((vI) & 0x1FFF)
