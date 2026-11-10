@@ -13,6 +13,7 @@
 static VideoOutput sOotPs2VideoOutput;
 static VideoResolution sOotPs2VideoResolution;
 static VideoAspect sOotPs2VideoAspect;
+static int sOotPs2VideoVsync;
 static VideoOutput sOotPs2VideoActiveOutput;
 static VideoResolution sOotPs2VideoActiveResolution;
 static VideoAspect sOotPs2VideoActiveAspect;
@@ -31,9 +32,12 @@ int Video_Save(void);
 void Video_CycleOutput(int direction);
 void Video_CycleResolution(int direction);
 void Video_CycleAspect(int direction);
+void Video_ToggleVsync(void);
 const char* Video_GetOutputName(void);
 const char* Video_GetResolutionName(void);
 const char* Video_GetAspectName(void);
+const char* Video_GetVsyncName(void);
+int Video_IsVsyncEnabled(void);
 void Video_GetMode(VideoMode* mode);
 void Video_GetActiveMode(VideoMode* mode);
 
@@ -108,6 +112,7 @@ void Video_ResetDefaults(void) {
     sOotPs2VideoOutput = OOT_PS2_VIDEO_OUTPUT_INTERLACED;
     sOotPs2VideoResolution = OOT_PS2_VIDEO_RESOLUTION_480I; // 480P
     sOotPs2VideoAspect = OOT_PS2_VIDEO_ASPECT_4_3; // 16_9
+    sOotPs2VideoVsync = 1;
 }
 void Video_ForceLcd(void) {
     sOotPs2VideoOutput = OOT_PS2_VIDEO_OUTPUT_PROGRESSIVE;
@@ -188,6 +193,11 @@ void Video_Init(const char* executablePath) {
         } else if (Video_StrIcmp(key, "aspect") == 0) {
             sOotPs2VideoAspect = (Video_StrIcmp(value, "4:3") == 0) ? OOT_PS2_VIDEO_ASPECT_4_3
                                                                           : OOT_PS2_VIDEO_ASPECT_16_9;
+        } else if (Video_StrIcmp(key, "vsync") == 0) {
+            sOotPs2VideoVsync = !((Video_StrIcmp(value, "off") == 0) ||
+                                   (Video_StrIcmp(value, "false") == 0) ||
+                                   (Video_StrIcmp(value, "disabled") == 0) ||
+                                   (strcmp(value, "0") == 0));
         }
     }
 
@@ -211,9 +221,10 @@ int Video_Save(void) {
     resolutionName = (sOotPs2VideoResolution == OOT_PS2_VIDEO_RESOLUTION_480I)
                          ? "480i"
                          : ((sOotPs2VideoResolution == OOT_PS2_VIDEO_RESOLUTION_480P) ? "480P" : "null");
-    length = snprintf(buffer, sizeof(buffer), "[video]\noutput = %s\nresolution = %s\naspect = %s\n",
+    length = snprintf(buffer, sizeof(buffer), "[video]\noutput = %s\nresolution = %s\naspect = %s\nvsync = %s\n",
                       (sOotPs2VideoOutput == OOT_PS2_VIDEO_OUTPUT_PROGRESSIVE) ? "progressive" : "interlaced", resolutionName,
-                      (sOotPs2VideoAspect == OOT_PS2_VIDEO_ASPECT_4_3) ? "4:3" : "16:9");
+                      (sOotPs2VideoAspect == OOT_PS2_VIDEO_ASPECT_4_3) ? "4:3" : "16:9",
+                      sOotPs2VideoVsync ? "on" : "off");
     if ((length < 0) || ((size_t)length >= sizeof(buffer))) {
         return -1;
     }
@@ -273,6 +284,9 @@ void Video_CycleAspect(int direction) {
     sOotPs2VideoAspect = (sOotPs2VideoAspect == OOT_PS2_VIDEO_ASPECT_4_3) ? OOT_PS2_VIDEO_ASPECT_16_9
                                                                           : OOT_PS2_VIDEO_ASPECT_4_3;
 }
+void Video_ToggleVsync(void) {
+    sOotPs2VideoVsync = !sOotPs2VideoVsync;
+}
 const char* Video_GetOutputName(void) {
     return (sOotPs2VideoOutput == OOT_PS2_VIDEO_OUTPUT_PROGRESSIVE) ? "Progressive" : "Interlaced";
 }
@@ -291,6 +305,12 @@ const char* Video_GetAspectName(void) {
         return "4:3 (fixed)";
     }
     return (sOotPs2VideoAspect == OOT_PS2_VIDEO_ASPECT_4_3) ? "4:3" : "16:9";
+}
+const char* Video_GetVsyncName(void) {
+    return sOotPs2VideoVsync ? "On" : "Off";
+}
+int Video_IsVsyncEnabled(void) {
+    return sOotPs2VideoVsync;
 }
 static void Video_ResolveMode(VideoOutput output, VideoResolution resolution,
                                     VideoAspect aspect, VideoMode* mode) {

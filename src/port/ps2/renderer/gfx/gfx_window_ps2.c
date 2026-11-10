@@ -16,6 +16,7 @@
 
 #include "gfx_window_ps2.h"
 #include "platform.h"
+#include "renderer/video.h"
 
 #define WINDOW_WIDTH 640
 #define WINDOW_HEIGHT 448
@@ -771,6 +772,10 @@ static bool GfxWindow_StartFrame(void) {
         int nextDraw = completed;
 
         __real_gsKit_finish();
+
+        if (Video_IsVsyncEnabled()) {
+            gsKit_vsync_wait();
+        }
 
         sDisplayedBufferIndex = completed;
         sDisplayedFrameValid = true;
