@@ -2149,6 +2149,27 @@ s32 Camera_Normal3(Camera* camera) {
         rwData->yawTimer--;
     }
 
+#if defined(TARGET_PS2)
+    {
+        int camStickX = 0;
+        int camStickY = 0;
+
+        _GetRightStick(&camStickX, &camStickY);
+        OotPortControls_ApplyCameraInvert(&camStickX, &camStickY);
+        if ((camStickX != 0) || (camStickY != 0)) {
+            sp84.yaw -= (s16)(camStickX * 8);
+            sp84.pitch += (s16)(camStickY * 5);
+        }
+    }
+
+    if (sp84.pitch > CAM_MAX_PITCH) {
+        sp84.pitch = CAM_MAX_PITCH;
+    }
+    if (sp84.pitch < CAM_MIN_PITCH_1) {
+        sp84.pitch = CAM_MIN_PITCH_1;
+    }
+#endif
+
     *eyeNext = Camera_AddVecGeoToVec3f(at, &sp84);
 
     if (camera->status == CAM_STAT_ACTIVE) {
