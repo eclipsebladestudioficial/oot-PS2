@@ -916,6 +916,16 @@ static GfxTextureSwapState gfx_texture_source_swap_state(const uint8_t* addr, ui
     return state;
 }
 
+static GfxTextureSwapState gfx_palette_source_swap_state(const uint8_t* addr, uint32_t sizeBytes) {
+    GfxTextureSwapState state = gfx_texture_source_swap_state(addr, sizeBytes);
+
+    if ((state.mode == GFX_TEXTURE_SWAP_DIRECT) && OotPort_IsRuntimeByteRange(addr, sizeBytes)) {
+        state.mode = GFX_TEXTURE_SWAP_NONE;
+    }
+
+    return state;
+}
+
 static inline uint8_t gfx_read_texture_source_u8(const uint8_t* addr, uint32_t offset, GfxTextureSwapState* swapState) {
     uintptr_t source = (uintptr_t)addr + offset;
 
@@ -2562,7 +2572,7 @@ static void import_texture_ci4(int tile) {
     GfxTextureSwapState swapState =
         gfx_texture_source_swap_state(rdp.loaded_texture[tile].addr, gfx_texture_source_span_size(tile));
 
-    GfxTextureSwapState paletteSwapState = gfx_texture_source_swap_state(rdp.palette, GFX_CI4_TLUT_SIZE_BYTES);
+    GfxTextureSwapState paletteSwapState = gfx_palette_source_swap_state(rdp.palette, GFX_CI4_TLUT_SIZE_BYTES);
 
     for (uint32_t y = 0; y < height; y++) {
         const uint8_t* row = gfx_texture_row(tile, y, rowBytes);
@@ -2585,7 +2595,7 @@ static const uint16_t* gfx_ps2_ci8_palette_lut(void) {
     static bool valid;
 
     if (!valid || cachedKey != rdp.palette_key || cachedPalette != rdp.palette) {
-        GfxTextureSwapState paletteSwapState = gfx_texture_source_swap_state(rdp.palette, GFX_TLUT_SIZE_BYTES);
+        GfxTextureSwapState paletteSwapState = gfx_palette_source_swap_state(rdp.palette, GFX_TLUT_SIZE_BYTES);
         for (uint32_t i = 0; i < 256U; i++) {
             const uint16_t col16 = gfx_read_texture_source_be16(rdp.palette, i * 2U, &paletteSwapState);
             lut[i] = gfx_rgba16_to_gu5551(col16);
