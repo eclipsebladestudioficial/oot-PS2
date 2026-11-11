@@ -3857,7 +3857,7 @@ static void gfx_ps2_render_video_settings(int selectedIndex, const char* statusM
     home_rect(34, 20, 412, 232, home_rgba(0, 0, 0, 154));
     home_text(HOME_MENU_WIDTH / 2, 48, "Video Settings", 0.82f, home_rgba(255, 255, 245, 255), home_rgba(0, 0, 0, 180),
               true);
-    for (row = 0; row < 7; row++) {
+    for (row = 0; row < 6; row++) {
         int y = 76 + (row * 22);
         unsigned int color = home_rgba(218, 224, 218, 255);
 
@@ -3874,15 +3874,12 @@ static void gfx_ps2_render_video_settings(int selectedIndex, const char* statusM
                 snprintf(line, sizeof(line), "Aspect Ratio: %s", Video_GetAspectName());
                 break;
             case 2:
-                snprintf(line, sizeof(line), "VSync: %s", Video_GetVsyncName());
-                break;
-            case 3:
                 snprintf(line, sizeof(line), "Apply video mode");
                 break;
-            case 4:
+            case 3:
                 snprintf(line, sizeof(line), "Save video.ini");
                 break;
-            case 5:
+            case 4:
                 snprintf(line, sizeof(line), "Reset defaults");
                 break;
             default:

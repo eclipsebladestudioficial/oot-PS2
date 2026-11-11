@@ -21,12 +21,11 @@
 #define OOT_PS2_VIDEO_MENU_ROW_OUTPUT -1
 #define OOT_PS2_VIDEO_MENU_ROW_RESOLUTION 0
 #define OOT_PS2_VIDEO_MENU_ROW_ASPECT 1
-#define OOT_PS2_VIDEO_MENU_ROW_VSYNC 2
-#define OOT_PS2_VIDEO_MENU_ROW_APPLY 3
-#define OOT_PS2_VIDEO_MENU_ROW_SAVE 4
-#define OOT_PS2_VIDEO_MENU_ROW_RESET 5
-#define OOT_PS2_VIDEO_MENU_ROW_BACK 6
-#define OOT_PS2_VIDEO_MENU_ROW_COUNT 7
+#define OOT_PS2_VIDEO_MENU_ROW_APPLY 2
+#define OOT_PS2_VIDEO_MENU_ROW_SAVE 3
+#define OOT_PS2_VIDEO_MENU_ROW_RESET 4
+#define OOT_PS2_VIDEO_MENU_ROW_BACK 5
+#define OOT_PS2_VIDEO_MENU_ROW_COUNT 6
 
 #define OOT_PS2_HOME_MENU_INPUT_LOCKOUT_US 500000
 #define OOT_PS2_HOME_MENU_INPUT_DEBOUNCE_US 150000
@@ -193,13 +192,11 @@ static void HomeMenu_AdjustVideoRow(int direction) {
         Video_CycleResolution(direction);
     } else if (sVideoSelectedIndex == OOT_PS2_VIDEO_MENU_ROW_ASPECT) {
         Video_CycleAspect(direction);
-    } else if (sVideoSelectedIndex == OOT_PS2_VIDEO_MENU_ROW_VSYNC) {
-        Video_ToggleVsync();
     }
 }
 
 static void HomeMenu_ActivateVideoRow(void) {
-    if (sVideoSelectedIndex <= OOT_PS2_VIDEO_MENU_ROW_VSYNC) {
+    if (sVideoSelectedIndex <= OOT_PS2_VIDEO_MENU_ROW_ASPECT) {
         HomeMenu_AdjustVideoRow(1);
     } else if (sVideoSelectedIndex == OOT_PS2_VIDEO_MENU_ROW_APPLY) {
         int result;
