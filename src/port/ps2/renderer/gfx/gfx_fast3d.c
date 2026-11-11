@@ -285,6 +285,7 @@ struct TriPipelineState {
     bool use_texture;
     bool two_texture_blend;
     bool two_texture_blend_uses_prim_lod;
+    bool two_texture_blend_uses_prim_alpha;
     bool two_texture_alpha_blend;
     bool two_texture_env_prim_tint;
     bool texture_blend_reverse;
@@ -385,6 +386,7 @@ static struct RDP {
     bool combine_color_mul_prim;
     bool combine_two_texture_blend;
     bool combine_two_texture_blend_uses_prim_lod;
+    bool combine_two_texture_blend_uses_prim_alpha;
     bool combine_two_texture_alpha_blend;
     bool combine_alpha_mul_env;
     bool combine_two_intensity_env_prim_precombine;
@@ -407,6 +409,14 @@ static struct RDP {
     void* z_buf_address;
     void* color_image_address;
 } rdp __attribute__((aligned(4)));
+
+static inline uint8_t gfx_ps2_two_texture_mix_alpha(const struct TriPipelineState* state) {
+    if (state->two_texture_blend_uses_prim_lod) {
+        return rdp.prim_lod_frac;
+    }
+
+    return state->two_texture_blend_uses_prim_alpha ? rdp.prim_color.a : rdp.env_color.a;
+}
 
 static struct RenderingState {
     struct XYWidthHeight viewport;
@@ -3979,6 +3989,8 @@ static void gfx_prepare_tri_pipeline_state(void) {
     }
     const bool prepared_two_texture_blend_uses_prim_lod =
         prepared_two_texture_blend && rdp.combine_two_texture_blend_uses_prim_lod;
+    const bool prepared_two_texture_blend_uses_prim_alpha =
+        prepared_two_texture_blend && rdp.combine_two_texture_blend_uses_prim_alpha;
     const bool prepared_two_texture_alpha_blend = prepared_two_texture_blend && rdp.combine_two_texture_alpha_blend;
     const bool fallback_single_texture_env_prim_tint =
         rdp.combine_two_texture_blend && rdp.combine_texture_tint_uses_env_alpha && !prepared_two_texture_blend;
@@ -3994,6 +4006,8 @@ static void gfx_prepare_tri_pipeline_state(void) {
         gfx_flush();
     }
     if ((prepared_two_texture_blend_uses_prim_lod != rendering_state.tri_pipeline.two_texture_blend_uses_prim_lod) ||
+        (prepared_two_texture_blend_uses_prim_alpha !=
+         rendering_state.tri_pipeline.two_texture_blend_uses_prim_alpha) ||
         (prepared_two_texture_alpha_blend != rendering_state.tri_pipeline.two_texture_alpha_blend)) {
         gfx_flush();
     }
@@ -4223,6 +4237,7 @@ static void gfx_prepare_tri_pipeline_state(void) {
     state->use_texture = used_textures[0] || used_textures[1];
     state->two_texture_blend = prepared_two_texture_blend;
     state->two_texture_blend_uses_prim_lod = prepared_two_texture_blend_uses_prim_lod;
+    state->two_texture_blend_uses_prim_alpha = prepared_two_texture_blend_uses_prim_alpha;
     state->two_texture_alpha_blend = prepared_two_texture_alpha_blend;
     state->two_texture_env_prim_tint = prepared_two_texture_env_prim_tint;
     state->texture_blend_reverse = rdp.combine_texture_blend_reverse;
@@ -5235,7 +5250,7 @@ static void gfx_sp_triangles_run(uint32_t packed0, uint32_t packed1, uint8_t tri
             if (state->two_texture_blend) {
                 uint8_t baseAlpha;
                 uint8_t overlayAlpha;
-                const uint8_t mixAlpha = state->two_texture_blend_uses_prim_lod ? rdp.prim_lod_frac : rdp.env_color.a;
+                const uint8_t mixAlpha = gfx_ps2_two_texture_mix_alpha(state);
 
                 gfx_two_texture_blend_pass_alphas(out->color.a, mixAlpha, state->two_texture_alpha_blend,
                                                   state->two_texture_uncompensated_alpha, &baseAlpha, &overlayAlpha);
@@ -5249,8 +5264,7 @@ static void gfx_sp_triangles_run(uint32_t packed0, uint32_t packed1, uint8_t tri
                 if (state->two_texture_blend && state->two_texture_alpha_blend) {
                     uint8_t baseAlpha;
                     uint8_t overlayAlpha;
-                    const uint8_t mixAlpha =
-                        state->two_texture_blend_uses_prim_lod ? rdp.prim_lod_frac : rdp.env_color.a;
+                    const uint8_t mixAlpha = gfx_ps2_two_texture_mix_alpha(state);
 
                     gfx_two_texture_blend_pass_alphas(
                         fogColor.a, mixAlpha, true, state->two_texture_uncompensated_alpha, &baseAlpha, &overlayAlpha);
@@ -5399,7 +5413,7 @@ static void gfx_sp_tri1_2d(uint8_t vtx1_idx, uint8_t vtx2_idx, UNUSED uint8_t vt
         }
         if (twoTextureBlend) {
             uint8_t baseAlpha;
-            const uint8_t mixAlpha = state->two_texture_blend_uses_prim_lod ? rdp.prim_lod_frac : rdp.env_color.a;
+            const uint8_t mixAlpha = gfx_ps2_two_texture_mix_alpha(state);
 
             gfx_two_texture_blend_pass_alphas(tri_buf[tri_num_vert].color.a, mixAlpha, state->two_texture_alpha_blend,
                                               state->two_texture_uncompensated_alpha, &baseAlpha,
@@ -6087,7 +6101,8 @@ static bool gfx_cc_is_standalone_heart_tint(uint32_t rgbA0, uint32_t rgbB0, uint
 static void gfx_dp_set_combine_mode(uint32_t rgb, uint32_t alpha, bool color_mul_env, bool color_mul_prim,
                                     bool texture_blend, bool texture_blend_shade, bool texture_blend_reverse,
                                     bool two_texture_blend, bool two_texture_blend_uses_prim_lod,
-                                    bool two_texture_alpha_blend, bool alpha_mul_env,
+                                    bool two_texture_blend_uses_prim_alpha, bool two_texture_alpha_blend,
+                                    bool alpha_mul_env,
                                     bool two_intensity_env_prim_precombine, bool flame_texture_atlas,
                                     bool texture_tint_uses_prim_lod, bool texture_tint_uses_env_alpha,
                                     bool din_fire_tint, bool texture_add_prim) {
@@ -6101,6 +6116,7 @@ static void gfx_dp_set_combine_mode(uint32_t rgb, uint32_t alpha, bool color_mul
         (rdp.combine_texture_blend_reverse == texture_blend_reverse) &&
         (rdp.combine_two_texture_blend == two_texture_blend) &&
         (rdp.combine_two_texture_blend_uses_prim_lod == two_texture_blend_uses_prim_lod) &&
+        (rdp.combine_two_texture_blend_uses_prim_alpha == two_texture_blend_uses_prim_alpha) &&
         (rdp.combine_two_texture_alpha_blend == two_texture_alpha_blend) &&
         (rdp.combine_alpha_mul_env == alpha_mul_env) &&
         (rdp.combine_two_intensity_env_prim_precombine == two_intensity_env_prim_precombine) &&
@@ -6117,6 +6133,7 @@ static void gfx_dp_set_combine_mode(uint32_t rgb, uint32_t alpha, bool color_mul
     rdp.combine_texture_blend_reverse = texture_blend_reverse;
     rdp.combine_two_texture_blend = two_texture_blend;
     rdp.combine_two_texture_blend_uses_prim_lod = two_texture_blend_uses_prim_lod;
+    rdp.combine_two_texture_blend_uses_prim_alpha = two_texture_blend_uses_prim_alpha;
     rdp.combine_two_texture_alpha_blend = two_texture_alpha_blend;
     rdp.combine_alpha_mul_env = alpha_mul_env;
     rdp.combine_two_intensity_env_prim_precombine = two_intensity_env_prim_precombine;
@@ -6157,6 +6174,7 @@ static GFX_DL_HANDLER void gfx_dp_set_combine(uint32_t w0, uint32_t w1) {
     bool textureBlendReverse = false;
     bool twoTextureBlend = false;
     bool twoTextureBlendUsesPrimLod = false;
+    bool twoTextureBlendUsesPrimAlpha = false;
     bool twoTextureAlphaBlend = false;
     bool alphaMulEnv = false;
     bool twoIntensityEnvPrimPrecombine = false;
@@ -6218,9 +6236,12 @@ static GFX_DL_HANDLER void gfx_dp_set_combine(uint32_t w0, uint32_t w1) {
         rgbComb = color_comb(G_CCMUX_TEXEL0, G_CCMUX_0, G_CCMUX_PRIMITIVE, G_CCMUX_0);
     }
     if (gfx_cc_is_two_cycle_texture_blend_passthrough(rgbA0, rgbB0, rgbC0, rgbD0, rgbA1, rgbB1, rgbC1, rgbD1,
-                                                      G_CCMUX_ENV_ALPHA)) {
+                                                      G_CCMUX_ENV_ALPHA) ||
+        gfx_cc_is_two_cycle_texture_blend_passthrough(rgbA0, rgbB0, rgbC0, rgbD0, rgbA1, rgbB1, rgbC1, rgbD1,
+                                                      G_CCMUX_PRIMITIVE_ALPHA)) {
         twoTextureBlend = true;
         twoTextureBlendUsesPrimLod = false;
+        twoTextureBlendUsesPrimAlpha = rgbC0 == G_CCMUX_PRIMITIVE_ALPHA;
 
         rgbComb = color_comb(G_CCMUX_0, G_CCMUX_0, G_CCMUX_0, G_CCMUX_TEXEL0);
         alphaComb = color_comb(G_ACMUX_0, G_ACMUX_0, G_ACMUX_0, G_ACMUX_1);
@@ -6231,7 +6252,10 @@ static GFX_DL_HANDLER void gfx_dp_set_combine(uint32_t w0, uint32_t w1) {
     }
     if (twoTextureBlend &&
         gfx_cc_is_alpha_two_texture_blend(alphaA0, alphaB0, alphaC0, alphaD0,
-                                          twoTextureBlendUsesPrimLod ? G_ACMUX_LOD_FRACTION : G_ACMUX_ENVIRONMENT)) {
+                                          twoTextureBlendUsesPrimLod
+                                              ? G_ACMUX_LOD_FRACTION
+                                              : (twoTextureBlendUsesPrimAlpha ? G_ACMUX_PRIMITIVE
+                                                                              : G_ACMUX_ENVIRONMENT))) {
         if (gfx_cc_is_combined_mul_primitive(alphaA1, alphaB1, alphaC1, alphaD1)) {
             alphaComb = color_comb(G_ACMUX_TEXEL0, G_ACMUX_0, G_ACMUX_PRIMITIVE, G_ACMUX_0);
         } else if (gfx_cc_is_combined_mul_shade(alphaA1, alphaB1, alphaC1, alphaD1)) {
@@ -6355,8 +6379,9 @@ static GFX_DL_HANDLER void gfx_dp_set_combine(uint32_t w0, uint32_t w1) {
     }
 
     gfx_dp_set_combine_mode(rgbComb, alphaComb, colorMulEnv, colorMulPrim, textureBlend, textureBlendShade,
-                            textureBlendReverse, twoTextureBlend, twoTextureBlendUsesPrimLod, twoTextureAlphaBlend,
-                            alphaMulEnv, twoIntensityEnvPrimPrecombine, flameTextureAtlas,
+                            textureBlendReverse, twoTextureBlend, twoTextureBlendUsesPrimLod,
+                            twoTextureBlendUsesPrimAlpha, twoTextureAlphaBlend, alphaMulEnv,
+                            twoIntensityEnvPrimPrecombine, flameTextureAtlas,
                             textureTintUsesPrimLod || singleTexturePrimLodTint, singleTextureEnvAlphaTint, dinFireTint,
                             textureAddPrim);
 #undef COMB_FIELD
@@ -6385,9 +6410,13 @@ static void gfx_dp_set_prim_color(uint8_t lod_frac, uint8_t r, uint8_t g, uint8_
 
     const bool primRgbChanged =
         (rdp.prim_color.r != r) || (rdp.prim_color.g != g) || (rdp.prim_color.b != b);
+    const bool primAlphaChanged = rdp.prim_color.a != a;
     const bool pipelineChanged = primRgbChanged || (rdp.prim_lod_frac != lod_frac);
 
     if (primRgbChanged && rdp.combine_texture_add_prim) {
+        gfx_flush();
+    }
+    if (primAlphaChanged && rdp.combine_two_texture_blend && rdp.combine_two_texture_blend_uses_prim_alpha) {
         gfx_flush();
     }
 
@@ -6547,6 +6576,7 @@ static void gfx_dp_texture_rectangle(int32_t ulx, int32_t uly, int32_t lrx, int3
     bool saved_combine_texture_blend_reverse = rdp.combine_texture_blend_reverse;
     bool saved_combine_two_texture_blend = rdp.combine_two_texture_blend;
     bool saved_combine_two_texture_blend_uses_prim_lod = rdp.combine_two_texture_blend_uses_prim_lod;
+    bool saved_combine_two_texture_blend_uses_prim_alpha = rdp.combine_two_texture_blend_uses_prim_alpha;
     bool saved_combine_two_texture_alpha_blend = rdp.combine_two_texture_alpha_blend;
     bool saved_combine_alpha_mul_env = rdp.combine_alpha_mul_env;
     bool saved_combine_two_intensity_env_prim_precombine = rdp.combine_two_intensity_env_prim_precombine;
@@ -6559,7 +6589,8 @@ static void gfx_dp_texture_rectangle(int32_t ulx, int32_t uly, int32_t lrx, int3
         dsdx >>= 2;
 
         gfx_dp_set_combine_mode(color_comb(0, 0, 0, G_CCMUX_TEXEL0), color_comb(0, 0, 0, G_ACMUX_TEXEL0), false, false,
-                                false, false, false, false, false, false, false, false, false, false, false, false, false);
+                                false, false, false, false, false, false, false, false, false, false, false, false, false,
+                                false);
 
         lrx += 1 << 2;
         lry += 1 << 2;
@@ -6615,6 +6646,7 @@ static void gfx_dp_texture_rectangle(int32_t ulx, int32_t uly, int32_t lrx, int3
     rdp.combine_texture_blend_reverse = saved_combine_texture_blend_reverse;
     rdp.combine_two_texture_blend = saved_combine_two_texture_blend;
     rdp.combine_two_texture_blend_uses_prim_lod = saved_combine_two_texture_blend_uses_prim_lod;
+    rdp.combine_two_texture_blend_uses_prim_alpha = saved_combine_two_texture_blend_uses_prim_alpha;
     rdp.combine_two_texture_alpha_blend = saved_combine_two_texture_alpha_blend;
     rdp.combine_alpha_mul_env = saved_combine_alpha_mul_env;
     rdp.combine_two_intensity_env_prim_precombine = saved_combine_two_intensity_env_prim_precombine;
@@ -6649,6 +6681,7 @@ static void gfx_dp_fill_rectangle(int32_t ulx, int32_t uly, int32_t lrx, int32_t
     bool saved_combine_texture_blend_reverse = rdp.combine_texture_blend_reverse;
     bool saved_combine_two_texture_blend = rdp.combine_two_texture_blend;
     bool saved_combine_two_texture_blend_uses_prim_lod = rdp.combine_two_texture_blend_uses_prim_lod;
+    bool saved_combine_two_texture_blend_uses_prim_alpha = rdp.combine_two_texture_blend_uses_prim_alpha;
     bool saved_combine_two_texture_alpha_blend = rdp.combine_two_texture_alpha_blend;
     bool saved_combine_alpha_mul_env = rdp.combine_alpha_mul_env;
     bool saved_combine_two_intensity_env_prim_precombine = rdp.combine_two_intensity_env_prim_precombine;
@@ -6659,7 +6692,8 @@ static void gfx_dp_fill_rectangle(int32_t ulx, int32_t uly, int32_t lrx, int32_t
     bool saved_combine_texture_add_prim = rdp.combine_texture_add_prim;
     if (use_fill_color) {
         gfx_dp_set_combine_mode(color_comb(0, 0, 0, G_CCMUX_SHADE), color_comb(0, 0, 0, G_ACMUX_SHADE), false, false,
-                                false, false, false, false, false, false, false, false, false, false, false, false, false);
+                                false, false, false, false, false, false, false, false, false, false, false, false, false,
+                                false);
     }
     gfx_draw_rectangle(ulx, uly, lrx, lry, gfx_rectangle_covers_screen(ulx, uly, lrx, lry),
                        gfx_rectangle_covers_width(ulx, lrx));
@@ -6670,6 +6704,7 @@ static void gfx_dp_fill_rectangle(int32_t ulx, int32_t uly, int32_t lrx, int32_t
         rdp.combine_texture_blend_reverse = saved_combine_texture_blend_reverse;
         rdp.combine_two_texture_blend = saved_combine_two_texture_blend;
         rdp.combine_two_texture_blend_uses_prim_lod = saved_combine_two_texture_blend_uses_prim_lod;
+        rdp.combine_two_texture_blend_uses_prim_alpha = saved_combine_two_texture_blend_uses_prim_alpha;
         rdp.combine_two_texture_alpha_blend = saved_combine_two_texture_alpha_blend;
         rdp.combine_alpha_mul_env = saved_combine_alpha_mul_env;
         rdp.combine_two_intensity_env_prim_precombine = saved_combine_two_intensity_env_prim_precombine;
@@ -7157,6 +7192,7 @@ static GFX_DL_HANDLER void gfx_sp_s2dex_bg_rect(uint32_t opcode, const void* bgA
     bool savedTextureBlendReverse;
     bool savedTwoTextureBlend;
     bool savedTwoTextureBlendUsesPrimLod;
+    bool savedTwoTextureBlendUsesPrimAlpha;
     bool savedTwoTextureAlphaBlend;
     bool savedAlphaMulEnv;
     bool savedTwoIntensityEnvPrimPrecombine;
@@ -7244,6 +7280,7 @@ static GFX_DL_HANDLER void gfx_sp_s2dex_bg_rect(uint32_t opcode, const void* bgA
     savedTextureBlendReverse = rdp.combine_texture_blend_reverse;
     savedTwoTextureBlend = rdp.combine_two_texture_blend;
     savedTwoTextureBlendUsesPrimLod = rdp.combine_two_texture_blend_uses_prim_lod;
+    savedTwoTextureBlendUsesPrimAlpha = rdp.combine_two_texture_blend_uses_prim_alpha;
     savedTwoTextureAlphaBlend = rdp.combine_two_texture_alpha_blend;
     savedAlphaMulEnv = rdp.combine_alpha_mul_env;
     savedTwoIntensityEnvPrimPrecombine = rdp.combine_two_intensity_env_prim_precombine;
@@ -7254,7 +7291,8 @@ static GFX_DL_HANDLER void gfx_sp_s2dex_bg_rect(uint32_t opcode, const void* bgA
     savedTextureAddPrim = rdp.combine_texture_add_prim;
     if ((rdp.other_mode_h & (3U << G_MDSFT_CYCLETYPE)) == G_CYC_COPY) {
         gfx_dp_set_combine_mode(color_comb(0, 0, 0, G_CCMUX_TEXEL0), color_comb(0, 0, 0, G_ACMUX_TEXEL0), false, false,
-                                false, false, false, false, false, false, false, false, false, false, false, false, false);
+                                false, false, false, false, false, false, false, false, false, false, false, false, false,
+                                false);
     }
 
     gfx_flush();
@@ -7296,6 +7334,7 @@ static GFX_DL_HANDLER void gfx_sp_s2dex_bg_rect(uint32_t opcode, const void* bgA
     rdp.combine_texture_blend_reverse = savedTextureBlendReverse;
     rdp.combine_two_texture_blend = savedTwoTextureBlend;
     rdp.combine_two_texture_blend_uses_prim_lod = savedTwoTextureBlendUsesPrimLod;
+    rdp.combine_two_texture_blend_uses_prim_alpha = savedTwoTextureBlendUsesPrimAlpha;
     rdp.combine_two_texture_alpha_blend = savedTwoTextureAlphaBlend;
     rdp.combine_alpha_mul_env = savedAlphaMulEnv;
     rdp.combine_two_intensity_env_prim_precombine = savedTwoIntensityEnvPrimPrecombine;
