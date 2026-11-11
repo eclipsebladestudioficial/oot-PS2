@@ -179,7 +179,7 @@ void OotPortControls_InitDefaults(void) {
         sButtonBindings[i].n64Mask = sButtonBindings[i].defaultN64Mask;
     }
 
-    sDeadzone = 0;
+    sDeadzone = OOT_PORT_CONTROLS_DEADZONE_DEFAULT;
     sCameraInvertX = 0;
     sCameraInvertY = 0;
     sInitialized = true;

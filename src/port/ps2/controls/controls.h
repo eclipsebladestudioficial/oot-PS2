@@ -9,6 +9,7 @@
 #define OOT_PORT_CONTROLS_INI_PATH "controls.ini"
 #define OOT_PORT_CONTROLS_DEADZONE_MIN 0
 #define OOT_PORT_CONTROLS_DEADZONE_MAX 80
+#define OOT_PORT_CONTROLS_DEADZONE_DEFAULT 30
 
 void OotPortControls_InitDefaults(void);
 s32 OotPortControls_Load(void);
