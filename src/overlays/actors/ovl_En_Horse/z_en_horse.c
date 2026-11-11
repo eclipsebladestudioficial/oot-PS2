@@ -687,9 +687,16 @@ s32 EnHorse_Spawn(EnHorse* this, PlayState* play) {
     s32 spawn = false;
     f32 dist;
     s32 i;
+#if defined(TARGET_PS2)
+    s32 pass;
+#endif
     Player* player;
     Vec3f spawnPos;
 
+#if defined(TARGET_PS2)
+    for (pass = 0; pass < 2; pass++) {
+        minDist = 1e38f;
+#endif
     for (i = 0; i < ARRAY_COUNT(sHorseSpawns); i++) {
         if (sHorseSpawns[i].sceneId == play->sceneId) {
             player = GET_PLAYER(play);
@@ -705,7 +712,19 @@ s32 EnHorse_Spawn(EnHorse* this, PlayState* play) {
                 spawnPos.x = sHorseSpawns[i].pos.x;
                 spawnPos.y = sHorseSpawns[i].pos.y;
                 spawnPos.z = sHorseSpawns[i].pos.z;
+#if defined(TARGET_PS2)
+                if ((pass == 0) && (fabsf(spawnPos.y - player->actor.world.pos.y) > 120.0f)) {
+                    continue;
+                }
+
+                if (pass == 0) {
+                    dist = Math_Vec3f_DistXZ(&player->actor.world.pos, &spawnPos);
+                } else {
+                    dist = Math3D_Vec3f_DistXYZ(&player->actor.world.pos, &spawnPos);
+                }
+#else
                 dist = Math3D_Vec3f_DistXYZ(&player->actor.world.pos, &spawnPos);
+#endif
 
                 if ((minDist < dist) || func_80A5BBBC(play, this, &spawnPos)) {
                     continue;
@@ -726,6 +745,12 @@ s32 EnHorse_Spawn(EnHorse* this, PlayState* play) {
             }
         }
     }
+#if defined(TARGET_PS2)
+        if (spawn) {
+            break;
+        }
+    }
+#endif
 
     return spawn;
 }
