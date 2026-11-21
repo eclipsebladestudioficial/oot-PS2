@@ -1138,6 +1138,8 @@ static uint32_t sPs2FlameDecodedI4Serial;
 enum TwoI4PrecombineFormula {
     GFX_TWO_I4_FORMULA_ENV_ALPHA,
     GFX_TWO_I4_FORMULA_PRIM_LOD,
+    
+    GFX_TWO_I4_FORMULA_PRIM_LOD_ENV_ALPHA,
 };
 
 typedef struct __attribute__((aligned(16))) TwoI4PrecombineCacheEntry {
@@ -3593,12 +3595,17 @@ static void gfx_build_two_i4_precombine_pixels(TwoI4PrecombineCacheEntry* entry)
                                                 : gfx_two_i4_read_texel_255(1, (int32_t)sx1, (int32_t)sample1Y[y],
                                                                             width1, height1, &swap1);
 
-            if (entry->formula == GFX_TWO_I4_FORMULA_PRIM_LOD) {
+            if (entry->formula == GFX_TWO_I4_FORMULA_PRIM_LOD ||
+                entry->formula == GFX_TWO_I4_FORMULA_PRIM_LOD_ENV_ALPHA) {
                 const int32_t lod = entry->primLodFrac;
                 const uint8_t mixR = gfx_ps2_clamp_u8_i32((int32_t)t0 + gfx_ps2_div256_round_signed(((int32_t)t1 - pr) * lod));
                 const uint8_t mixG = gfx_ps2_clamp_u8_i32((int32_t)t0 + gfx_ps2_div256_round_signed(((int32_t)t1 - pg) * lod));
                 const uint8_t mixB = gfx_ps2_clamp_u8_i32((int32_t)t0 + gfx_ps2_div256_round_signed(((int32_t)t1 - pb) * lod));
-                const uint8_t alpha = gfx_ps2_clamp_u8_i32((int32_t)t0 + gfx_ps2_div256_round_signed(((int32_t)t1 - 255) * lod));
+                const uint8_t alpha = entry->formula == GFX_TWO_I4_FORMULA_PRIM_LOD_ENV_ALPHA
+                    ? gfx_color_mul_channel(gfx_ps2_clamp_u8_i32((int32_t)t0 +
+                          gfx_ps2_div256_round_signed(((int32_t)t1 - (int32_t)t0) * lod)), entry->envAlpha)
+                    : gfx_ps2_clamp_u8_i32((int32_t)t0 +
+                          gfx_ps2_div256_round_signed(((int32_t)t1 - 255) * lod));
                 const uint8_t r = gfx_ps2_clamp_u8_i32(er + gfx_ps2_div255_round((pr - er) * mixR));
                 const uint8_t g = gfx_ps2_clamp_u8_i32(eg + gfx_ps2_div255_round((pg - eg) * mixG));
                 const uint8_t b = gfx_ps2_clamp_u8_i32(eb + gfx_ps2_div255_round((pb - eb) * mixB));
@@ -3641,9 +3648,9 @@ static bool gfx_prepare_two_i4_precombine(uint8_t formula) {
     uint32_t texture1Key;
     uint32_t outputWidth;
     uint32_t outputHeight;
-    const uint8_t primLodFrac = formula == GFX_TWO_I4_FORMULA_PRIM_LOD ? rdp.prim_lod_frac : 0;
-    const uint8_t coordTile = formula == GFX_TWO_I4_FORMULA_PRIM_LOD ? 0 : 1;
-    const uint32_t phaseStep = formula == GFX_TWO_I4_FORMULA_PRIM_LOD ? GFX_TWO_I4_PRIM_LOD_PHASE_STEP
+    const uint8_t primLodFrac = formula != GFX_TWO_I4_FORMULA_ENV_ALPHA ? rdp.prim_lod_frac : 0;
+    const uint8_t coordTile = formula != GFX_TWO_I4_FORMULA_ENV_ALPHA ? 0 : 1;
+    const uint32_t phaseStep = formula != GFX_TWO_I4_FORMULA_ENV_ALPHA ? GFX_TWO_I4_PRIM_LOD_PHASE_STEP
                                                                      : GFX_TWO_I4_REPRESENTATIVE_PHASE_STEP;
 
     if (!gfx_two_i4_precombine_material_is_supported() || !gfx_validate_texture_source(0, "ps2-two-i4-0") ||
@@ -3693,7 +3700,7 @@ static bool gfx_prepare_two_i4_precombine(uint8_t formula) {
         entry = phaseFallback;
     }
 
-    if (entry == NULL && formula == GFX_TWO_I4_FORMULA_PRIM_LOD && phaseFallback != NULL) {
+    if (entry == NULL && formula != GFX_TWO_I4_FORMULA_ENV_ALPHA && phaseFallback != NULL) {
         entry = phaseFallback;
         rebuildEntry = true;
     }
@@ -3965,8 +3972,17 @@ static void gfx_prepare_tri_pipeline_state(void) {
 
     sPreparedAtlasKind = GFX_PREPARED_ATLAS_NONE;
     sPreparedAtlasTextureId = 0;
-    if (rdp.combine_two_intensity_env_prim_precombine &&
-        gfx_prepare_two_i4_precombine(GFX_TWO_I4_FORMULA_ENV_ALPHA)) {
+    
+    const bool primLodEnvAlphaPrecombine = rdp.combine_flame_texture_atlas &&
+                                          rdp.combine_two_texture_blend_uses_prim_lod &&
+                                          !rdp.combine_two_texture_blend;
+    if (primLodEnvAlphaPrecombine) {
+        if (gfx_prepare_two_i4_precombine(GFX_TWO_I4_FORMULA_PRIM_LOD_ENV_ALPHA)) {
+            two_i4_precombine = true;
+            flame_texture_atlas = true;
+        }
+    } else if (rdp.combine_two_intensity_env_prim_precombine &&
+               gfx_prepare_two_i4_precombine(GFX_TWO_I4_FORMULA_ENV_ALPHA)) {
         two_i4_precombine = true;
         flame_texture_atlas = true;
     } else if (rdp.combine_flame_texture_atlas && gfx_prepare_flame_atlas()) {
@@ -6356,6 +6372,18 @@ static GFX_DL_HANDLER void gfx_dp_set_combine(uint32_t w0, uint32_t w1) {
         gfx_cc_is_two_i4_env_prim_tint(rgbA0, rgbB0, rgbC0, rgbD0, alphaA0, alphaB0, alphaC0, alphaD0, rgbA1, rgbB1,
                                        rgbC1, rgbD1, alphaA1, alphaB1, alphaC1, alphaD1)) {
         twoIntensityEnvPrimPrecombine = true;
+    }
+
+     if (((rdp.other_mode_h & (3U << G_MDSFT_CYCLETYPE)) == G_CYC_2CYCLE) &&
+        (rgbA0 == G_CCMUX_TEXEL1) && (rgbB0 == G_CCMUX_PRIMITIVE) &&
+        (rgbC0 == G_CCMUX_PRIM_LOD_FRAC) && (rgbD0 == G_CCMUX_TEXEL0) &&
+        (rgbA1 == G_CCMUX_PRIMITIVE) && (rgbB1 == G_CCMUX_ENVIRONMENT) &&
+        (rgbC1 == G_CCMUX_COMBINED) && (rgbD1 == G_CCMUX_ENVIRONMENT) &&
+        gfx_cc_is_alpha_two_texture_blend(alphaA0, alphaB0, alphaC0, alphaD0, G_ACMUX_PRIM_LOD_FRAC) &&
+        gfx_cc_is_combined_mul_environment(alphaA1, alphaB1, alphaC1, alphaD1)) {
+        
+        flameTextureAtlas = true;
+        twoTextureBlendUsesPrimLod = true;
     }
 
     flameTextureAtlas =
