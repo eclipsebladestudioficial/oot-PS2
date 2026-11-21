@@ -1829,13 +1829,9 @@ gfx_two_texture_blend_pass_alphas(uint8_t surfaceAlpha, uint8_t mixAlpha, bool b
     uint32_t denominator;
 
     if (surfaceAlpha == 0xFF) {
-        if (blendTextureAlpha) {
-            *baseAlpha = 255 - mixAlpha;
-            *overlayAlpha = uncompensatedTextureAlpha ? mixAlpha : (mixAlpha != 0 ? 0xFF : 0);
-        } else {
-            *baseAlpha = mixAlpha != 0xFF ? 0xFF : 0;
-            *overlayAlpha = mixAlpha;
-        }
+
+        *baseAlpha = mixAlpha != 0xFF ? 0xFF : 0;
+        *overlayAlpha = mixAlpha;
         return;
     }
 
